@@ -8,7 +8,7 @@
 
 | 阶段 | 交付内容 | 状态 | 验收标准 |
 | --- | --- | --- | --- |
-| 0 | 本机环境与插件骨架 | 已完成 | 已创建 `@nocobase/plugin-ai-knowledge-base` 骨架；本机 Node.js、Yarn 与 PostgreSQL 连通性均已确认 |
+| 0 | 本机环境与插件骨架 | 已完成 | 已创建 `@zhoumingrui/plugin-ai-knowledge-base` 骨架；本机 Node.js、Yarn 与 PostgreSQL 连通性均已确认 |
 | 1 | PostgreSQL + pgvector | 已完成 | 已在独立 `nocobase_kb` 数据库启用 pgvector 0.8.3，并验证向量余弦距离计算 |
 | 2 | Vector database / Vector store | 进行中 | 已实现 pgvector 连接检测、保存已验证连接的 Vector database 管理页与列表；下一步实现 Vector store 与 Embedding 模型绑定 |
 | 3 | Knowledge base | 未开始 | 可创建知识库、导入文件、切片和查看同步状态 |
@@ -72,7 +72,7 @@
 
 - 已完成：知识库页增加“添加测试文本”入口；提交后服务端将文本切片、调用该 Vector store 绑定的现有 LLM Embedding 服务，并在 pgvector 索引表中事务写入向量与来源元数据。
 - 已完成：`aiKnowledgeDocuments` 保存文档、分片数、状态和错误信息；任一分片或向量化失败会回滚 pgvector 写入并标记失败，方便排查与重试。
-- 已验证：插件 ESLint 自动修复及 `yarn build @nocobase/plugin-ai-knowledge-base` 均通过。
+- 已验证（迁名前）：插件 ESLint 自动修复及生产构建均通过。
 - 下一步：实现向量检索并接入 AI Employees 的官方 knowledge-base feature；闭环真正可在员工对话中回答后，再通知“滴一声”。
 
 ## 2026-07-16 增量：检索测试闭环（待界面验收）
@@ -127,3 +127,12 @@
 - 静态检查：本次修改文件已执行 ESLint 自动修正；中英文 locale JSON 解析成功，85 个界面翻译键均完整覆盖；未发现 `any`、异步 `void` 调用或残留的 inline 表单。
 - 运行验收：按用户要求，本次收尾不再由代理执行 NocoBase build、`yarn dev` 或启动应用；由用户在现有环境完成最终构建和浏览器验收。
 - 当前状态：legacy 管理页迁移开发已完成，等待用户运行验收后关闭本阶段。
+
+## 2026-07-17 收尾：自有插件身份与许可证
+
+- 插件包名由与官方文档冲突的 `@nocobase/plugin-ai-knowledge-base` 调整为 `@zhoumingrui/plugin-ai-knowledge-base`。
+- 原创源码版权归 Zhou Mingrui，使用 `AGPL-3.0-only`；插件目录新增完整 `LICENSE` 和独立 `NOTICE`。
+- NocoBase 脚手架提供的两份通用 `client.d.ts` 保留原 NocoBase 版权及许可声明，不主张个人版权。
+- 根仓库提交钩子增加该插件目录的精确排除规则，避免后续提交重新覆盖原创源码版权头。
+- NocoBase 上游源码、官方文档、商标及原许可证均未修改；本次仅调整自研插件身份，不改变业务逻辑、数据表或接口。
+- 按用户要求，本次不由代理执行 build 或 dev；包名变更后的构建与启用由用户在本地完成。

@@ -1,6 +1,8 @@
 const fs = require('fs/promises');
 const { exec } = require('child_process');
 
+const licenseExclusions = ['packages/plugins/@zhoumingrui/plugin-ai-knowledge-base/'];
+
 const commercialLicense = `
 /**
  * This file is part of the NocoBase (R) project.
@@ -24,6 +26,11 @@ const openSourceLicense = `
 
 function getLicenseText(packageDir) {
   return packageDir.includes('/pro-plugins') ? commercialLicense : openSourceLicense;
+}
+
+function isLicenseExcluded(filePath) {
+  const normalizedPath = filePath.replace(/\\/g, '/');
+  return licenseExclusions.some((packageRoot) => normalizedPath.startsWith(packageRoot));
 }
 
 async function addLicenseToFile(filePath) {
@@ -88,6 +95,7 @@ async function main() {
 
   const diffFiles = await getDiffFiles();
   const files = diffFiles
+    .filter((file) => !isLicenseExcluded(file))
     .filter((file) => file.includes('/src/')) // 只检查 src 目录下的文件
     .filter((file) => !file.includes('/demos/')) // 忽略 demos 目录
     .filter((file) => file.endsWith('.js') || file.endsWith('.jsx') || file.endsWith('.ts') || file.endsWith('.tsx'));
