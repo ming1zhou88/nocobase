@@ -5,6 +5,9 @@
   "displayName.zh-CN": "第三方数据源连接器",
   "description": "Reliable MySQL, PostgreSQL and NocoBase data source connectors for NocoBase.",
   "description.zh-CN": "面向 NocoBase 的可靠 MySQL、PostgreSQL 与 NocoBase 数据源连接器。",
+  "keywords": [
+    "Data sources"
+  ],
   "author": "Zhou Mingrui",
   "license": "AGPL-3.0-only",
   "main": "dist/server/index.js",

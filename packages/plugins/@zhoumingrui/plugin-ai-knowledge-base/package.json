@@ -1,6 +1,13 @@
 {
   "name": "@zhoumingrui/plugin-ai-knowledge-base",
   "version": "2.1.23",
+  "displayName": "AI Knowledge Base",
+  "displayName.zh-CN": "AI 知识库",
+  "description": "Manage pgvector databases, vector stores, document ingestion and retrieval for NocoBase AI Employees.",
+  "description.zh-CN": "为 NocoBase AI Employees 提供 pgvector 向量数据库、向量存储、文档入库与知识检索能力。",
+  "keywords": [
+    "AI"
+  ],
   "author": "Zhou Mingrui",
   "license": "AGPL-3.0-only",
   "main": "dist/server/index.js",
