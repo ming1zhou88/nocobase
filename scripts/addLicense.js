@@ -1,7 +1,10 @@
 const fs = require('fs/promises');
 const { exec } = require('child_process');
 
-const licenseExclusions = ['packages/plugins/@zhoumingrui/plugin-ai-knowledge-base/'];
+const licenseExclusions = [
+  'packages/plugins/@zhoumingrui/plugin-ai-knowledge-base/',
+  'packages/plugins/@zhoumingrui/plugin-data-source-connectors/',
+];
 
 const commercialLicense = `
 /**

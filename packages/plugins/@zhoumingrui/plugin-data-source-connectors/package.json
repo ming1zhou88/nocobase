@@ -1,0 +1,27 @@
+{
+  "name": "@zhoumingrui/plugin-data-source-connectors",
+  "version": "2.1.23",
+  "displayName": "Third-party data source connectors",
+  "displayName.zh-CN": "第三方数据源连接器",
+  "description": "Reliable MySQL, PostgreSQL and NocoBase data source connectors for NocoBase.",
+  "description.zh-CN": "面向 NocoBase 的可靠 MySQL、PostgreSQL 与 NocoBase 数据源连接器。",
+  "author": "Zhou Mingrui",
+  "license": "AGPL-3.0-only",
+  "main": "dist/server/index.js",
+  "dependencies": {
+    "axios": "^1.7.0",
+    "mysql2": "^3.11.0",
+    "pg": "^8.11.3",
+    "pg-hstore": "^2.3.4"
+  },
+  "peerDependencies": {
+    "@nocobase/client": "2.x",
+    "@nocobase/client-v2": "2.x",
+    "@nocobase/data-source-manager": "2.x",
+    "@nocobase/database": "2.x",
+    "@nocobase/flow-engine": "2.x",
+    "@nocobase/plugin-data-source-manager": "2.x",
+    "@nocobase/server": "2.x",
+    "@nocobase/test": "2.x"
+  }
+}

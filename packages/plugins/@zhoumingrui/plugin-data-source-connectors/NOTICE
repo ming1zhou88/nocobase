@@ -1,0 +1,12 @@
+@zhoumingrui/plugin-data-source-connectors
+Copyright (c) 2026 Zhou Mingrui
+
+This plugin is independently developed and is licensed under the GNU Affero
+General Public License, version 3 only.
+
+This plugin interoperates with NocoBase through its public plugin and data
+source extension APIs. It is not an official NocoBase project and is not
+endorsed by or affiliated with the NocoBase project or its rights holders.
+
+NocoBase, its source code, trademarks, documentation, and other upstream
+materials remain subject to their own copyright notices and license terms.
