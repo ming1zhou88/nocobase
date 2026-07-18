@@ -37,6 +37,11 @@ function headerObject(parsed: ParsedMail): Record<string, string> {
   return Object.fromEntries(Array.from(parsed.headers.entries()).map(([key, value]) => [key, String(value)]));
 }
 
+function normalizedDate(value: string | Date | undefined): Date {
+  const date = value instanceof Date ? value : value ? new Date(value) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
 export interface SyncResult {
   fetchedCount: number;
   createdCount: number;
@@ -200,7 +205,7 @@ export class ImapSyncService {
     const replyTo = addresses(parsed.replyTo);
     const references = referenceIds(parsed.references);
     const threadId = references[0] || parsed.inReplyTo || parsed.messageId || syncKey;
-    const receivedAt = parsed.date || message.internalDate || new Date();
+    const receivedAt = normalizedDate(parsed.date || message.internalDate);
     const attachmentContent: AttachmentContent[] = parsed.attachments.map((attachment) => ({
       filename: attachment.filename || 'attachment',
       contentType: attachment.contentType,

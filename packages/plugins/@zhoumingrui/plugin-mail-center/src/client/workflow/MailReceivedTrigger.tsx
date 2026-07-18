@@ -18,7 +18,7 @@ function expr(key: string) {
 function MailAccountSelect(props: { value?: number[]; onChange?: (value: number[]) => void }) {
   const api = useAPIClient();
   const { data, loading } = useRequest(() => api.request({ url: 'mailCenter:accountsList', method: 'post' }));
-  const accounts = dataOf<MailAccount[]>(data?.data) || [];
+  const accounts = dataOf<MailAccount[]>(data) || [];
   return (
     <Select
       mode="multiple"

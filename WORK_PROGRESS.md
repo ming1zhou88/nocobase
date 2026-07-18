@@ -264,3 +264,9 @@
 - 未扩大 TypeScript `rootDir`、未关闭 declaration、未添加 `@ts-ignore`，因此不会隐藏其他真实声明错误；legacy 与 modern 翻译 namespace 和运行行为保持不变。
 - 静态检查确认三个插件已不存在 TypeScript/TSX 对 `package.json` 的越界导入，6 个 namespace 均与包名匹配，相关文件 ESLint 通过。
 - 用户确认服务器继续使用 Node.js 24；本轮不再调整 Node.js 版本，也未由代理执行 build、dev、upgrade 或插件启停。服务器需同步代码后重新执行全量构建以继续暴露可能存在的下一项独立声明错误。
+
+### 2026-07-18 邮件中心声明类型收口
+
+- 用户重新执行全量构建后，邮件中心声明阶段继续发现两项独立类型错误：workflow 邮箱选择器直接读取 `unknown.data`，以及 IMAP 接收时间仍可能为字符串却直接调用 `toISOString()`。
+- 邮箱列表现直接将未知响应交给既有 `dataOf<MailAccount[]>()` 递归解包，不改变服务端响应结构；IMAP 接收时间统一规范为有效 `Date`，无效日期安全回退为当前时间后再写库和生成工作流上下文。
+- 两个触及文件 ESLint 通过；未使用 `any`、类型忽略或不安全的强制属性访问，未由代理重复执行全量 build。
