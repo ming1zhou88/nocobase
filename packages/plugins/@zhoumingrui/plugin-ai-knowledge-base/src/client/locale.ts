@@ -10,10 +10,8 @@
 import { useApp } from '@nocobase/client';
 import { tExpr as _tExpr } from '@nocobase/flow-engine';
 import { useCallback } from 'react';
-// @ts-ignore
-import pkg from '../../package.json';
 
-export const namespace = pkg.name;
+export const namespace = '@zhoumingrui/plugin-ai-knowledge-base';
 
 export function useT() {
   const app = useApp();

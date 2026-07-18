@@ -4,9 +4,8 @@
  */
 
 import { tExpr as createTExpr, useFlowEngine } from '@nocobase/flow-engine';
-import pkg from '../../package.json';
 
-export const NAMESPACE = pkg.name;
+export const NAMESPACE = '@zhoumingrui/plugin-mail-center';
 
 export function tExpr(key: string) {
   return createTExpr(key, { ns: [NAMESPACE, 'client'] });

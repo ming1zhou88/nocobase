@@ -256,3 +256,11 @@
 - 已清理 `yarn.lock` 中仅由错误规格产生的 4 个选择器，修复后的全部依赖直接复用仓库现有锁项；package JSON 与 yarn.lock 均解析通过，且三个自有插件的全部直接依赖均存在对应锁项。
 - 数据源连接器和邮件中心插件的依赖分类及锁文件覆盖正常，本轮无需修改。
 - 本轮未执行 `yarn install`、build、dev、upgrade 或插件启停；服务器部署安装由用户使用修复后的 `package.json` 与 `yarn.lock` 复测。
+
+### 2026-07-18 自有插件声明文件构建兼容修复
+
+- 服务器全量 `yarn build` 在第三方数据源连接器的声明文件阶段报 TS6059：legacy 与 modern 的 `locale.ts` 从 `rootDir: src` 之外导入插件根目录 `package.json`。
+- 已审计知识库、第三方数据源连接器和邮件中心三个自有插件，共发现 6 个相同模式的 locale 文件；全部移除越界 JSON 导入，改用与各插件 `package.json.name` 完全一致的 i18n namespace 常量。
+- 未扩大 TypeScript `rootDir`、未关闭 declaration、未添加 `@ts-ignore`，因此不会隐藏其他真实声明错误；legacy 与 modern 翻译 namespace 和运行行为保持不变。
+- 静态检查确认三个插件已不存在 TypeScript/TSX 对 `package.json` 的越界导入，6 个 namespace 均与包名匹配，相关文件 ESLint 通过。
+- 用户确认服务器继续使用 Node.js 24；本轮不再调整 Node.js 版本，也未由代理执行 build、dev、upgrade 或插件启停。服务器需同步代码后重新执行全量构建以继续暴露可能存在的下一项独立声明错误。

@@ -6,9 +6,8 @@
 import { tExpr as createTExpr } from '@nocobase/flow-engine';
 import { useApp } from '@nocobase/client';
 import { useCallback } from 'react';
-import pkg from '../../package.json';
 
-export const NAMESPACE = pkg.name;
+export const NAMESPACE = '@zhoumingrui/plugin-mail-center';
 
 export function useT() {
   const app = useApp();

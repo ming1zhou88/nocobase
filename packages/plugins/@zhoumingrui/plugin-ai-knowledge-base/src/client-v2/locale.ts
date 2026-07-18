@@ -8,15 +8,15 @@
  */
 
 import { tExpr as baseTExpr, useFlowEngine } from '@nocobase/flow-engine';
-// @ts-ignore
-import pkg from './../../package.json';
+
+export const NAMESPACE = '@zhoumingrui/plugin-ai-knowledge-base';
 
 export function useT() {
   const engine = useFlowEngine();
   return (key: string, options?: Record<string, unknown>) =>
-    engine.context.t(key, { ...options, ns: [pkg.name, 'client'] });
+    engine.context.t(key, { ...options, ns: [NAMESPACE, 'client'] });
 }
 
 export function tExpr(key: string) {
-  return baseTExpr(key, { ns: [pkg.name, 'client'] });
+  return baseTExpr(key, { ns: [NAMESPACE, 'client'] });
 }

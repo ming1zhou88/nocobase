@@ -4,9 +4,8 @@
  */
 
 import { tExpr as createTExpr, useFlowEngine } from '@nocobase/flow-engine';
-import pkg from '../../package.json';
 
-export const NAMESPACE = pkg.name;
+export const NAMESPACE = '@zhoumingrui/plugin-data-source-connectors';
 
 export function tExpr(key: string) {
   return createTExpr(key, { ns: [NAMESPACE, 'client'] });
