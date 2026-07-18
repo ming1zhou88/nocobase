@@ -1,0 +1,33 @@
+{
+  "name": "@zhoumingrui/plugin-mail-center",
+  "version": "2.1.23",
+  "displayName": "Mail Center",
+  "displayName.zh-CN": "邮件中心",
+  "description": "Multi-account email management with IMAP/SMTP synchronization and incoming-mail workflow triggers.",
+  "description.zh-CN": "支持多邮箱 IMAP/SMTP 收发、同步管理与新邮件工作流触发的邮件中心。",
+  "keywords": [
+    "Notification",
+    "Workflow"
+  ],
+  "author": "Zhou Mingrui",
+  "license": "AGPL-3.0-only",
+  "main": "dist/server/index.js",
+  "dependencies": {
+    "imapflow": "^1.4.7",
+    "mailparser": "^3.7.4",
+    "nodemailer": "^6.9.7"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.4.6",
+    "@types/nodemailer": "^6.4.17"
+  },
+  "peerDependencies": {
+    "@nocobase/client": "2.x",
+    "@nocobase/client-v2": "2.x",
+    "@nocobase/database": "2.x",
+    "@nocobase/flow-engine": "2.x",
+    "@nocobase/plugin-workflow": "2.x",
+    "@nocobase/server": "2.x",
+    "@nocobase/test": "2.x"
+  }
+}

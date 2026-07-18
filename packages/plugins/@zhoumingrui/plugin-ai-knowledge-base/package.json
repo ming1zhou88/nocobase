@@ -11,13 +11,15 @@
   "author": "Zhou Mingrui",
   "license": "AGPL-3.0-only",
   "main": "dist/server/index.js",
-  "devDependencies": {
-    "@types/pg": "^8.11.10",
+  "dependencies": {
     "jszip": "^3.10.1",
-    "mammoth": "^1.11.0",
-    "pdf-parse": "^1.1.4",
+    "mammoth": "^1.10.0",
+    "pdf-parse": "^1.1.1",
     "pg": "^8.11.3",
-    "xlsx": "^0.20.3"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.10.9"
   },
   "peerDependencies": {
     "@nocobase/client": "2.x",

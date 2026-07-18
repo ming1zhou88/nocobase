@@ -4,6 +4,7 @@ const { exec } = require('child_process');
 const licenseExclusions = [
   'packages/plugins/@zhoumingrui/plugin-ai-knowledge-base/',
   'packages/plugins/@zhoumingrui/plugin-data-source-connectors/',
+  'packages/plugins/@zhoumingrui/plugin-mail-center/',
 ];
 
 const commercialLicense = `
