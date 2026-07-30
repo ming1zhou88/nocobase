@@ -123,6 +123,24 @@ export class NocoBaseRemoteClient {
     return true;
   }
 
+  async createCollection(values: Record<string, unknown>) {
+    const path =
+      this.dataSourceKey === 'main'
+        ? '/collections:create'
+        : `/dataSources/${encodeURIComponent(this.dataSourceKey)}/collections:create`;
+    const response = await this.http.post(path, { values });
+    return unwrapPayload(response.data);
+  }
+
+  async destroyCollections(filterByTk: string | string[], cascade = false) {
+    const path =
+      this.dataSourceKey === 'main'
+        ? '/collections:destroy'
+        : `/dataSources/${encodeURIComponent(this.dataSourceKey)}/collections:destroy`;
+    const response = await this.http.post(path, { filterByTk, cascade });
+    return unwrapPayload(response.data);
+  }
+
   async list(collectionName: string, params: Record<string, unknown>): Promise<RemoteListResult> {
     const response = await this.http.get(`/${encodeURIComponent(collectionName)}:list`, { params });
     const body = response.data as Record<string, unknown>;

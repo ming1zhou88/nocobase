@@ -845,12 +845,13 @@ const CollectionCreateFilterTargetKey: FC<{
 };
 
 function CollectionCreateDrawer(props: {
+  dataSourceKey: string;
   template: CollectionTemplateOptions;
   categories: CollectionCategoryRecord[];
   activeCategoryKey: string;
   onSubmitted: () => void;
 }) {
-  const { activeCategoryKey, categories, onSubmitted, template } = props;
+  const { activeCategoryKey, categories, dataSourceKey, onSubmitted, template } = props;
   const t = useT();
   const ctx = useFlowContext();
   const { notification } = App.useApp();
@@ -869,7 +870,7 @@ function CollectionCreateDrawer(props: {
   );
   const collectionRequest = useRequest(async () => {
     const response = await ctx.api.request({
-      url: 'dataSources/main/collections:list',
+      url: `dataSources/${dataSourceKey}/collections:list`,
       params: {
         paginate: false,
         sort: ['sort'],
@@ -961,11 +962,12 @@ function CollectionCreateDrawer(props: {
 
       setSubmitting(true);
       try {
-        await ctx.api.resource('collections').create({
+        const resource = dataSourceKey === 'main' ? 'collections' : `dataSources/${dataSourceKey}/collections`;
+        await ctx.api.resource(resource).create({
           values: normalizedValues,
         });
         onSubmitted();
-        ctx.dataSourceManager.getDataSource('main')?.reload();
+        ctx.dataSourceManager.getDataSource(dataSourceKey)?.reload();
       } finally {
         setSubmitting(false);
       }
@@ -981,6 +983,7 @@ function CollectionCreateDrawer(props: {
     collectionPresetFields,
     ctx.api,
     ctx.dataSourceManager,
+    dataSourceKey,
     form,
     notification,
     onSubmitted,
@@ -1405,12 +1408,8 @@ function CollectionsPage(props: CollectionsPageProps) {
   const configureFieldsDisabled = Boolean(dataSourceType?.disableConfigureFields);
   const allowDefaultCollectionEdit = !configureFieldsDisabled;
   const allowCustomCollectionEdit = Boolean(!isMainDataSource && !configureFieldsDisabled && EditCollection);
-  const allowCustomCollectionCreate = Boolean(
-    !isMainDataSource && !configureFieldsDisabled && dataSourceType?.allowCollectionCreate && AddCollection,
-  );
-  const allowCustomCollectionDeletion = Boolean(
-    !isMainDataSource && !configureFieldsDisabled && dataSourceType?.allowCollectionDeletion && DeleteCollection,
-  );
+  const allowCustomCollectionCreate = Boolean(!isMainDataSource && dataSourceType?.allowCollectionCreate);
+  const allowCustomCollectionDeletion = Boolean(!isMainDataSource && dataSourceType?.allowCollectionDeletion);
   const collectionTemplates = useMemo(() => plugin.getCollectionTemplates(), [plugin]);
   const categoryRequest = useRequest(
     async () => {
@@ -1601,6 +1600,7 @@ function CollectionsPage(props: CollectionsPageProps) {
         closable: true,
         content: () => (
           <CollectionCreateDrawer
+            dataSourceKey={props.dataSourceKey}
             template={template}
             categories={categories}
             activeCategoryKey={activeCategoryKey}
@@ -1612,7 +1612,7 @@ function CollectionsPage(props: CollectionsPageProps) {
         ),
       });
     },
-    [activeCategoryKey, categories, ctx.viewer, request],
+    [activeCategoryKey, categories, ctx.viewer, props.dataSourceKey, request],
   );
 
   const openEditCollectionDrawer = useCallback(
@@ -1662,13 +1662,14 @@ function CollectionsPage(props: CollectionsPageProps) {
         ),
         async onOk() {
           try {
-            await ctx.api.resource('collections').destroy({
+            const resource = isMainDataSource ? 'collections' : `dataSources/${props.dataSourceKey}/collections`;
+            await ctx.api.resource(resource).destroy({
               filterByTk: keys,
               cascade,
             });
             setSelectedRowKeys([]);
             request.refresh();
-            ctx.dataSourceManager.getDataSource('main')?.reload();
+            ctx.dataSourceManager.getDataSource(props.dataSourceKey)?.reload();
           } catch (error) {
             notification.error({
               message: getErrorMessage(error, t('Delete failed')),
@@ -1678,7 +1679,7 @@ function CollectionsPage(props: CollectionsPageProps) {
         },
       });
     },
-    [ctx.api, ctx.dataSourceManager, modal, notification, request, t],
+    [ctx.api, ctx.dataSourceManager, isMainDataSource, modal, notification, props.dataSourceKey, request, t],
   );
 
   const handleSortCollection = useCallback(
@@ -1951,6 +1952,8 @@ function CollectionsPage(props: CollectionsPageProps) {
                       request.refresh();
                     }}
                   />
+                ) : allowCustomCollectionDeletion ? (
+                  <a onClick={() => handleDeleteCollections(record.name)}>{t('Delete')}</a>
                 ) : null}
               </>
             )}
@@ -2078,6 +2081,14 @@ function CollectionsPage(props: CollectionsPageProps) {
                 >
                   {t('Delete')}
                 </DeleteCollection>
+              ) : allowCustomCollectionDeletion ? (
+                <Button
+                  icon={<DeleteOutlined />}
+                  disabled={!selectedRowKeys.length}
+                  onClick={() => handleDeleteCollections(selectedRowKeys)}
+                >
+                  {t('Delete')}
+                </Button>
               ) : null}
               {allowCustomCollectionCreate && AddCollection ? (
                 <AddCollection
@@ -2087,6 +2098,28 @@ function CollectionsPage(props: CollectionsPageProps) {
                     request.refresh();
                   }}
                 />
+              ) : allowCustomCollectionCreate ? (
+                <Dropdown
+                  menu={{
+                    items: collectionTemplates.flatMap((template) => {
+                      const item = {
+                        key: template.name,
+                        label: compileLegacyTemplate(template.title, t),
+                      };
+                      return template.divider ? [{ type: 'divider' as const }, item] : [item];
+                    }),
+                    onClick: ({ key }) => {
+                      const template = collectionTemplates.find((item) => item.name === key);
+                      if (template) {
+                        openCreateCollectionDrawer(template);
+                      }
+                    },
+                  }}
+                >
+                  <Button type="primary" icon={<PlusOutlined />}>
+                    {t('Create collection')} <DownOutlined />
+                  </Button>
+                </Dropdown>
               ) : null}
             </>
           )}

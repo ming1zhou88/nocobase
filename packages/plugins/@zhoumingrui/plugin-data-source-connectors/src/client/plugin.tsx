@@ -18,17 +18,25 @@ export class PluginDataSourceConnectorsClient extends Plugin {
       name: 'mysql',
       label: tExpr('MySQL'),
       DataSourceSettingsForm: MySQLLegacySettingsForm,
+      allowCollectionCreate: true,
+      allowCollectionDeletion: true,
+      allowPhysicalFieldCreate: true,
     });
     manager.registerType('postgres', {
       name: 'postgres',
       label: tExpr('PostgreSQL'),
       DataSourceSettingsForm: PostgreSQLLegacySettingsForm,
+      allowCollectionCreate: true,
+      allowCollectionDeletion: true,
+      allowPhysicalFieldCreate: true,
     });
     manager.registerType('nocobase', {
       name: 'nocobase',
       label: tExpr('NocoBase'),
       DataSourceSettingsForm: NocoBaseLegacySettingsForm,
       disableConfigureFields: true,
+      allowCollectionCreate: true,
+      allowCollectionDeletion: true,
     });
   }
 }

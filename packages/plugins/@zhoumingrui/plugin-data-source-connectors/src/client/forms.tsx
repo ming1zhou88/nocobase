@@ -131,7 +131,7 @@ function SqlLegacySettingsForm(props: LegacySettingsFormProps & { dialect: 'mysq
     optionProperties.readOnly = {
       type: 'boolean',
       title: tExpr('Read only'),
-      default: true,
+      default: false,
       'x-decorator': 'FormItem',
       'x-component': 'Checkbox',
       description: tExpr('Disable this only when remote write operations are explicitly required.'),

@@ -23,13 +23,16 @@ export class PluginDataSourceConnectorsClientV2 extends Plugin<unknown, Applicat
         options: {
           port: 3306,
           addAllCollections: true,
-          readOnly: true,
+          readOnly: false,
           connectionTimeoutMs: 10_000,
           poolMax: 10,
         },
       },
       SettingsForm: MySQLSettingsForm,
       normalizeValues: normalizeConnectorValues,
+      allowCollectionCreate: true,
+      allowCollectionDeletion: true,
+      allowPhysicalFieldCreate: true,
     });
     manager.registerType('postgres', {
       label: String(this.t('PostgreSQL')),
@@ -41,13 +44,16 @@ export class PluginDataSourceConnectorsClientV2 extends Plugin<unknown, Applicat
           schema: 'public',
           ssl: { sslMode: 'disable' },
           addAllCollections: true,
-          readOnly: true,
+          readOnly: false,
           connectionTimeoutMs: 10_000,
           poolMax: 10,
         },
       },
       SettingsForm: PostgreSQLSettingsForm,
       normalizeValues: normalizeConnectorValues,
+      allowCollectionCreate: true,
+      allowCollectionDeletion: true,
+      allowPhysicalFieldCreate: true,
     });
     manager.registerType('nocobase', {
       label: String(this.t('NocoBase')),
@@ -65,6 +71,8 @@ export class PluginDataSourceConnectorsClientV2 extends Plugin<unknown, Applicat
       SettingsForm: NocoBaseSettingsForm,
       normalizeValues: normalizeConnectorValues,
       disableConfigureFields: true,
+      allowCollectionCreate: true,
+      allowCollectionDeletion: true,
     });
   }
 }

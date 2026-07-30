@@ -24,6 +24,7 @@ import {
   useCurrentAppInfo,
   useDataSourceManager,
   useFieldInterfaceOptions,
+  usePlugin,
   useRecord,
   useRequest,
   useResourceActionContext,
@@ -32,7 +33,8 @@ import { Button, Dropdown, MenuProps } from 'antd';
 import { cloneDeep } from 'lodash';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
+import PluginDatabaseConnectionsClient from '../../';
 import { ForeignKey } from './components';
 
 const getSchema = (schema: IField, record: any, compile) => {
@@ -206,6 +208,12 @@ export const AddCollectionField = (props) => {
 const AddFieldAction = (props) => {
   const { scope, getContainer, item: record, children, trigger, align, database } = props;
   const { getInterface, getTemplate, collections } = useCollectionManager_deprecated();
+  const plugin = usePlugin(PluginDatabaseConnectionsClient);
+  const location = useLocation();
+  const dataSourceType = new URLSearchParams(location.search).get('type');
+  const allowPhysicalFieldCreate = Boolean(
+    dataSourceType && plugin.types.get(dataSourceType)?.allowPhysicalFieldCreate,
+  );
   const [visible, setVisible] = useState(false);
   const [targetScope, setTargetScope] = useState();
   const [schema, setSchema] = useState({});
@@ -232,7 +240,7 @@ const AddFieldAction = (props) => {
     const { exclude, include } = availableFieldInterfaces || {};
     const optionArr = [];
     fieldOptions.forEach((v) => {
-      if (v.key === 'relation') {
+      if (v.key === 'relation' || allowPhysicalFieldCreate) {
         let children = [];
         if (include?.length) {
           include.forEach((k) => {
@@ -258,7 +266,7 @@ const AddFieldAction = (props) => {
       }
     });
     return optionArr;
-  }, [getTemplate, record]);
+  }, [allowPhysicalFieldCreate, fieldOptions, getTemplate, record]);
   const items = useMemo<MenuProps['items']>(() => {
     return getFieldOptions()
       .map((option) => {

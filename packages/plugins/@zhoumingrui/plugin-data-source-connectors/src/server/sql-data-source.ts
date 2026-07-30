@@ -199,6 +199,94 @@ export abstract class SqlDataSource extends DatabaseDataSource {
     }
   }
 
+  async createCollection(values: Record<string, unknown>) {
+    if (isReadOnly(this.options)) {
+      throw new Error('This external data source is configured as read-only');
+    }
+    if (typeof values.name !== 'string' || !values.name) {
+      throw new Error('Collection name is required');
+    }
+
+    const db = this.collectionManager.db;
+    if (db.hasCollection(values.name)) {
+      throw new Error(`Collection already exists: ${values.name}`);
+    }
+    const collection = db.collection({
+      ...values,
+      name: values.name,
+      schema: this.dialect === 'postgres' ? this.options.schema || 'public' : undefined,
+      introspected: true,
+      uiManageable: false,
+    } as CollectionOptions);
+    await collection.sync();
+    return collection.options;
+  }
+
+  async destroyCollection(filterByTk: string | string[], options: { cascade?: boolean } = {}) {
+    if (isReadOnly(this.options)) {
+      throw new Error('This external data source is configured as read-only');
+    }
+
+    const names = Array.isArray(filterByTk) ? filterByTk : [filterByTk];
+    for (const name of names) {
+      const collection = this.collectionManager.db.getCollection(name);
+      if (!collection) {
+        throw new Error(`Collection does not exist: ${name}`);
+      }
+      await collection.model.drop({ cascade: options.cascade });
+      this.collectionManager.db.removeCollection(name);
+    }
+  }
+
+  async createField(collectionName: string, values: Record<string, unknown>) {
+    if (isReadOnly(this.options)) {
+      throw new Error('This external data source is configured as read-only');
+    }
+    if (typeof values.name !== 'string' || !values.name) {
+      throw new Error('Field name is required');
+    }
+
+    const collection = this.collectionManager.db.getCollection(collectionName);
+    if (!collection) {
+      throw new Error(`Collection does not exist: ${collectionName}`);
+    }
+    if (collection.hasField(values.name)) {
+      throw new Error(`Field already exists: ${values.name}`);
+    }
+
+    collection.setField(values.name, values);
+    try {
+      await collection.sync();
+      return collection.getField(values.name).options;
+    } catch (error) {
+      collection.removeField(values.name);
+      throw error;
+    }
+  }
+
+  async destroyField(collectionName: string, fieldName: string) {
+    if (isReadOnly(this.options)) {
+      throw new Error('This external data source is configured as read-only');
+    }
+
+    const collection = this.collectionManager.db.getCollection(collectionName);
+    if (!collection) {
+      throw new Error(`Collection does not exist: ${collectionName}`);
+    }
+    const field = collection.getField(fieldName);
+    if (!field) {
+      throw new Error(`Field does not exist: ${fieldName}`);
+    }
+
+    collection.removeField(fieldName);
+    try {
+      await collection.sync();
+    } catch (error) {
+      collection.setField(fieldName, field.options);
+      throw error;
+    }
+  }
+
   async cleanCache() {
     const db = this.collectionManager.db;
     for (const collection of [...db.collections.values()]) {

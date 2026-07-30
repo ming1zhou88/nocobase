@@ -97,6 +97,25 @@ export class NocoBaseDataSource extends DatabaseDataSource<DatabaseIntrospector>
     });
   }
 
+  async createCollection(values: Record<string, unknown>) {
+    if (this.options.readOnly !== false) {
+      throw new Error('NocoBase data source is read-only');
+    }
+    const result = await this.remoteClient.createCollection(values);
+    await this.load();
+    return result;
+  }
+
+  async destroyCollection(filterByTk: string | string[], options: { cascade?: boolean } = {}) {
+    if (this.options.readOnly !== false) {
+      throw new Error('NocoBase data source is read-only');
+    }
+    const names = Array.isArray(filterByTk) ? filterByTk : [filterByTk];
+    const result = await this.remoteClient.destroyCollections(filterByTk, options.cascade);
+    names.forEach((name) => this.collectionManager.removeCollection(name));
+    return result;
+  }
+
   async close() {}
 
   static async testConnection(options: NocoBaseConnectorOptions) {

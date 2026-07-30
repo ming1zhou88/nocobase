@@ -11,7 +11,7 @@ import { DownOutlined, PlusOutlined } from '@ant-design/icons';
 import { ArrayTable } from '@formily/antd-v5';
 import { ISchema, useField, useForm } from '@formily/react';
 import { uid } from '@formily/shared';
-import { Button, Dropdown, MenuProps } from 'antd';
+import { App, Button, Dropdown, MenuProps } from 'antd';
 import { cloneDeep } from 'lodash';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -106,6 +106,8 @@ const getSchema = (schema, category, compile): ISchema => {
 };
 
 const useCreateCollection = (schema?: any) => {
+  const { message } = App.useApp();
+  const { t } = useTranslation();
   const form = useForm();
   const { refreshCM } = useCollectionManager_deprecated();
   const ctx = useActionContext();
@@ -139,6 +141,7 @@ const useCreateCollection = (schema?: any) => {
         await refreshCM();
       } catch (error) {
         field.data.loading = false;
+        message.error(error instanceof Error ? error.message : t('Operation failed'));
       }
     },
   };
@@ -171,7 +174,7 @@ export const AddCollectionAction = (props) => {
       });
     });
     return result;
-  }, [collectionTemplates]);
+  }, [collectionTemplates, compile]);
   const {
     state: { category },
   } = useResourceActionContext();
@@ -189,7 +192,7 @@ export const AddCollectionAction = (props) => {
       },
       items,
     };
-  }, [category, items]);
+  }, [category, compile, getTemplate, items]);
   return (
     <RecordProvider record={record}>
       <ActionContextProvider value={{ visible, setVisible }}>

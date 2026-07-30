@@ -11,9 +11,83 @@ import lodash from 'lodash';
 import { filterMatch } from '@nocobase/database';
 import _ from 'lodash';
 
+function normalizeCreatedCollectionFields(fields: unknown) {
+  if (!Array.isArray(fields)) {
+    return fields;
+  }
+
+  return fields.map((field) => {
+    if (!lodash.isPlainObject(field)) {
+      return field;
+    }
+    const fieldOptions = field as Record<string, unknown>;
+
+    if (fieldOptions.type === 'belongsTo') {
+      return { targetKey: 'id', ...fieldOptions };
+    }
+    if (fieldOptions.type === 'belongsToMany') {
+      return { sourceKey: 'id', targetKey: 'id', ...fieldOptions };
+    }
+    if (fieldOptions.type === 'hasMany' || fieldOptions.type === 'hasOne') {
+      return { sourceKey: 'id', ...fieldOptions };
+    }
+
+    return fieldOptions;
+  });
+}
+
 export default {
   name: 'dataSources.collections',
   actions: {
+    async create(ctx, next) {
+      const { associatedIndex: dataSourceKey, values } = ctx.action.params;
+      const dataSource = ctx.app.dataSourceManager.dataSources.get(dataSourceKey);
+      if (!dataSource || typeof dataSource.createCollection !== 'function') {
+        ctx.throw(400, `data source ${dataSourceKey} does not support creating collections`);
+      }
+
+      const createdCollection = await dataSource.createCollection(values);
+      const collectionOptions = lodash.isPlainObject(createdCollection) ? createdCollection : values;
+      const fields = normalizeCreatedCollectionFields(collectionOptions.fields || values.fields);
+
+      const collectionRecord = await ctx.db.getRepository('dataSourcesCollections').create({
+        values: {
+          ...values,
+          ...collectionOptions,
+          name: collectionOptions.name || values.name,
+          dataSourceKey,
+          fields,
+        },
+        updateAssociationValues: ['fields'],
+      });
+
+      const liveCollection = dataSource.collectionManager?.getCollection(collectionOptions.name || values.name);
+      if (liveCollection && Array.isArray(fields)) {
+        for (const field of fields) {
+          if (lodash.isPlainObject(field)) {
+            const fieldOptions = field as Record<string, unknown>;
+            if (typeof fieldOptions.name === 'string') {
+              liveCollection.setField(fieldOptions.name, fieldOptions);
+            }
+          }
+        }
+      }
+
+      ctx.body = collectionRecord.toJSON();
+      await next();
+    },
+
+    async destroy(ctx, next) {
+      const { associatedIndex: dataSourceKey, filterByTk, cascade } = ctx.action.params;
+      const dataSource = ctx.app.dataSourceManager.dataSources.get(dataSourceKey);
+      if (!dataSource || typeof dataSource.destroyCollection !== 'function') {
+        ctx.throw(400, `data source ${dataSourceKey} does not support deleting collections`);
+      }
+
+      ctx.body = await dataSource.destroyCollection(filterByTk, { cascade });
+      await next();
+    },
+
     async list(ctx, next) {
       const params = ctx.action.params;
 

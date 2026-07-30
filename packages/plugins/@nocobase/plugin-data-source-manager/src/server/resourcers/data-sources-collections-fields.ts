@@ -106,6 +106,12 @@ export default {
       const [dataSourceKey, collectionName] = collectionNameWithDataSourceKey.split('.');
       ensureFieldConfigureEnabled(ctx, dataSourceKey);
 
+      const dataSource = ctx.app.dataSourceManager.dataSources.get(dataSourceKey);
+      const relationTypes = new Set(['belongsTo', 'hasMany', 'hasOne', 'belongsToMany', 'belongsToArray']);
+      if (!relationTypes.has(values.type) && typeof dataSource?.createField === 'function') {
+        await dataSource.createField(collectionName, values);
+      }
+
       const mainDb = ctx.app.db;
 
       const name = values.name;
@@ -164,6 +170,13 @@ export default {
           dataSourceKey,
         },
       });
+
+      const dataSource = ctx.app.dataSourceManager.dataSources.get(dataSourceKey);
+      const relationTypes = new Set(['belongsTo', 'hasMany', 'hasOne', 'belongsToMany', 'belongsToArray']);
+      const fieldType = fieldRecord?.get('type') || fieldRecord?.type;
+      if (fieldType && !relationTypes.has(fieldType) && typeof dataSource?.destroyField === 'function') {
+        await dataSource.destroyField(collectionName, name);
+      }
 
       if (fieldRecord) {
         await fieldRecord.destroy();

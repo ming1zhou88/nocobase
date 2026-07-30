@@ -89,4 +89,45 @@ describe('NocoBaseRemoteClient', () => {
       }),
     );
   });
+
+  it('creates and destroys collections in the remote main data source', async () => {
+    mocks.post.mockResolvedValue({ data: { data: { name: 'orders' } } });
+    const client = new NocoBaseRemoteClient({
+      baseUrl: 'https://example.com',
+      apiToken: 'token',
+    });
+
+    await expect(client.createCollection({ name: 'orders', template: 'general' })).resolves.toEqual({
+      name: 'orders',
+    });
+    await client.destroyCollections(['orders'], true);
+
+    expect(mocks.post).toHaveBeenNthCalledWith(1, '/collections:create', {
+      values: { name: 'orders', template: 'general' },
+    });
+    expect(mocks.post).toHaveBeenNthCalledWith(2, '/collections:destroy', {
+      filterByTk: ['orders'],
+      cascade: true,
+    });
+  });
+
+  it('uses the remote external data source collection mutation endpoints', async () => {
+    mocks.post.mockResolvedValue({ data: { data: {} } });
+    const client = new NocoBaseRemoteClient({
+      baseUrl: 'https://example.com',
+      apiToken: 'token',
+      dataSourceKey: 'warehouse',
+    });
+
+    await client.createCollection({ name: 'orders' });
+    await client.destroyCollections('orders');
+
+    expect(mocks.post).toHaveBeenNthCalledWith(1, '/dataSources/warehouse/collections:create', {
+      values: { name: 'orders' },
+    });
+    expect(mocks.post).toHaveBeenNthCalledWith(2, '/dataSources/warehouse/collections:destroy', {
+      filterByTk: 'orders',
+      cascade: false,
+    });
+  });
 });
