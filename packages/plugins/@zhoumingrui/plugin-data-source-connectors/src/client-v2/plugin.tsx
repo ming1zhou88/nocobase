@@ -32,7 +32,6 @@ export class PluginDataSourceConnectorsClientV2 extends Plugin<unknown, Applicat
       normalizeValues: normalizeConnectorValues,
       allowCollectionCreate: true,
       allowCollectionDeletion: true,
-      allowPhysicalFieldCreate: true,
     });
     manager.registerType('postgres', {
       label: String(this.t('PostgreSQL')),
@@ -53,7 +52,6 @@ export class PluginDataSourceConnectorsClientV2 extends Plugin<unknown, Applicat
       normalizeValues: normalizeConnectorValues,
       allowCollectionCreate: true,
       allowCollectionDeletion: true,
-      allowPhysicalFieldCreate: true,
     });
     manager.registerType('nocobase', {
       label: String(this.t('NocoBase')),
