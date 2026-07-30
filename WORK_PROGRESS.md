@@ -270,3 +270,9 @@
 - 用户重新执行全量构建后，邮件中心声明阶段继续发现两项独立类型错误：workflow 邮箱选择器直接读取 `unknown.data`，以及 IMAP 接收时间仍可能为字符串却直接调用 `toISOString()`。
 - 邮箱列表现直接将未知响应交给既有 `dataOf<MailAccount[]>()` 递归解包，不改变服务端响应结构；IMAP 接收时间统一规范为有效 `Date`，无效日期安全回退为当前时间后再写库和生成工作流上下文。
 - 两个触及文件 ESLint 通过；未使用 `any`、类型忽略或不安全的强制属性访问，未由代理重复执行全量 build。
+
+### 2026-07-18 PG18 + pgvector 生产部署文档
+
+- 已扩充根目录 `deploy-readme.md`：提供 `pgvector/pgvector:pg18` 容器、PostgreSQL 18 持久化卷、回环端口绑定、`nocobase` 与 `nocobase_kb` 数据库、`vector` 扩展和 schema 权限的完整初始化流程。
+- 文档补充 NocoBase `.env`、`KB_PGVECTOR_PASSWORD`、向量数据库页面参数、宿主机连接验证，以及数据库不存在、`public` 权限不足、扩展未按数据库启用、连接到错误实例、容器网络和旧数据卷不会重新初始化等本次实际踩坑项。
+- 按用户确认，部署文档统一使用 Node.js 24；未执行任何服务器安装、数据库变更、build、dev、upgrade 或应用启停。
