@@ -167,6 +167,7 @@ export default class extends Instruction {
                 'x-component': 'WorkflowVariableInput',
                 'x-component-props': {
                   rows: 1,
+                  useTypedConstant: true,
                   placeholder: `{{t("Value", { ns: "${NAMESPACE}" })}}`,
                 },
                 required: true,

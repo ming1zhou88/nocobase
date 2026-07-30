@@ -217,7 +217,7 @@ export abstract class SqlDataSource extends DatabaseDataSource {
       schema: this.dialect === 'postgres' ? this.options.schema || 'public' : undefined,
       introspected: true,
       uiManageable: false,
-    } as CollectionOptions);
+    } as unknown as CollectionOptions);
     await collection.sync();
     return collection.options;
   }
