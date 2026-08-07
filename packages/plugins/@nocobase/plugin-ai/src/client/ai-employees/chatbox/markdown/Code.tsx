@@ -7,9 +7,9 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-import React from 'react';
-import { Card, Typography, Button, App } from 'antd';
-import { CopyOutlined } from '@ant-design/icons';
+import React, { useState } from 'react';
+import { Card, Typography, Button, App, Space, Tooltip } from 'antd';
+import { CodeOutlined, CopyOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
 import { lazy, useToken } from '@nocobase/client';
 import { useT } from '../../../locale';
 import { isSupportLanguage } from '../../built-in/utils';
@@ -22,7 +22,11 @@ const { CodeHighlight } = lazy(() => import('../../common/CodeHighlight'), 'Code
 export const CodeInternal: React.FC<{
   language: string;
   value: string;
-}> = ({ language, value, ...rest }) => <CodeHighlight {...rest} language={language} value={value} />;
+  height?: string;
+  showLineNumbers?: boolean;
+}> = ({ language, value, height, showLineNumbers, ...rest }) => (
+  <CodeHighlight {...rest} language={language} value={value} height={height} showLineNumbers={showLineNumbers} />
+);
 
 export const CodeBasic: React.FC<{
   children?: React.ReactNode;
@@ -34,6 +38,9 @@ export const CodeBasic: React.FC<{
   const { token } = useToken();
   const t = useT();
   const value = String(children).replace(/\n$/, '');
+  const lineCount = value.split('\n').length;
+  const collapsible = lineCount > 50;
+  const [expanded, setExpanded] = useState(!collapsible);
   const { message: antdMessage } = App.useApp();
   const copy = () => {
     navigator.clipboard.writeText(value);
@@ -43,7 +50,12 @@ export const CodeBasic: React.FC<{
   return match ? (
     <Card
       size="small"
-      title={language}
+      title={
+        <Space size={6}>
+          <CodeOutlined style={{ color: token.colorPrimary }} />
+          <span>{language}</span>
+        </Space>
+      }
       styles={{
         title: {
           fontSize: token.fontSize,
@@ -52,11 +64,35 @@ export const CodeBasic: React.FC<{
         body: {
           width: '100%',
           fontSize: token.fontSizeSM,
+          background: token.colorFillQuaternary,
         },
       }}
-      extra={<Button variant="link" color="default" size="small" onClick={copy} icon={<CopyOutlined />} />}
+      extra={
+        <Space size={4}>
+          {collapsible ? (
+            <Tooltip title={expanded ? t('Collapse') : t('Expand')}>
+              <Button
+                type="text"
+                size="small"
+                aria-label={expanded ? t('Collapse') : t('Expand')}
+                onClick={() => setExpanded((value) => !value)}
+                icon={expanded ? <UpOutlined /> : <DownOutlined />}
+              />
+            </Tooltip>
+          ) : null}
+          <Tooltip title={t('Copy')}>
+            <Button type="text" size="small" onClick={copy} icon={<CopyOutlined />} aria-label={t('Copy')} />
+          </Tooltip>
+        </Space>
+      }
     >
-      <CodeInternal {...rest} language={language} value={value} />
+      <CodeInternal
+        {...rest}
+        language={language}
+        value={value}
+        height={collapsible && !expanded ? '420px' : undefined}
+        showLineNumbers
+      />
     </Card>
   ) : (
     <Typography.Text code {...rest} className={className}>

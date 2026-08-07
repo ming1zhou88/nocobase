@@ -41,6 +41,7 @@ import { Context } from '@nocobase/actions';
 import { listAccessibleAIEmployees, serializeEmployeeSummary } from '../../ai/tools/sub-agents/shared';
 import { LLMStreamCached } from '../manager/llm-stream-manager';
 import { sanitizeAdditionalKwargsForToolCalls } from './tool-call-sanitizer';
+import { decodeAIUserConfig } from './user-config';
 
 export interface ModelRef {
   llmService: string;
@@ -832,6 +833,7 @@ export class AIEmployee {
         aiEmployee: this.employee.username,
       },
     });
+    const decodedUserConfig = decodeAIUserConfig(userConfig?.prompt);
 
     let background = '';
     if (this.systemMessage) {
@@ -880,7 +882,7 @@ export class AIEmployee {
       task: {
         background,
       },
-      personal: userConfig?.prompt,
+      personal: decodedUserConfig.prompt,
       environment: {
         database: this.db.sequelize.getDialect(),
         locale: this.ctx.getCurrentLocale?.() || 'en-US',

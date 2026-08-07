@@ -17,9 +17,17 @@ export type CodeHighlightProps = {
   value: string;
   height?: string;
   scrollToBottom?: boolean;
+  showLineNumbers?: boolean;
 };
 
-export const CodeHighlight: React.FC<CodeHighlightProps> = ({ language, value, height, scrollToBottom, ...rest }) => {
+export const CodeHighlight: React.FC<CodeHighlightProps> = ({
+  language,
+  value,
+  height,
+  scrollToBottom,
+  showLineNumbers = false,
+  ...rest
+}) => {
   const { isDarkTheme } = useGlobalTheme();
   const bottomRef = React.useRef<HTMLDivElement>(null);
 
@@ -30,7 +38,15 @@ export const CodeHighlight: React.FC<CodeHighlightProps> = ({ language, value, h
   }, [value, scrollToBottom]);
 
   const content = (
-    <SyntaxHighlighter {...rest} PreTag="div" language={language} style={isDarkTheme ? dark : defaultStyle}>
+    <SyntaxHighlighter
+      {...rest}
+      PreTag="div"
+      language={language}
+      style={isDarkTheme ? dark : defaultStyle}
+      showLineNumbers={showLineNumbers}
+      lineNumberStyle={{ minWidth: '2.5em', paddingRight: 12, color: isDarkTheme ? '#777' : '#999' }}
+      customStyle={{ margin: 0, background: 'transparent' }}
+    >
       {value}
     </SyntaxHighlighter>
   );

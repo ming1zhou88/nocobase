@@ -49,6 +49,7 @@ interface ChatBoxState {
   showDebugPanel: boolean;
   readonly: boolean;
   isShowSenderHint: boolean;
+  activeTemplateId: string | null;
 }
 
 interface ChatBoxActions {
@@ -77,6 +78,7 @@ interface ChatBoxActions {
   setShowDebugPanel: (show: boolean) => void;
   setReadonly: (readonly: boolean) => void;
   setShowSenderHint: (show: boolean) => void;
+  setActiveTemplateId: (id: string | null) => void;
 }
 
 const store = getOrCreateGlobalStore('@nocobase/plugin-ai/chat-box-store', () =>
@@ -107,6 +109,7 @@ const store = getOrCreateGlobalStore('@nocobase/plugin-ai/chat-box-store', () =>
     showDebugPanel: false,
     readonly: false,
     isShowSenderHint: false,
+    activeTemplateId: null,
 
     setOpen: (open) => set({ open, ...(open ? {} : { collapsed: false }) }),
     setExpanded: (expanded) => set({ expanded, ...(expanded ? { collapsed: false } : {}) }),
@@ -138,6 +141,7 @@ const store = getOrCreateGlobalStore('@nocobase/plugin-ai/chat-box-store', () =>
     setShowDebugPanel: (show) => set({ showDebugPanel: show }),
     setReadonly: (readonly) => set({ readonly }),
     setShowSenderHint: (isShowSenderHint) => set({ isShowSenderHint }),
+    setActiveTemplateId: (id) => set({ activeTemplateId: id }),
   })),
 );
 

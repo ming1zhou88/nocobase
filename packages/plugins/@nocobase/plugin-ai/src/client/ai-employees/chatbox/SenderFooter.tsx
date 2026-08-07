@@ -8,12 +8,14 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { Button, Divider, Flex, GetRef } from 'antd';
+import { Button, Divider, Dropdown, Flex, GetRef, Typography } from 'antd';
+import { MessageOutlined } from '@ant-design/icons';
 import { Upload } from './Upload';
 import { AddContextButton } from '../AddContextButton';
 import { useChat } from './hooks/useChat';
 import { useChatBoxStore } from './stores/chat-box';
 import { useChatConversationsStore } from './stores/chat-conversations';
+import { useT } from '../../locale';
 import _ from 'lodash';
 import { SearchSwitch } from './SearchSwitch';
 import { ModelSwitcher } from './ModelSwitcher';
@@ -23,12 +25,14 @@ export const SenderFooter: React.FC<{
   components: any;
   handleSubmit: (content: string) => void;
 }> = ({ components, handleSubmit }) => {
+  const t = useT();
   const { SendButton, LoadingButton } = components;
   const senderButtonRef = useRef<GetRef<typeof Button> | null>(null);
   const currentEmployee = useChatBoxStore.use.currentEmployee?.();
   const currentConversation = useChatConversationsStore.use.currentConversation();
   const chat = useChat(currentConversation);
   const readonly = useChatBoxStore.use.readonly();
+  const setActiveTemplateId = useChatBoxStore.use.setActiveTemplateId();
 
   const loading = chat.use.responseLoading();
   const addContextItems = chat.addContextItems;
@@ -57,6 +61,22 @@ export const SenderFooter: React.FC<{
   }, [senderRef, senderValue, contextItems]);
 
   const disabled = !currentEmployee || readonly;
+  const conversationTemplates = currentEmployee?.chatSettings?.conversationTemplates ?? [];
+
+  const templateMenuItems = conversationTemplates.map((tpl) => ({
+    key: tpl.id,
+    label: (
+      <div>
+        <Typography.Text strong>{tpl.title}</Typography.Text>
+        {tpl.description ? (
+          <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12, whiteSpace: 'normal' }}>
+            {tpl.description}
+          </Typography.Text>
+        ) : null}
+      </div>
+    ),
+    onClick: () => setActiveTemplateId(tpl.id),
+  }));
 
   return (
     <Flex justify="space-between" align="center">
@@ -69,6 +89,16 @@ export const SenderFooter: React.FC<{
         />
         <Upload disabled={disabled} />
         <SearchSwitch disabled={disabled} />
+        {conversationTemplates.length > 0 ? (
+          <Dropdown menu={{ items: templateMenuItems }} trigger={['click']} placement="topLeft">
+            <Button
+              type="text"
+              icon={<MessageOutlined />}
+              disabled={disabled}
+              aria-label={t('Conversation templates')}
+            />
+          </Dropdown>
+        ) : null}
         <AIEmployeeSwitcher disabled={readonly} />
         <ModelSwitcher disabled={disabled} />
       </Flex>

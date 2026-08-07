@@ -10,7 +10,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bubble } from '@ant-design/x';
 import { Spin, Layout, Divider, Button, Space, Typography } from 'antd';
-import { RightOutlined, DownOutlined, LoadingOutlined } from '@ant-design/icons';
+import { RightOutlined, DownOutlined, LoadingOutlined, RobotOutlined } from '@ant-design/icons';
 import { namespace, useT } from '../../locale';
 import { useApp, useToken } from '@nocobase/client';
 import { useChat } from './hooks/useChat';
@@ -269,9 +269,32 @@ export const Messages: React.FC = () => {
             left: '50%',
             transform: 'translate(-50%, -50%)',
             color: token.colorTextDescription,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 14,
+            textAlign: 'center',
           }}
         >
-          {t('Work with your AI crew')}
+          <div
+            aria-hidden="true"
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: '50%',
+              display: 'grid',
+              placeItems: 'center',
+              fontSize: 28,
+              color: token.colorPrimary,
+              background: `linear-gradient(135deg, ${token.colorPrimaryBg}, ${token.colorInfoBg})`,
+              boxShadow: `0 10px 30px ${token.colorFillSecondary}`,
+            }}
+          >
+            <RobotOutlined />
+          </div>
+          <Typography.Title level={5} style={{ margin: 0, color: token.colorText }}>
+            {t('Work with your AI crew')}
+          </Typography.Title>
         </div>
       )}
     </Layout.Content>

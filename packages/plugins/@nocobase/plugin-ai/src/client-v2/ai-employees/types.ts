@@ -27,6 +27,7 @@ export type AIEmployee = {
     systemPromptMode?: 'default' | 'raw' | 'none';
     enableSkills?: boolean;
     enableTools?: boolean;
+    conversationTemplates?: ConversationTemplate[];
     [key: string]: unknown;
   };
   builtIn?: boolean;
@@ -43,6 +44,22 @@ export type AIEmployee = {
       model?: string;
     }[];
   };
+};
+
+export type ConversationTemplate = {
+  id: string;
+  title: string;
+  description?: string;
+  content: string;
+  fields: {
+    key: string;
+    label: string;
+    type: 'text' | 'textarea' | 'number' | 'select' | 'boolean';
+    required?: boolean;
+    defaultValue?: string | number | boolean;
+    options?: string[];
+    placeholder?: string;
+  }[];
 };
 
 export type SkillSettings = {

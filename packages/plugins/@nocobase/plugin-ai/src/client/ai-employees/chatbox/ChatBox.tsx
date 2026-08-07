@@ -59,12 +59,19 @@ export const ChatBox: React.FC = () => {
 
   useEffect(() => {
     setChatBoxRef(chatBoxRef);
-  }, []);
+  }, [setChatBoxRef]);
 
   const { isMobileLayout } = useMobileLayout();
 
   return (
-    <Layout style={{ height: '100%', position: 'relative' }} ref={chatBoxRef}>
+    <Layout
+      style={{
+        height: '100%',
+        position: 'relative',
+        background: `linear-gradient(180deg, ${token.colorBgContainer} 0%, ${token.colorFillQuaternary} 100%)`,
+      }}
+      ref={chatBoxRef}
+    >
       {showConversations && !expanded && (
         <>
           <div
@@ -117,6 +124,9 @@ export const ChatBox: React.FC = () => {
             lineHeight: '48px',
             padding: '0 16px',
             borderBottom: `1px solid ${token.colorBorder}`,
+            boxShadow: `0 2px 12px ${token.colorFillQuaternary}`,
+            backdropFilter: 'blur(12px)',
+            zIndex: 2,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -297,8 +307,9 @@ export const ChatBoxMinimizeControl: React.FC = () => {
       api.destroy(key.current);
     }
 
+    const notificationKey = key.current;
     return () => {
-      api.destroy(key.current);
+      api.destroy(notificationKey);
     };
   }, [api, currentEmployeeAvatar, minimize, setMinimize, setOpen, t]);
 

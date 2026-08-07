@@ -13,6 +13,7 @@ import PluginAIServer from '../plugin';
 import type { AIEmployee } from '../../collections/ai-employees';
 import _ from 'lodash';
 import { EEFeatures } from '../manager/ai-feature-manager';
+import { decodeAIUserConfig, encodeAIUserConfig } from '../ai-employees/user-config';
 
 export const list = async (ctx: Context, next: Next) => {
   const { paginate } = ctx.action.params || {};
@@ -125,6 +126,7 @@ export const listByUser = async (ctx: Context, next: Next) => {
   });
 
   ctx.body = rows.map((row) => {
+    const userConfig = decodeAIUserConfig(row.userConfigs?.[0]?.prompt);
     const skillSettings: { skills: string[]; tools: { name: string; autoCall: boolean }[] } = row.skillSettings ?? {
       skills: [],
       tools: [],
@@ -152,7 +154,8 @@ export const listByUser = async (ctx: Context, next: Next) => {
       bio: row.bio,
       greeting: row.greeting,
       userConfig: {
-        prompt: row.userConfigs?.[0]?.prompt,
+        prompt: userConfig.prompt,
+        promptTemplates: userConfig.promptTemplates,
       },
       skillSettings,
       chatSettings: row.chatSettings,
@@ -166,12 +169,13 @@ export const listByUser = async (ctx: Context, next: Next) => {
 };
 
 export const updateUserPrompt = async (ctx: Context, next: Next) => {
-  const { aiEmployee, prompt } = ctx.action.params.values || {};
+  const { aiEmployee, prompt, promptTemplates } = ctx.action.params.values || {};
   if (!aiEmployee) {
     ctx.throw(400);
   }
   const user = ctx.auth.user;
   const repo = ctx.db.getRepository('usersAiEmployees');
+  const encodedPrompt = encodeAIUserConfig(prompt, promptTemplates);
   const record = await repo.findOne({
     filter: {
       userId: user.id,
@@ -179,16 +183,14 @@ export const updateUserPrompt = async (ctx: Context, next: Next) => {
     },
   });
   if (record) {
-    await record.update({
-      prompt,
-    });
+    await record.update({ prompt: encodedPrompt });
     return next();
   }
   await repo.create({
     values: {
       aiEmployee,
       userId: user.id,
-      prompt,
+      prompt: encodedPrompt,
       sort: null,
     },
   });

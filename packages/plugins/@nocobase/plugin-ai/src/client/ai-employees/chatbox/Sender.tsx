@@ -20,7 +20,11 @@ import { useChatMessageActions } from './hooks/useChatMessageActions';
 import { useChatBoxStore } from './stores/chat-box';
 import { useChatBoxActions } from './hooks/useChatBoxActions';
 import { useUploadFiles } from './hooks/useUploadFiles';
+import { useAIConfigRepository } from '../../repositories/hooks/useAIConfigRepository';
 import _ from 'lodash';
+import { PromptCommandMenu } from './PromptCommandMenu';
+import { TemplateSender } from './TemplateSender';
+import { getPromptTemplateSlotRanges, parsePromptTemplateSlotValues } from './prompt-template-slots';
 
 const useSendMessage = () => {
   const currentEmployee = useChatBoxStore.use.currentEmployee();
@@ -85,6 +89,10 @@ export const Sender: React.FC = () => {
   const setShowSenderHint = useChatBoxStore.use.setShowSenderHint();
   const setSenderRef = useChatBoxStore.use.setSenderRef();
   const readonly = useChatBoxStore.use.readonly();
+  const activeTemplateId = useChatBoxStore.use.activeTemplateId();
+  const setActiveTemplateId = useChatBoxStore.use.setActiveTemplateId();
+  const setCurrentEmployee = useChatBoxStore.use.setCurrentEmployee();
+  const aiConfigRepository = useAIConfigRepository();
 
   const setAttachments = chat.setAttachments;
   const uploadProps = useUploadFiles();
@@ -94,20 +102,89 @@ export const Sender: React.FC = () => {
   const { cancelRequest } = useChatMessageActions();
 
   const [value, setValue] = useState(senderValue);
+  const [slotParts, setSlotParts] = useState<string[] | null>(null);
+  const activeSlotIndexRef = useRef(0);
+
+  const getTextarea = () => senderRef.current?.nativeElement.querySelector('textarea');
+  const selectSlot = (index: number, currentValue: string) => {
+    if (!slotParts) {
+      return;
+    }
+    const values = parsePromptTemplateSlotValues(slotParts, currentValue);
+    if (!values) {
+      return;
+    }
+    const ranges = getPromptTemplateSlotRanges(slotParts, values);
+    const range = ranges[index];
+    if (!range) {
+      return;
+    }
+    activeSlotIndexRef.current = index;
+    requestAnimationFrame(() => {
+      const textarea = getTextarea();
+      textarea?.focus();
+      textarea?.setSelectionRange(range.start, range.end);
+    });
+  };
+
+  const applyPromptTemplate = (nextValue: string, nextSlotParts?: string[]) => {
+    setValue(nextValue);
+    setSlotParts(nextSlotParts ?? null);
+    activeSlotIndexRef.current = 0;
+    if (nextSlotParts) {
+      requestAnimationFrame(() => {
+        const values = parsePromptTemplateSlotValues(nextSlotParts, nextValue) ?? [];
+        const firstRange = getPromptTemplateSlotRanges(nextSlotParts, values)[0];
+        const textarea = getTextarea();
+        textarea?.focus();
+        if (firstRange) {
+          textarea?.setSelectionRange(firstRange.start, firstRange.end);
+        }
+      });
+    }
+  };
 
   useEffect(() => {
     setSenderRef(senderRef);
-  }, []);
+  }, [setSenderRef]);
 
   useEffect(() => {
     if (value !== senderValue) {
       setSenderValue(value);
     }
-  }, [value]);
+  }, [senderValue, setSenderValue, value]);
 
   useEffect(() => {
     setValue(senderValue);
+    if (!senderValue) {
+      setSlotParts(null);
+    }
   }, [senderValue]);
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!slotParts) {
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setSlotParts(null);
+      setValue('');
+      return;
+    }
+    if (event.key !== 'Tab') {
+      return;
+    }
+    event.preventDefault();
+    const slotCount = slotParts.length - 1;
+    const offset = event.shiftKey ? -1 : 1;
+    const nextIndex = (activeSlotIndexRef.current + offset + slotCount) % slotCount;
+    selectSlot(nextIndex, value);
+  };
+
+  const submitMessage = (content: string) => {
+    setSlotParts(null);
+    handleSubmit(content);
+  };
 
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData.items;
@@ -191,12 +268,47 @@ export const Sender: React.FC = () => {
     }
   };
 
+  const activeTemplate = activeTemplateId
+    ? currentEmployee?.chatSettings?.conversationTemplates?.find((tpl) => tpl.id === activeTemplateId)
+    : null;
+
+  if (activeTemplate) {
+    return (
+      <TemplateSender
+        template={activeTemplate}
+        onSubmit={(content) => {
+          submitMessage(content);
+          setActiveTemplateId(null);
+        }}
+        onCancel={() => setActiveTemplateId(null)}
+        disabled={responseLoading}
+      />
+    );
+  }
+
   return (
     <div
       style={{
         margin: '8px 16px',
+        position: 'relative',
       }}
     >
+      <PromptCommandMenu
+        value={value}
+        onApply={applyPromptTemplate}
+        onSelectConversationTemplate={async (tpl) => {
+          setValue('');
+          // Refresh employee data to ensure template content is up-to-date
+          if (currentEmployee?.username) {
+            const employees = await aiConfigRepository.refreshAIEmployees();
+            const fresh = employees.find((e) => e.username === currentEmployee.username);
+            if (fresh) {
+              setCurrentEmployee(fresh);
+            }
+          }
+          setActiveTemplateId(tpl.id);
+        }}
+      />
       <AntSender
         // components={{
         //   input: VariableInput,
@@ -204,20 +316,23 @@ export const Sender: React.FC = () => {
         className={senderClassName}
         value={value}
         ref={senderRef}
-        onChange={(value) => {
-          setValue(value);
+        onChange={(nextValue) => {
+          if (!slotParts || parsePromptTemplateSlotValues(slotParts, nextValue)) {
+            setValue(nextValue);
+          }
         }}
+        onKeyDown={handleKeyDown}
         onPaste={handlePaste}
-        onSubmit={handleSubmit}
+        onSubmit={submitMessage}
         onCancel={cancelRequest}
         onBlur={() => {
           setShowSenderHint(false);
         }}
         header={<SenderHeader />}
         loading={responseLoading}
-        footer={({ components }) => <SenderFooter components={components} handleSubmit={handleSubmit} />}
+        footer={({ components }) => <SenderFooter components={components} handleSubmit={submitMessage} />}
         disabled={!currentEmployee || readonly}
-        placeholder={t('Enter your question')}
+        placeholder={t('Enter your question or type / for templates')}
         actions={false}
         autoSize={{ minRows: 2, maxRows: 8 }}
       />

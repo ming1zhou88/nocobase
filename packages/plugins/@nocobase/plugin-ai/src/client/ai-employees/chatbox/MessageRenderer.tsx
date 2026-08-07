@@ -115,14 +115,24 @@ const AIMessageRenderer: React.FC<{
   msg: Message['content'];
   toolInlineActions?: React.ReactNode;
 }> = React.memo(({ msg, toolInlineActions }) => {
+  const { token } = useToken();
+  const bubbleContentStyle = {
+    width: '100%',
+    minHeight: 0,
+    padding: '12px 14px',
+    borderRadius: token.borderRadiusLG,
+    background: token.colorBgContainer,
+    boxShadow: `0 4px 18px ${token.colorFillSecondary}`,
+  };
+
   switch (msg.type) {
     case 'greeting':
       return (
         <Bubble
-          content={msg.content}
-          style={{
-            marginBottom: '8px',
-          }}
+          styles={{ content: bubbleContentStyle }}
+          variant="borderless"
+          content={<Markdown message={msg} />}
+          style={{ marginBottom: 8 }}
         />
       );
     default:
@@ -130,8 +140,7 @@ const AIMessageRenderer: React.FC<{
         <Bubble
           styles={{
             content: {
-              width: '100%',
-              minHeight: 0,
+              ...bubbleContentStyle,
             },
           }}
           variant="borderless"
@@ -168,8 +177,8 @@ export const AIMessage: React.FC<{
     color: token.colorTextSecondary,
     fontSize: token.fontSizeSM,
   };
-  const copy = () => {
-    navigator.clipboard.writeText(msg.content);
+  const copy = async () => {
+    await navigator.clipboard.writeText(msg.content);
     message.success(t('Copied'));
   };
 
@@ -207,13 +216,17 @@ export const AIMessage: React.FC<{
           />
         )}
         {typeof msg.content === 'string' && msg.content && (
-          <Button
-            color="default"
-            variant="text"
-            size="small"
-            style={footerButtonStyle}
-            icon={<CopyOutlined style={footerIconStyle} onClick={copy} />}
-          />
+          <Tooltip title={t('Copy response')}>
+            <Button
+              color="default"
+              variant="text"
+              size="small"
+              aria-label={t('Copy response')}
+              style={footerButtonStyle}
+              icon={<CopyOutlined style={footerIconStyle} />}
+              onClick={copy}
+            />
+          </Tooltip>
         )}
       </Space>
     ) : null;
@@ -389,7 +402,7 @@ export const ErrorMessage: React.FC<{
         important: msg.content,
       });
     }
-  }, [msg]);
+  }, [currentConversation, currentEmployee, msg, resendMessages]);
 
   return (
     showAlert && (

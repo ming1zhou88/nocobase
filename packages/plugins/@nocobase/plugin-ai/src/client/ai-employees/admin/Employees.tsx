@@ -35,6 +35,7 @@ import {
   useDeleteActionProps,
 } from './hooks';
 import { KnowledgeBaseSettings } from './KnowledgeBaseSettings';
+import { ConversationTemplatesSettings } from './ConversationTemplatesSettings';
 import { CheckOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { EnableSwitch } from './EnableSwitch';
 import { ToolSettings } from './ToolsSettings';
@@ -108,6 +109,12 @@ const AIEmployeeForm: React.FC<{
               },
             ]
           : []),
+        {
+          key: 'conversationTemplates',
+          label: t('Conversation templates'),
+          children: <ConversationTemplatesSettings />,
+          forceRender: true,
+        },
       ]}
     />
   );
