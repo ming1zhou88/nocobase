@@ -20,6 +20,7 @@ import { Form } from './Form';
 import { App, Button, Tooltip } from 'antd';
 import { BulbOutlined, CopyOutlined } from '@ant-design/icons';
 import { useT } from '../../../locale';
+import { copyToClipboard } from '../utils';
 
 const { Echarts } = lazy(() => import('./ECharts'), 'Echarts');
 
@@ -29,7 +30,7 @@ const CopyableSummary: React.FC<React.BlockquoteHTMLAttributes<HTMLQuoteElement>
   const { message } = App.useApp();
   const contentRef = useRef<HTMLDivElement>(null);
   const copy = async () => {
-    await navigator.clipboard.writeText(contentRef.current?.innerText ?? '');
+    await copyToClipboard(contentRef.current?.innerText ?? '');
     message.success(t('Copied'));
   };
 

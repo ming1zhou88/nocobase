@@ -14,6 +14,7 @@ import { lazy } from '@nocobase/client';
 import { FlowModelContext, useFlowContext, useFlowViewContext } from '@nocobase/flow-engine';
 import { useChat } from '../../chatbox/hooks/useChat';
 import { useChatConversationsStore } from '../../chatbox/stores/chat-conversations';
+import { copyToClipboard } from '../../chatbox/utils';
 import { useT } from '../../../locale';
 
 const { CodeHighlight } = lazy(() => import('../../common/CodeHighlight'), 'CodeHighlight');
@@ -41,7 +42,7 @@ export const Code = (props: any) => {
     .replace(/\n$/, '');
   const { message: antdMessage } = App.useApp();
   const copy = () => {
-    navigator.clipboard.writeText(value);
+    copyToClipboard(value);
     antdMessage.success(t('Copied'));
   };
 

@@ -24,6 +24,7 @@ import { useChatBoxStore } from './stores/chat-box';
 import { useChatConversationsStore } from './stores/chat-conversations';
 import { aiDebugLogger, LogEntry, LogType } from '../../debug-logger';
 import { VirtualList, VirtualListRef } from './VirtualList';
+import { copyToClipboard } from './utils';
 
 const { Text } = Typography;
 const { Search } = Input;
@@ -88,7 +89,7 @@ const LogItem: React.FC<LogItemProps> = ({ log, expanded, onToggleExpand }) => {
 
   const handleCopy = () => {
     try {
-      navigator.clipboard.writeText(JSON.stringify(log.data, null, 2));
+      copyToClipboard(JSON.stringify(log.data, null, 2));
       message.success('Copied to clipboard');
     } catch {
       message.error('Failed to copy');

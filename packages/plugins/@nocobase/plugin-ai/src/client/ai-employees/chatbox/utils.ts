@@ -147,6 +147,29 @@ const PLACEHOLDER_MAP = [
 ];
 export const UNKNOWN_FILE_ICON = publicPath + 'file-placeholder/unknown-200-200.png';
 
+/**
+ * Copy text to clipboard with fallback for non-secure contexts (HTTP)
+ * where navigator.clipboard is undefined.
+ */
+export async function copyToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    document.execCommand('copy');
+  } catch {
+    // ignore
+  }
+  document.body.removeChild(textarea);
+}
+
 export function getFileIconByExt(fileName: string): string {
   for (const item of PLACEHOLDER_MAP) {
     if (item.ext.test(fileName)) {

@@ -23,6 +23,7 @@ import { useChatMessageActions } from './hooks/useChatMessageActions';
 import { useChatBoxStore } from './stores/chat-box';
 import { useChat } from './hooks/useChat';
 import { useChatBoxActions } from './hooks/useChatBoxActions';
+import { copyToClipboard } from './utils';
 import _ from 'lodash';
 import { useAIConfigRepository } from '../../repositories/hooks/useAIConfigRepository';
 import { observer } from '@nocobase/flow-engine';
@@ -178,7 +179,7 @@ export const AIMessage: React.FC<{
     fontSize: token.fontSizeSM,
   };
   const copy = async () => {
-    await navigator.clipboard.writeText(msg.content);
+    await copyToClipboard(msg.content);
     message.success(t('Copied'));
   };
 
@@ -288,7 +289,7 @@ export const UserMessage: React.FC<{
   const { startEditingMessage } = useChatMessageActions();
 
   const copy = () => {
-    navigator.clipboard.writeText(msg.content);
+    copyToClipboard(msg.content);
     message.success(t('Copied'));
   };
   const items = msg.attachments?.map((item, index) => ({

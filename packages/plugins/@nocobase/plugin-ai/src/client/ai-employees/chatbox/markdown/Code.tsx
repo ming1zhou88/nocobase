@@ -16,6 +16,7 @@ import { isSupportLanguage } from '../../built-in/utils';
 import { Code as AICoding } from '../../ai-coding/markdown/Code';
 import { useChat } from '../hooks/useChat';
 import { useChatConversationsStore } from '../stores/chat-conversations';
+import { copyToClipboard } from '../utils';
 
 const { CodeHighlight } = lazy(() => import('../../common/CodeHighlight'), 'CodeHighlight');
 
@@ -43,7 +44,7 @@ export const CodeBasic: React.FC<{
   const [expanded, setExpanded] = useState(!collapsible);
   const { message: antdMessage } = App.useApp();
   const copy = () => {
-    navigator.clipboard.writeText(value);
+    copyToClipboard(value);
     antdMessage.success(t('Copied'));
   };
 
