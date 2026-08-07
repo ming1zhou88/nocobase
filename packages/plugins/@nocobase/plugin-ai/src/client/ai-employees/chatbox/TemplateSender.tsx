@@ -264,7 +264,7 @@ export const TemplateSender: React.FC<{
       </div>
 
       <Flex justify="flex-end" align="center" style={{ marginTop: 8 }}>
-        <Text type="tertiary" style={{ fontSize: token.fontSizeSM, marginRight: 8 }}>
+        <Text type="secondary" style={{ fontSize: token.fontSizeSM, marginRight: 8 }}>
           {isComplete ? t('Press Enter to send') : t('Fill in required fields')}
         </Text>
         <Button

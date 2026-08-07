@@ -18,6 +18,7 @@ export type AIEmployee = {
   greeting?: string;
   userConfig?: {
     prompt?: string;
+    promptTemplates?: PromptTemplate[];
   };
   skillSettings?: {
     tools?: { name: string; autoCall?: boolean }[];
@@ -60,6 +61,25 @@ export type ConversationTemplate = {
     options?: string[];
     placeholder?: string;
   }[];
+};
+
+export type PromptTemplate = {
+  id: string;
+  name: string;
+  shortcut?: string;
+  description?: string;
+  content: string;
+  fields: PromptTemplateField[];
+};
+
+export type PromptTemplateField = {
+  key: string;
+  label: string;
+  type: 'text' | 'textarea' | 'number' | 'select' | 'boolean';
+  required?: boolean;
+  defaultValue?: string | number | boolean;
+  options?: string[];
+  placeholder?: string;
 };
 
 export type SkillSettings = {
