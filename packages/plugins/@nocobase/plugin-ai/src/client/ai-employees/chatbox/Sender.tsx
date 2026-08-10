@@ -24,7 +24,6 @@ import { useAIConfigRepository } from '../../repositories/hooks/useAIConfigRepos
 import _ from 'lodash';
 import { PromptCommandMenu } from './PromptCommandMenu';
 import { TemplateSender } from './TemplateSender';
-import { getPromptTemplateSlotRanges, parsePromptTemplateSlotValues } from './prompt-template-slots';
 
 const useSendMessage = () => {
   const currentEmployee = useChatBoxStore.use.currentEmployee();
@@ -102,47 +101,6 @@ export const Sender: React.FC = () => {
   const { cancelRequest } = useChatMessageActions();
 
   const [value, setValue] = useState(senderValue);
-  const [slotParts, setSlotParts] = useState<string[] | null>(null);
-  const activeSlotIndexRef = useRef(0);
-
-  const getTextarea = () => senderRef.current?.nativeElement.querySelector('textarea');
-  const selectSlot = (index: number, currentValue: string) => {
-    if (!slotParts) {
-      return;
-    }
-    const values = parsePromptTemplateSlotValues(slotParts, currentValue);
-    if (!values) {
-      return;
-    }
-    const ranges = getPromptTemplateSlotRanges(slotParts, values);
-    const range = ranges[index];
-    if (!range) {
-      return;
-    }
-    activeSlotIndexRef.current = index;
-    requestAnimationFrame(() => {
-      const textarea = getTextarea();
-      textarea?.focus();
-      textarea?.setSelectionRange(range.start, range.end);
-    });
-  };
-
-  const applyPromptTemplate = (nextValue: string, nextSlotParts?: string[]) => {
-    setValue(nextValue);
-    setSlotParts(nextSlotParts ?? null);
-    activeSlotIndexRef.current = 0;
-    if (nextSlotParts) {
-      requestAnimationFrame(() => {
-        const values = parsePromptTemplateSlotValues(nextSlotParts, nextValue) ?? [];
-        const firstRange = getPromptTemplateSlotRanges(nextSlotParts, values)[0];
-        const textarea = getTextarea();
-        textarea?.focus();
-        if (firstRange) {
-          textarea?.setSelectionRange(firstRange.start, firstRange.end);
-        }
-      });
-    }
-  };
 
   useEffect(() => {
     setSenderRef(senderRef);
@@ -156,33 +114,9 @@ export const Sender: React.FC = () => {
 
   useEffect(() => {
     setValue(senderValue);
-    if (!senderValue) {
-      setSlotParts(null);
-    }
   }, [senderValue]);
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!slotParts) {
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      setSlotParts(null);
-      setValue('');
-      return;
-    }
-    if (event.key !== 'Tab') {
-      return;
-    }
-    event.preventDefault();
-    const slotCount = slotParts.length - 1;
-    const offset = event.shiftKey ? -1 : 1;
-    const nextIndex = (activeSlotIndexRef.current + offset + slotCount) % slotCount;
-    selectSlot(nextIndex, value);
-  };
-
   const submitMessage = (content: string) => {
-    setSlotParts(null);
     handleSubmit(content);
   };
 
@@ -295,7 +229,6 @@ export const Sender: React.FC = () => {
     >
       <PromptCommandMenu
         value={value}
-        onApply={applyPromptTemplate}
         onSelectConversationTemplate={async (tpl) => {
           setValue('');
           // Refresh employee data to ensure template content is up-to-date
@@ -316,12 +249,7 @@ export const Sender: React.FC = () => {
         className={senderClassName}
         value={value}
         ref={senderRef}
-        onChange={(nextValue) => {
-          if (!slotParts || parsePromptTemplateSlotValues(slotParts, nextValue)) {
-            setValue(nextValue);
-          }
-        }}
-        onKeyDown={handleKeyDown}
+        onChange={setValue}
         onPaste={handlePaste}
         onSubmit={submitMessage}
         onCancel={cancelRequest}

@@ -79,8 +79,8 @@ export const SenderFooter: React.FC<{
   }));
 
   return (
-    <Flex justify="space-between" align="center">
-      <Flex gap="middle" align="center">
+    <Flex justify="space-between" align="center" gap="small">
+      <Flex gap="middle" align="center" style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
         <AddContextButton
           onAdd={addContextItems}
           onRemove={removeContextItem}
@@ -102,7 +102,7 @@ export const SenderFooter: React.FC<{
         <AIEmployeeSwitcher disabled={readonly} />
         <ModelSwitcher disabled={disabled} />
       </Flex>
-      <Flex align="center" gap="middle">
+      <Flex align="center" gap="middle" style={{ flex: 'none' }}>
         {loading ? (
           <LoadingButton type="default" />
         ) : (

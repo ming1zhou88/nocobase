@@ -7,7 +7,7 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Flex, Input, Tabs, Tooltip, Typography } from 'antd';
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { useForm } from '@formily/react';
@@ -24,6 +24,11 @@ const TemplateEditor: React.FC<{
   const t = useT();
   return (
     <Flex vertical gap={10} style={{ padding: '4px 0' }}>
+      <Input
+        value={template.title}
+        placeholder={t('Template title')}
+        onChange={(e) => onUpdate({ title: e.target.value })}
+      />
       <Input
         value={template.description}
         placeholder={t('Template description')}
@@ -48,21 +53,45 @@ const TemplateTabLabel: React.FC<{
   title: string;
   active: boolean;
   onRename: (next: string) => void;
-}> = ({ title, active, onRename }) => {
+  onActivate: () => void;
+}> = ({ title, active, onRename, onActivate }) => {
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
 
+  useEffect(() => {
+    setDraft(title);
+  }, [title]);
+
+  useEffect(() => {
+    if (!active && editing) {
+      setEditing(false);
+      setDraft(title);
+    }
+  }, [active, editing, title]);
+
   const startEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
+    onActivate();
     setDraft(title);
     setEditing(true);
   };
 
-  const commit = () => {
+  const cancel = () => {
+    setDraft(title);
     setEditing(false);
+  };
+
+  const commit = () => {
     const next = draft.trim();
-    if (next && next !== title) onRename(next);
+    if (!next) {
+      cancel();
+      return;
+    }
+    if (next !== title) {
+      onRename(next);
+    }
+    setEditing(false);
   };
 
   if (editing) {
@@ -72,9 +101,16 @@ const TemplateTabLabel: React.FC<{
         autoFocus
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
         onPressEnter={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            cancel();
+          }
+        }}
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
         style={{ width: 160 }}
       />
     );
@@ -83,27 +119,27 @@ const TemplateTabLabel: React.FC<{
   return (
     <Flex gap={4} align="center" style={{ maxWidth: 220 }}>
       <span
+        onDoubleClick={startEdit}
         style={{
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
           maxWidth: 180,
+          cursor: 'text',
         }}
       >
         {title || t('Untitled')}
       </span>
-      {active ? (
-        <Tooltip title={t('Rename')}>
-          <Button
-            type="text"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={startEdit}
-            style={{ padding: '0 2px' }}
-            aria-label={t('Rename')}
-          />
-        </Tooltip>
-      ) : null}
+      <Tooltip title={t('Rename')}>
+        <Button
+          type="text"
+          size="small"
+          icon={<EditOutlined />}
+          onClick={startEdit}
+          style={{ padding: '0 2px' }}
+          aria-label={t('Rename')}
+        />
+      </Tooltip>
     </Flex>
   );
 };
@@ -155,6 +191,7 @@ export const ConversationTemplatesSettings: React.FC = observer(() => {
         title={template.title}
         active={activeKey === template.id}
         onRename={(next) => updateTemplate(template.id, { title: next })}
+        onActivate={() => setActiveKey(template.id)}
       />
     ),
     children: (

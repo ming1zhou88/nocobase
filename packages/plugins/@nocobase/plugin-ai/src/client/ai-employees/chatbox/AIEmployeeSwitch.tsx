@@ -82,17 +82,22 @@ export const AIEmployeeSwitcher: React.FC<{ disabled?: boolean }> = observer(({ 
         height: 28,
         padding: '0 8px',
         cursor: 'pointer',
+        maxWidth: 140,
+        minWidth: 0,
+        flexShrink: 1,
         userSelect: 'none',
       }}
     >
       {currentEmployee ? <Avatar shape="circle" size={20} src={avatars(currentEmployee.avatar)} /> : null}
       <span
+        title={currentLabel}
         style={{
           color: hasEmployees ? token.colorText : token.colorError,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
-          maxWidth: 160,
+          minWidth: 0,
+          maxWidth: 100,
         }}
       >
         {currentLabel}

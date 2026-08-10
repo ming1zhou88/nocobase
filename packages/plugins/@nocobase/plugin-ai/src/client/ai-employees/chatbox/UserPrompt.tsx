@@ -10,26 +10,10 @@
 import React, { useEffect, useState } from 'react';
 import { useAPIClient, useMobileLayout, useToken } from '@nocobase/client';
 import { useT } from '../../locale';
-import {
-  Alert,
-  Button,
-  Popover,
-  Card,
-  App,
-  Typography,
-  Tooltip,
-  Input,
-  Space,
-  Modal,
-  Tabs,
-  Select,
-  Switch,
-  Flex,
-} from 'antd';
-import { DeleteOutlined, InfoCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { Button, Popover, Card, App, Typography, Tooltip, Input, Space, Modal, Tabs } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
 import { useChatBoxStore } from './stores/chat-box';
 import { useAIConfigRepository } from '../../repositories/hooks/useAIConfigRepository';
-import type { PromptTemplate, PromptTemplateField, PromptTemplateFieldType } from '../types';
 
 export const UserPrompt: React.FC = () => {
   const t = useT();
@@ -37,71 +21,22 @@ export const UserPrompt: React.FC = () => {
   const { isMobileLayout } = useMobileLayout();
   const { message } = App.useApp();
   const api = useAPIClient();
-  const currentEmployee = useChatBoxStore.use.currentEmployee();
+  const currentEmployeeSelector = useChatBoxStore.use.currentEmployee;
+  const currentEmployee = currentEmployeeSelector ? currentEmployeeSelector() : undefined;
   const setCurrentEmployee = useChatBoxStore.use.setCurrentEmployee();
   const aiConfigRepository = useAIConfigRepository();
   const [desktopOpen, setDesktopOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [prompt, setPrompt] = useState('');
-  const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
 
   const open = isMobileLayout ? mobileOpen : desktopOpen;
 
   useEffect(() => {
     if (open) {
       setPrompt(currentEmployee?.userConfig?.prompt ?? '');
-      setPromptTemplates(currentEmployee?.userConfig?.promptTemplates ?? []);
     }
-  }, [open, currentEmployee?.userConfig?.prompt, currentEmployee?.userConfig?.promptTemplates]);
-
-  const updateTemplate = (id: string, values: Partial<PromptTemplate>) => {
-    setPromptTemplates((templates) =>
-      templates.map((template) => (template.id === id ? { ...template, ...values } : template)),
-    );
-  };
-
-  const updateTemplateField = (templateId: string, fieldKey: string, values: Partial<PromptTemplateField>) => {
-    setPromptTemplates((templates) =>
-      templates.map((template) =>
-        template.id === templateId
-          ? {
-              ...template,
-              fields: template.fields.map((field) => (field.key === fieldKey ? { ...field, ...values } : field)),
-            }
-          : template,
-      ),
-    );
-  };
-
-  const addTemplate = () => {
-    const id = `prompt-${Date.now()}`;
-    setPromptTemplates((templates) => [
-      ...templates,
-      {
-        id,
-        name: t('New prompt template'),
-        shortcut: '',
-        description: '',
-        content: '',
-        fields: [],
-      },
-    ]);
-  };
-
-  const addTemplateField = (templateId: string) => {
-    const key = `field_${Date.now()}`;
-    setPromptTemplates((templates) =>
-      templates.map((template) =>
-        template.id === templateId
-          ? {
-              ...template,
-              fields: [...template.fields, { key, label: t('New field'), type: 'text' }],
-            }
-          : template,
-      ),
-    );
-  };
+  }, [open, currentEmployee?.userConfig?.prompt]);
 
   const closeEditor = () => {
     if (isMobileLayout) {
@@ -115,25 +50,12 @@ export const UserPrompt: React.FC = () => {
     if (!currentEmployee) {
       return;
     }
-    const invalidTemplate = promptTemplates.find(
-      (template) =>
-        !template.name.trim() ||
-        !template.content.trim() ||
-        template.fields.some((field) => !field.key.trim() || !field.label.trim()) ||
-        new Set(template.fields.map((field) => field.key.trim())).size !== template.fields.length,
-    );
-    const shortcuts = promptTemplates.map((template) => template.shortcut?.trim()).filter(Boolean);
-    if (invalidTemplate || new Set(shortcuts).size !== shortcuts.length) {
-      message.error(t('Complete the template and ensure field keys are unique'));
-      return;
-    }
     setSaving(true);
     try {
       await api.resource('aiEmployees').updateUserPrompt({
         values: {
           aiEmployee: currentEmployee.username,
           prompt,
-          promptTemplates,
         },
       });
       await aiConfigRepository.refreshAIEmployees();
@@ -142,7 +64,6 @@ export const UserPrompt: React.FC = () => {
         userConfig: {
           ...prev.userConfig,
           prompt,
-          promptTemplates,
         },
       }));
       message.success(t('Saved successfully'));
@@ -194,179 +115,6 @@ export const UserPrompt: React.FC = () => {
                   placeholder={t('Personalized prompt')}
                 />
               </>
-            ),
-          },
-          {
-            key: 'templates',
-            label: t('Prompt templates'),
-            children: (
-              <Flex vertical gap={12}>
-                <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
-                  {t('Prompt template description')}
-                </Typography.Paragraph>
-                {promptTemplates.map((template) => (
-                  <Card
-                    key={template.id}
-                    size="small"
-                    title={
-                      <Input
-                        value={template.name}
-                        aria-label={t('Template name')}
-                        onChange={(event) => updateTemplate(template.id, { name: event.target.value })}
-                      />
-                    }
-                    extra={
-                      <Button
-                        type="text"
-                        danger
-                        aria-label={t('Delete template')}
-                        icon={<DeleteOutlined />}
-                        onClick={() =>
-                          setPromptTemplates((templates) => templates.filter((item) => item.id !== template.id))
-                        }
-                      />
-                    }
-                  >
-                    <Flex vertical gap={10}>
-                      <Input
-                        addonBefore="/"
-                        value={template.shortcut}
-                        placeholder={t('Slash command')}
-                        onChange={(event) =>
-                          updateTemplate(template.id, {
-                            shortcut: event.target.value.replace(/[^a-zA-Z0-9_-]/g, '').toLocaleLowerCase(),
-                          })
-                        }
-                      />
-                      <Input
-                        value={template.description}
-                        placeholder={t('Template description')}
-                        onChange={(event) => updateTemplate(template.id, { description: event.target.value })}
-                      />
-                      <Input.TextArea
-                        value={template.content}
-                        autoSize={{ minRows: 3, maxRows: 8 }}
-                        placeholder={t('Use [] to define editable slots in fixed text')}
-                        onChange={(event) => updateTemplate(template.id, { content: event.target.value })}
-                      />
-                      {template.content.includes('[]') ? (
-                        <Alert
-                          type="info"
-                          showIcon
-                          message={t('Inline editable slots detected', {
-                            count: template.content.split('[]').length - 1,
-                          })}
-                          description={t(
-                            'Only text inside square brackets can be edited after inserting this template',
-                          )}
-                        />
-                      ) : (
-                        <>
-                          {template.fields.map((field) => (
-                            <Flex key={field.key} gap={6} align="center" wrap>
-                              <Input
-                                style={{ width: 110 }}
-                                value={field.key}
-                                placeholder={t('Field key')}
-                                onChange={(event) =>
-                                  updateTemplateField(template.id, field.key, { key: event.target.value })
-                                }
-                              />
-                              <Input
-                                style={{ width: 130 }}
-                                value={field.label}
-                                placeholder={t('Field label')}
-                                onChange={(event) =>
-                                  updateTemplateField(template.id, field.key, { label: event.target.value })
-                                }
-                              />
-                              <Select<PromptTemplateFieldType>
-                                style={{ width: 110 }}
-                                value={field.type}
-                                options={(['text', 'textarea', 'number', 'select', 'boolean'] as const).map((type) => ({
-                                  value: type,
-                                  label: t(type),
-                                }))}
-                                onChange={(type) => updateTemplateField(template.id, field.key, { type })}
-                              />
-                              {field.type === 'select' ? (
-                                <Input
-                                  style={{ width: 160 }}
-                                  value={(field.options ?? []).join(',')}
-                                  placeholder={t('Options separated by commas')}
-                                  onChange={(event) =>
-                                    updateTemplateField(template.id, field.key, {
-                                      options: event.target.value
-                                        .split(',')
-                                        .map((option) => option.trim())
-                                        .filter(Boolean),
-                                    })
-                                  }
-                                />
-                              ) : null}
-                              {field.type !== 'boolean' ? (
-                                <Input
-                                  style={{ width: 150 }}
-                                  value={field.defaultValue === undefined ? '' : String(field.defaultValue)}
-                                  placeholder={t('Default value')}
-                                  onChange={(event) =>
-                                    updateTemplateField(template.id, field.key, {
-                                      defaultValue:
-                                        field.type === 'number' && event.target.value !== ''
-                                          ? Number(event.target.value)
-                                          : event.target.value,
-                                    })
-                                  }
-                                />
-                              ) : (
-                                <Tooltip title={t('Default value')}>
-                                  <Switch
-                                    checked={Boolean(field.defaultValue)}
-                                    onChange={(defaultValue) =>
-                                      updateTemplateField(template.id, field.key, { defaultValue })
-                                    }
-                                  />
-                                </Tooltip>
-                              )}
-                              <Input
-                                style={{ width: 150 }}
-                                value={field.placeholder}
-                                placeholder={t('Field placeholder')}
-                                onChange={(event) =>
-                                  updateTemplateField(template.id, field.key, { placeholder: event.target.value })
-                                }
-                              />
-                              <Tooltip title={t('Required field')}>
-                                <Switch
-                                  checked={field.required}
-                                  onChange={(required) => updateTemplateField(template.id, field.key, { required })}
-                                />
-                              </Tooltip>
-                              <Button
-                                type="text"
-                                danger
-                                aria-label={t('Delete field')}
-                                icon={<DeleteOutlined />}
-                                onClick={() =>
-                                  updateTemplate(template.id, {
-                                    fields: template.fields.filter((item) => item.key !== field.key),
-                                  })
-                                }
-                              />
-                            </Flex>
-                          ))}
-                          <Button icon={<PlusOutlined />} onClick={() => addTemplateField(template.id)}>
-                            {t('Add field')}
-                          </Button>
-                        </>
-                      )}
-                    </Flex>
-                  </Card>
-                ))}
-                <Button type="dashed" icon={<PlusOutlined />} onClick={addTemplate}>
-                  {t('Add prompt template')}
-                </Button>
-              </Flex>
             ),
           },
         ]}
