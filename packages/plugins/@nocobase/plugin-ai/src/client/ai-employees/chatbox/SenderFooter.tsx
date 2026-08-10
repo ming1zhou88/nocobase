@@ -29,7 +29,7 @@ export const SenderFooter: React.FC<{
   const { SendButton, LoadingButton } = components;
   const senderButtonRef = useRef<GetRef<typeof Button> | null>(null);
   const currentEmployee = useChatBoxStore.use.currentEmployee?.();
-  const currentConversation = useChatConversationsStore.use.currentConversation();
+  const currentConversation = useChatConversationsStore.use.currentConversation?.();
   const chat = useChat(currentConversation);
   const readonly = useChatBoxStore.use.readonly();
   const setActiveTemplateId = useChatBoxStore.use.setActiveTemplateId();
