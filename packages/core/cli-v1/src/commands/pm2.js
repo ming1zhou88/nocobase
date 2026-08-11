@@ -26,7 +26,7 @@ module.exports = (cli) => {
     .command('pm2-restart')
     .allowUnknownOption()
     .action(() => {
-      run('pm2', ['restart', 'all']);
+      run('pm2', ['restart', 'all', '--update-env']);
     });
   cli
     .command('pm2-stop')
