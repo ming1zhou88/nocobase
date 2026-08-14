@@ -39,6 +39,7 @@ describe('pm resource', () => {
 
   it('should keep listEnabled using the client lane', async () => {
     const packageName = '@nocobase/plugin-list-enabled-client';
+    vi.spyOn(PackageUrls, 'hasClientEntry').mockResolvedValue(true);
     const getSpy = vi
       .spyOn(PackageUrls, 'get')
       .mockResolvedValue(`/static/plugins/${packageName}/dist/client/index.js?hash=12345678`);

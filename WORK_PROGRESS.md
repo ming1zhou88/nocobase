@@ -138,6 +138,106 @@
 
 ## 2026-07-17 第三方数据源连接器插件（主要完成，其余暂停）
 
+## 2026-08-14 售后批处理插件总体进度（按事项燃尽）
+
+### 范围说明
+
+- 本节仅跟踪 `@zhoumingrui/plugin-after-sales-batch` 与 connector 对接链路。
+- `v1` 旧版页面配置已由其他 AI 修改，本分支不再处理该事项。
+
+### 需求拆分与具体进度
+
+| 事项编号 | 事项 | 交付标准 | 当前状态 | 完成度 | 剩余工作量（SP） |
+| --- | --- | --- | --- | --- | --- |
+| ASB-01 | 插件身份与命名空间 | 作为第三方插件存在，不进入官方默认插件依赖 | 已完成 | 100% | 0 |
+| ASB-02 | Connector 工单表与接口 | 具备工单增删改查、批量更新、AIAfterSalesGuide 写入接口 | 已完成 | 100% | 0 |
+| ASB-03 | 批处理任务链路 | 选中工单后批量调用 AI，写入指南并刷新下载快照 | 已完成 | 100% | 0 |
+| ASB-04 | 回答守卫与异常止损 | 单条回答超时/异常内容可中断，失败原因可追踪 | 已完成 | 100% | 0 |
+| ASB-05 | 单条重试与任务停止 | 每条工单可重试，运行中的批任务可停止 | 已完成 | 100% | 0 |
+| ASB-06 | 默认深度收敛 | `AIAfterSalesGuide` 默认深度统一为 1 | 已完成 | 100% | 0 |
+| ASB-07 | 第三方插件产物规范 | 满足 `main=dist/server/index.js` 与 `dist/client-v2/index.js` | 进行中 | 85% | 2 |
+| ASB-08 | 启用与页面打开验收 | 在插件管理器可启用并可打开页面，无 RequireJS 脚本错误 | 进行中 | 70% | 3 |
+
+### 燃尽视图（按 SP）
+
+- 总工作量：17 SP
+- 已完成：12 SP
+- 剩余：5 SP
+- 当前完成率：70.6%
+
+```mermaid
+xychart-beta
+	title "After-sales Batch Burndown (SP)"
+	x-axis ["D0 立项", "D1 接口", "D2 任务", "D3 守卫", "D4 产物修复", "D5 验收"]
+	y-axis "Remaining SP" 0 --> 17
+	line [17, 13, 9, 6, 5, 5]
+```
+
+### 当前实际情况说明
+
+- 已完成第三方化：插件目录与包名已切到 `@zhoumingrui` 命名空间。
+- 已完成功能交付：工单 CRUD、批处理、重试、停止、超时上限、默认深度收敛都已落地。
+- 当前主要风险在“产物与加载”：插件启用/页面加载仍出现脚本错误，说明运行环境侧仍存在构建产物或模块加载链问题。
+
+### 执行流程与数据更新机制（批处理）
+
+本节说明“为什么 AI 只返回 JSON，但 AfterSalesWorkOrder 仍会被持续更新”。
+
+- 结论：AfterSalesWorkOrder 不是由 AI 直接写入，而是由批处理任务在每个阶段通过 connector 的 bulk-update 接口回写。
+- 任务入口：用户在页面点击 Start batch 后，NocoBase 创建 async task。
+- 单条工单执行顺序：
+	1. 读取工单；若 `has_ai_guide=是`，直接标记 `skipped`。
+	2. 先回写 `processing_status=processing`。
+	3. 拉取 Email4Final 上下文，组装输入，调用 AI 员工。
+	4. 解析 AI 返回 JSON，写入 AIAfterSalesGuide。
+	5. 调用快照刷新接口生成下载工件。
+	6. 成功则回写 `has_ai_guide=是`、`ai_guide_id`、`ai_guide_generated_at`、`processing_status=succeeded`。
+	7. 异常则回写 `processing_status=failed` 与 `processing_error`。
+
+#### 关键更新字段（AfterSalesWorkOrder）
+
+| 阶段 | 回写字段 | 说明 |
+| --- | --- | --- |
+| 跳过（已有指南） | `processing_status=skipped`, `processing_error=null`, `last_task_id`, `last_processed_at` | 不再重复生成 |
+| 开始处理 | `processing_status=processing`, `processing_error=null`, `last_task_id`, `last_processed_at` | 进入执行中 |
+| 成功 | `has_ai_guide=是`, `ai_guide_id`, `ai_guide_generated_at`, `processing_status=succeeded`, `processing_error=null`, `last_task_id`, `last_processed_at` | 指南与快照均已完成 |
+| 失败 | `processing_status=failed`, `processing_error`, `last_task_id`, `last_processed_at` | 记录失败原因，支持重试 |
+
+#### 流程图
+
+```mermaid
+flowchart TD
+	A[Start batch] --> B[Create async task]
+	B --> C[Load selected work orders]
+	C --> D{has_ai_guide == 是?}
+	D -- Yes --> E[Update work order: skipped]
+	D -- No --> F[Update work order: processing]
+	F --> G[Load Email4Final context]
+	G --> H[Invoke AI employee]
+	H --> I[Parse guide JSON]
+	I --> J[Insert AIAfterSalesGuide]
+	J --> K[Refresh context snapshots]
+	K --> L[Update work order: succeeded + ai_guide_id]
+	H --> M[Catch error]
+	I --> M
+	J --> M
+	K --> M
+	M --> N[Update work order: failed + processing_error]
+```
+
+### 验收前最后待办（剩余 5 SP）
+
+| 待办 | 目标 | 预计 SP |
+| --- | --- | --- |
+| ASB-TODO-1 | 固化第三方插件 `dist` 产物生成与引用，保证 `server.js`、`client-v2.js` 与 `dist` 一致 | 2 |
+| ASB-TODO-2 | 在运行环境复测插件启用与页面加载，消除 `Script error for "@zhoumingrui/plugin-after-sales-batch"` | 2 |
+| ASB-TODO-3 | 回归验证插件管理器筛选（已启用/未启用）不受该插件影响 | 1 |
+
+### 结论
+
+- 功能开发侧已基本收口；当前阶段的关键不是继续加功能，而是完成插件产物与运行态加载验收。
+- 未完成前，不建议继续扩大改动范围（例如再加新页面能力），应优先完成剩余 5 SP 的发布可用性闭环。
+
 - 当前目标：在 `/admin/settings/data-source-manager/list` 的现有“数据源”管理页中注册自有外部数据源类型，不另建割裂的管理页面，并复用 NocoBase 已有的数据源列表、状态、启停、配置、权限和 collection 管理能力。
 - 支持范围：MySQL、PostgreSQL、NocoBase、Oracle、SQL Server、REST API、ClickHouse、Doris、MariaDB；明确排除 Kingbase。
 - 第一优先级：MySQL、PostgreSQL、NocoBase。要求具备连接配置、变量与密钥、连接测试、远端 collection/表发现、选择性或全部加载、字段类型推断、主键识别、只读安全策略、刷新、编辑、删除、错误状态和中英文界面。
@@ -276,3 +376,99 @@
 - 已扩充根目录 `deploy-readme.md`：提供 `pgvector/pgvector:pg18` 容器、PostgreSQL 18 持久化卷、回环端口绑定、`nocobase` 与 `nocobase_kb` 数据库、`vector` 扩展和 schema 权限的完整初始化流程。
 - 文档补充 NocoBase `.env`、`KB_PGVECTOR_PASSWORD`、向量数据库页面参数、宿主机连接验证，以及数据库不存在、`public` 权限不足、扩展未按数据库启用、连接到错误实例、容器网络和旧数据卷不会重新初始化等本次实际踩坑项。
 - 按用户确认，部署文档统一使用 Node.js 24；未执行任何服务器安装、数据库变更、build、dev、upgrade 或应用启停。
+
+## 2026-08-14 售后批处理：卖家回信抬头（回信称呼）下拉与配置表
+
+### 需求与结论
+
+- 用户为批处理 AI 售后工作台补充"卖家回信抬头"（回信称呼）能力：固定列表 `Hi / Hello / Dear Buyer / Dear Customer / Hi Customer / Hi Buyer / Hello Customer / Hello Buyer`，在模板对应列提供下拉选择。
+- 已确认该抬头是**新增概念**，与既有 `email_subject`（邮件抬头 = 邮件主题，批处理任务依赖）语义不同；为避免副作用，新增独立字段 `reply_greeting`（回信抬头），不改动 `email_subject` 的行为。
+- 源码调研使用 codegraph（已配置到系统全局：`~/.codex/config.toml` 已注册 `mcp_servers.codegraph`，daemon 覆盖 nocobase、power-automate-connnector 等多个工程），对两个工程分别执行 `codegraph explore` 定位工单表结构、接口注册与模板列映射。
+
+### connector（power-automate-connnector）改动
+
+- 新增数据表 `AfterSalesReplyGreeting`（卖家回信抬头配置表），遵循既有字段规范：`id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` 主键、`greeting VARCHAR(64) NOT NULL` + 唯一键 `uk_asrg_greeting`、`is_active TINYINT(1) DEFAULT 1`、`sort_order INT UNSIGNED DEFAULT 0`、`created_at/updated_at` 默认时间戳、`ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`。
+- 已按用户要求在 MySQL（120.79.239.166 / `power_automate` 库）**直接执行建表**：`AfterSalesReplyGreeting` 已创建并写入 8 条种子数据；`AfterSalesWorkOrder` 已补充 `reply_greeting VARCHAR(64) DEFAULT NULL` 列（表原为 0 行，无数据影响）。
+- 代码侧：`config/dbConfig.js` 注册表名；新增 `scripts/lib/after-sales-reply-greeting-schema.js`（幂等建表 + `INSERT IGNORE` 种子）；新增 `routes/ai-gateway/after-sales-reply-greeting-service.js`（`listReplyGreetings`，仅返回启用项并按 `sort_order` 排序）；`routes/ai-gateway.js` 新增 `GET /ai/after-sales/reply-greetings`（沿用 `x-after-sales-batch-token` 守卫）。
+- 工单服务 `after-sales-work-order-service.js` 增加 `reply_greeting` 字段：`LIST_COLUMNS`、创建记录归一化（`VARCHAR(64)` 截断）、更新补丁、INSERT 语句。
+- 维护入口：`material/database/after_sales_reply_greeting.sql`（可直接在 MySQL 执行的幂等脚本）、`scripts/migrate-after-sales-reply-greeting-table.js` + `npm run db:after-sales-reply-greeting:migrate`、`scripts/bootstrap-powerautomate-email-tables.js` 已挂接新表；权威建表文件 `material/database/power_automate_schema.sql` 同步补表与加列。
+
+### nocobase 插件（plugin-after-sales-batch，client-v2）改动
+
+- 服务端：`connector-client.ts` 新增 `listReplyGreetings()`；`server/plugin.ts` 注册 `afterSalesBatch:listReplyGreetings` action 并加入 ACL allow。
+- 批处理任务：`after-sales-guide-batch.ts` 将 `reply_greeting` 注入 batch hints，AI 生成 `seller_reply_draft_reference`（卖家回信正文参考）时可使用所选抬头。
+- 工作台页面（client-v2）：新建工单表单增加"回信抬头"下拉（选项来自 connector 配置表接口，接口不可用时回退内置默认列表）；工单表格增加"回信抬头"列；导入 Excel 模板新增"回信抬头"列，并通过 SheetJS `!dataValidations` 对 D 列 2~1001 行写入下拉数据校验。
+- 国际化：`en-US.json` / `zh-CN.json` 新增 `Reply greeting` / `回信抬头`。
+
+### 验证结果
+
+- connector：7 个改动/新增 JS 文件 `node --check` 通过；`ai-gateway.test.js` 11 项测试全部通过（新增"回信抬头路由返回启用列表"测试；同时修复了该测试套件既有缺陷——dbConfig mock 缺少 `PowerautomateTableName` 导致套件加载即失败的问题）；直接调用 `listReplyGreetings` 服务返回 8 条数据。
+- 插件：4 个改动 TS 文件 `yarn eslint --fix` 通过（仅剩 2 个改动前已存在的 `react-hooks/exhaustive-deps` warning，未新增错误）；插件级定向 TypeScript 检查（临时 tsconfig 继承仓库 path 映射）0 错误；中英文 locale JSON 解析通过。
+- 未执行 NocoBase build、`yarn dev`、`yarn nocobase upgrade` 或插件启停（遵循本机运行边界），浏览器验收由用户完成。
+
+## 2026-08-14 追加：邮件抬头与回信抬头字段合并（简化维护）
+
+### 决策（用户指示，覆盖前一轮"新增独立字段"的结论）
+
+- 用户指出 `email_subject`（邮件抬头）与 `reply_greeting`（卖家回信抬头）**应为同一个字段**，双字段会造成后续维护负担；授权在字段名不明确时改名。
+- 已按用户要求合并为**单一字段** `reply_greeting VARCHAR(64) NOT NULL COMMENT '卖家回信抬头'`（字段名取语义更清晰的 `reply_greeting`，即"回信抬头"）；`email_subject` 字段在 `AfterSalesWorkOrder` 中不再存在。
+- 明确边界：`email_subject` 在邮件类表（Email2Middle / Email3Standard / Email4Final / 飞书邮件等）中仍是"邮件主题"业务字段，与本次合并无关，未做任何改动。
+
+### 远程 MySQL 已执行 ALTER（120.79.239.166 / power_automate）
+
+- 先 `DROP COLUMN reply_greeting`（删除上一轮过渡期新增列），再 `CHANGE COLUMN email_subject → reply_greeting VARCHAR(64) NOT NULL COMMENT '卖家回信抬头'`。
+- 已用 information_schema 确认：`AfterSalesWorkOrder` 仅剩 `reply_greeting` 一列，`email_subject` 已不存在；表为 0 行，无数据迁移。
+
+### connector 代码同步
+
+- `scripts/lib/after-sales-work-order-schema.js`：`COLUMN_DEFINITIONS` 与 `CREATE TABLE` 合并为 `reply_greeting VARCHAR(64) NOT NULL`。
+- `material/database/power_automate_schema.sql`：权威建表文件同步合并。
+- `material/database/after_sales_reply_greeting.sql`：工单表字段逻辑改为**幂等合并**，兼容三种状态——旧结构（仅 email_subject）改名、过渡态（双字段）先删多余列再改名、全新表直接补列。
+- `routes/ai-gateway/after-sales-work-order-service.js`：`LIST_COLUMNS`、创建必填校验（`reply_greeting 不能为空`，错误码 `INVALID_AFTER_SALES_WORK_ORDER_REPLY_GREETING`）、创建/更新归一化、INSERT 语句、关键字搜索条件（`reply_greeting LIKE`）全部合并。
+
+### nocobase 插件同步（v1 + v2 + 任务 + locale）
+
+- client-v2 页面：表头映射统一到 `reply_greeting`（保留"邮件抬头"作为旧表头兼容别名）；导入模板列统一为"回信抬头"（示例 `Dear Customer`，Excel 下拉列随列位移自动计算为 C 列）；导入必填校验改 `reply_greeting`；新建表单"回信抬头"下拉必填；表格列合并为"回信抬头"。
+- client v1 页面：字段引用同步合并（表头映射、模板列、导入校验、表格列、表单字段），避免字段合并后 v1 建单因必填校验变化而失败；未新增 v2 独有下拉逻辑（v1 由其他 AI 维护的范围约定不变）。
+- 批处理任务：batch hints 仅保留 `reply_greeting`，AI 回信草稿使用所选抬头。
+- locale：删除已无引用的 `Email subject` key；错误提示改为 `Order ID + Reply greeting` / `订单编号 + 回信抬头`。
+
+### 验证结果（合并后）
+
+- connector：改动 JS `node --check` 通过；`ai-gateway.test.js` 11/11 通过。
+- 真实链路验证（生产库）：`createWorkOrders` 写入一条带 `reply_greeting=Dear Customer` 的工单 → `getWorkOrdersByIds` 读回字段正确 → `deleteWorkOrders` 删除（无残留）；`listReplyGreetings` 返回 8 条。
+- 插件：v1/v2 页面与任务文件 `yarn eslint --fix` 通过（仅剩改动前已存在的 `react-hooks/exhaustive-deps` warning）；插件级定向 TypeScript 检查 0 错误；中英文 locale JSON 解析通过。
+- 未执行 NocoBase build、`yarn dev`、`yarn nocobase upgrade` 或插件启停，浏览器验收由用户完成。
+
+## 2026-08-14 追加：提交失败修复（git CRLF 行尾警告导致 UnhandledPromiseRejection）
+
+### 现象
+
+- 提交（commit）时报 `UnhandledPromiseRejection`，reason 是 `packages/plugins/@zhoumingrui/plugin-after-sales-batch/...` 一长串 `warning: ... LF will be replaced by CRLF the next time Git touches it`；此前 lint-staged 输出 `[COMPLETED] Cleaning up temporary files... Done in 6.32s` 后脚本崩溃。
+
+### 根因（含"为什么以前提交多次从未失败"的机制）
+
+- 本机 `core.autocrlf=true`。`lint-staged` 的 `eslint --fix`（`.prettierrc` 无 endOfLine 覆盖 → prettier 默认 LF）会把暂存的 TS/TSX 强制转为 LF。
+- git 对**首次进入索引且工作区为 LF** 的新文件（新增/内容变化的文件）执行 clean 转换时，向 stderr 输出"LF will be replaced by CRLF"警告；对已跟踪且内容归一化后未变的文件不输出。
+- 以前提交从不失败：以往暂存文件要么已跟踪（不触发警告），要么新增时工作区本就是 CRLF（不触发警告），`scripts/addLicense.js` 的脆弱逻辑从未被触发。
+- 本次失败：插件目录是新增文件，修复过程中 `eslint --fix`/lint-staged 把 13 个 TS/TSX 从 CRLF 转为 LF → 首次 add 触发警告 → `addLicense.js`（pre-commit 钩子 `yarn lint-staged && node ./scripts/addLicense.js`）中 `getDiffFiles()`/`gitAddFiles()` 的 `exec` 回调把**非空 stderr 直接 `reject(stderr)`**，顶层 `main()` 无 `.catch()` → 警告文本成为 UnhandledPromiseRejection。
+
+### 修复（根治，非绕开）
+
+- **修复钩子本身** `scripts/addLicense.js`：`getDiffFiles()`/`gitAddFiles()` 仅在命令失败（`error` 非空，即退出码非零）时 reject；stderr 只是 git 良性提示时打印 warning 日志后正常 resolve。今后无论哪个文件产生 CRLF 警告，提交钩子都不会再崩。
+- **版权头排除**：`licenseExclusions` 增加 `packages/plugins/@zhoumingrui/plugin-after-sales-batch/`（与既有三个自研插件一致），避免提交钩子给自研插件文件覆盖 NocoBase 版权头。
+- **清除副作用**：修复前误跑 `addLicense.js` 给插件 13 个 src TS/TSX 文件加上了 NocoBase 开源版权头，已全部移除，文件头恢复为 `import ...` 原文。
+- **行尾恢复仓库惯例**：插件目录与 `WORK_PROGRESS.md` 恢复 CRLF（与用户环境、仓库其他文件一致）；随后 lint-staged 将其转为 LF 属工具链正常行为，且已跟踪后 git 不再产生警告。
+- 撤销了中间采用的 `.gitattributes`（`text eol=lf`）方案——那只是掩盖警告，未修钩子本体，且使插件目录与仓库行尾策略割裂。
+
+### 验证（按真实提交链路）
+
+- 插件目录、`WORK_PROGRESS.md`、`scripts/addLicense.js`、docs/prompt、core 修改文件全部 `git add`：EXIT 0，无任何 stderr 警告；`git diff --cached --name-only` stderr 长度为 0。
+- `yarn lint-staged` 完整通过（eslint --fix 16 个 TS/TSX、prettier 7 个 JS/JSON，正常收尾，`Cleaning up temporary files... Done`）。
+- `node scripts/addLicense.js` 正常退出（EXIT 0，无 UnhandledPromiseRejection），且插件文件版权头未被覆盖（文件头为 `import ...`）。
+- 再次 lint-staged + `git add -A`：零警告（文件已稳定为 LF，与索引一致），即当前状态即为可提交状态。
+- 暂存区 28 个文件完整（插件 20 + WORK_PROGRESS.md + docs/prompt 3 + core 3 + addLicense.js），`git status --short` 正常。
+
+
+
+

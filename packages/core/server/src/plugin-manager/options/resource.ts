@@ -154,7 +154,7 @@ async function listEnabledPlugins(ctx, lane: PluginClientLane = 'client') {
   });
   const arr = [];
   for (const item of items) {
-    if (lane === 'client-v2' && !(await PackageUrls.hasClientEntry(item.packageName, lane))) {
+    if (!(await PackageUrls.hasClientEntry(item.packageName, lane))) {
       continue;
     }
 

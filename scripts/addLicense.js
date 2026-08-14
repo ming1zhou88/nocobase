@@ -5,6 +5,7 @@ const licenseExclusions = [
   'packages/plugins/@zhoumingrui/plugin-ai-knowledge-base/',
   'packages/plugins/@zhoumingrui/plugin-data-source-connectors/',
   'packages/plugins/@zhoumingrui/plugin-mail-center/',
+  'packages/plugins/@zhoumingrui/plugin-after-sales-batch/',
 ];
 
 const commercialLicense = `
@@ -70,9 +71,11 @@ function getDiffFiles() {
     exec('git diff --cached --name-only --diff-filter=ACM', (error, stdout, stderr) => {
       if (error) {
         reject(error);
+        return;
       }
+      // stderr 可能是 git 的行尾转换提示（如 CRLF warning），命令本身成功时不应视为失败
       if (stderr) {
-        reject(stderr);
+        console.warn(`[addLicense] git diff stderr: ${stderr.trim()}`);
       }
       resolve(stdout.split('\n').filter(Boolean));
     });
@@ -84,9 +87,10 @@ function gitAddFiles(files) {
     exec(`git add ${files.join(' ')}`, (error, stdout, stderr) => {
       if (error) {
         reject(error);
+        return;
       }
       if (stderr) {
-        reject(stderr);
+        console.warn(`[addLicense] git add stderr: ${stderr.trim()}`);
       }
       resolve(stdout);
     });

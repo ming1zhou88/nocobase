@@ -1,0 +1,23 @@
+{
+  "name": "@zhoumingrui/plugin-after-sales-batch",
+  "version": "2.1.23",
+  "main": "dist/server/index.js",
+  "displayName": "After-sales batch",
+  "displayName.zh-CN": "售后批处理",
+  "description": "Batch workbench for generating AI after-sales guides from uploaded work orders.",
+  "description.zh-CN": "用于上传售后工单并批量生成 AI 售后处理指南的工作台。",
+  "keywords": [
+    "AI",
+    "After-sales"
+  ],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "peerDependencies": {
+    "@nocobase/client": "2.x",
+    "@nocobase/client-v2": "2.x",
+    "@nocobase/server": "2.x",
+    "@nocobase/test": "2.x"
+  }
+}

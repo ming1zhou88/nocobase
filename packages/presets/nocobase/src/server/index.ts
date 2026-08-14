@@ -8,7 +8,10 @@
  */
 
 import { findBuiltInPlugins, findLocalPlugins, packageNameTrim, Plugin, PluginManager } from '@nocobase/server';
+import fs from 'fs-extra';
 import _ from 'lodash';
+import { resolve } from 'path';
+import { discoverPluginPackages, resolvePluginPackagePath } from '../../../../core/utils/plugin-package.js';
 
 export class PresetNocoBase extends Plugin {
   splitNames(name: string) {
@@ -56,9 +59,38 @@ export class PresetNocoBase extends Plugin {
 
   async getPluginInfo(name, locale = 'en-US') {
     const repository = this.app.db.getRepository<any>('applicationPlugins');
-    // const packageJson = await this.getPackageJson(name);
-    const { packageName } = await PluginManager.parseName(name);
-    const packageJson = require(`${packageName}/package.json`);
+    const dbItem = await repository.findOne({
+      filter: {
+        $or: [{ name }, { packageName: name }],
+      },
+    });
+    const { packageName } = await PluginManager.parseName(dbItem?.packageName || name);
+    let packageJson;
+    try {
+      packageJson = require(`${packageName}/package.json`);
+    } catch (error) {
+      let packagePath = await resolvePluginPackagePath(packageName, {
+        nodeModulesPath: process.env.NODE_MODULES_PATH,
+      });
+      if (!packagePath) {
+        const discovered = await discoverPluginPackages({
+          nodeModulesPath: process.env.NODE_MODULES_PATH,
+        });
+        const target = discovered.find((item) => {
+          return (
+            item.packageName === packageName ||
+            item.packageName === dbItem?.packageName ||
+            item.name === name ||
+            item.name === dbItem?.name
+          );
+        });
+        packagePath = target?.resolvedPath || '';
+      }
+      if (!packagePath) {
+        throw error;
+      }
+      packageJson = await fs.readJson(resolve(packagePath, 'package.json'));
+    }
     const deps = await PluginManager.checkAndGetCompatible(packageJson.name);
     const instance = await repository.findOne({
       filter: {
