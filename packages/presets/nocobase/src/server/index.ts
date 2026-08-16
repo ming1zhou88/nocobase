@@ -8,10 +8,10 @@
  */
 
 import { findBuiltInPlugins, findLocalPlugins, packageNameTrim, Plugin, PluginManager } from '@nocobase/server';
+import { discoverPluginPackages, resolvePluginPackagePath } from '@nocobase/utils/plugin-package';
 import fs from 'fs-extra';
 import _ from 'lodash';
 import { resolve } from 'path';
-import { discoverPluginPackages, resolvePluginPackagePath } from '../../../../core/utils/plugin-package.js';
 
 export class PresetNocoBase extends Plugin {
   splitNames(name: string) {
