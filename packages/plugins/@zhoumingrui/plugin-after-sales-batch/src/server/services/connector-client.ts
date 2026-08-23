@@ -140,6 +140,27 @@ export class ConnectorClient {
     });
   }
 
+  getAfterSalesGuide(guideId: number) {
+    return this.request<{ success: true; record: Record<string, unknown> }>(`/after-sales/guides/${guideId}`);
+  }
+
+  hasGuideCoveringOrderEmail(orderId: string, emailDateTime: string) {
+    return this.request<{ success: true; covered: boolean; guideId: number | null }>(
+      '/after-sales/guides/check-covered',
+      { query: { orderId, emailDateTime } },
+    );
+  }
+
+  updateAfterSalesGuideActualReply(guideId: number, actualReplyBody: string) {
+    return this.request<{ success: true; record: Record<string, unknown> }>(
+      `/after-sales/guides/${guideId}/actual-reply`,
+      {
+        method: 'POST',
+        body: { actualReplyBody },
+      },
+    );
+  }
+
   refreshAfterSalesGuideDownloads(guideId: number, forceRefresh = false) {
     return this.request<{ success: true; guideId: number; links: Record<string, string> }>(
       `/after-sales-guide/${guideId}/context-snapshots`,

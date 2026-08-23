@@ -2,6 +2,8 @@ import {
   CopyOutlined,
   DownloadOutlined,
   DeleteOutlined,
+  EditOutlined,
+  EyeOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -15,6 +17,8 @@ import {
   App,
   Button,
   Card,
+  Descriptions,
+  Drawer,
   Form,
   Input,
   InputNumber,
@@ -34,7 +38,7 @@ import * as XLSX from 'xlsx';
 import { useT } from '../locale';
 
 const WORK_ORDER_ROUTE = '/admin/after-sales/batch-workbench';
-const FALLBACK_ANSWER_TIMEOUT_SECONDS = 60;
+const FALLBACK_ANSWER_TIMEOUT_SECONDS = 180;
 
 const STATUS_COLOR_MAP: Record<string, string> = {
   pending: 'default',
@@ -43,6 +47,27 @@ const STATUS_COLOR_MAP: Record<string, string> = {
   failed: 'error',
   skipped: 'warning',
 };
+
+// 指南详情按顺序展示的字段（字段名 -> i18n 标签 key）
+const GUIDE_DISPLAY_FIELDS: Array<[string, string]> = [
+  ['store_name', 'Store name'],
+  ['order_id', 'Order ID'],
+  ['buyer_email', 'Buyer email'],
+  ['buyer_email_body', 'Buyer email body'],
+  ['buyer_email_date_time', 'Buyer email date time'],
+  ['communication_history_summary', 'Communication history summary'],
+  ['current_email_core_request', 'Current email core request'],
+  ['current_issue_factual_summary', 'Current issue factual summary'],
+  ['case_background_risk_notes', 'Case background risk notes'],
+  ['after_sales_issue_type', 'After-sales issue type'],
+  ['current_handling_stage', 'Current handling stage'],
+  ['ai_recommended_handling_plan', 'AI recommended handling plan'],
+  ['seller_reply_draft_reference', 'Seller reply draft reference'],
+  ['seller_internal_action_guide', 'Seller internal action guide'],
+  ['manual_confirmation_required', 'Manual confirmation required'],
+  ['ai_confidence_level', 'AI confidence level'],
+  ['reasoning_explanation', 'Reasoning explanation'],
+];
 
 const IMPORT_HEADER_MAP: Record<string, string> = {
   订单编号: 'order_id',
@@ -120,7 +145,7 @@ export function AfterSalesBatchPage() {
   const [records, setRecords] = useState<Record<string, any>[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(30);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [createVisible, setCreateVisible] = useState(false);
   const [employeeOptions, setEmployeeOptions] = useState<Array<{ label: string; value: string }>>([]);
@@ -128,10 +153,36 @@ export function AfterSalesBatchPage() {
   const [answerTimeoutSeconds, setAnswerTimeoutSeconds] = useState(FALLBACK_ANSWER_TIMEOUT_SECONDS);
   const [maxAnswerTimeoutSeconds, setMaxAnswerTimeoutSeconds] = useState(300);
   const [minAnswerTimeoutSeconds, setMinAnswerTimeoutSeconds] = useState(10);
-  const [taskId, setTaskId] = useState<number | null>(null);
+  const [taskId, setTaskId] = useState<string | null>(null);
   const [taskRecord, setTaskRecord] = useState<Record<string, any> | null>(null);
   const [keyword, setKeyword] = useState('');
+  const [guideVisible, setGuideVisible] = useState(false);
+  const [guideLoading, setGuideLoading] = useState(false);
+  const [guideRecord, setGuideRecord] = useState<Record<string, any> | null>(null);
+  const [editingReply, setEditingReply] = useState(false);
+  const [replyDraft, setReplyDraft] = useState('');
+  const [replySaving, setReplySaving] = useState(false);
   const [form] = Form.useForm();
+
+  // asyncTasks 的状态是数字：null=等待中 0=处理中 1=成功 -1=失败 -2=已取消
+  function formatTaskStatus(status: unknown) {
+    if (status === null || status === undefined) {
+      return t('Pending');
+    }
+    if (status === 0) {
+      return t('Processing');
+    }
+    if (status === 1) {
+      return t('Succeeded');
+    }
+    if (status === -1) {
+      return t('Failed');
+    }
+    if (status === -2) {
+      return t('Cancelled');
+    }
+    return String(status);
+  }
 
   async function request(action: string, values?: Record<string, unknown>) {
     const response = await api.request({
@@ -139,7 +190,8 @@ export function AfterSalesBatchPage() {
       method: 'post',
       data: values || {},
     });
-    return response.data;
+    // NocoBase 自定义 action 的响应被包了一层 { data: { ... } }，这里解包后再返回业务数据。
+    return response?.data?.data ?? response?.data ?? {};
   }
 
   async function loadEmployees() {
@@ -198,8 +250,10 @@ export function AfterSalesBatchPage() {
     message.success(t('Download template'));
   }
 
-  async function loadWorkOrders(nextPage = page, nextPageSize = pageSize, nextKeyword = keyword) {
-    setLoading(true);
+  async function loadWorkOrders(nextPage = page, nextPageSize = pageSize, nextKeyword = keyword, silent = false) {
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const response = await request('listWorkOrders', {
         page: nextPage,
@@ -211,15 +265,19 @@ export function AfterSalesBatchPage() {
       setPage(Number(response.page || nextPage));
       setPageSize(Number(response.pageSize || nextPageSize));
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }
 
-  async function loadTask(currentTaskId: number) {
+  async function loadTask(currentTaskId: string) {
     const response = await request('getTask', { taskId: currentTaskId });
     setTaskRecord(response);
-    if (response?.status === 'succeeded' || response?.status === 'failed' || response?.status === 'canceled') {
-      await loadWorkOrders();
+    // 处理过程中每轮也静默刷新一次列表，让每条工单的状态及时更新
+    await loadWorkOrders(1, pageSize, keyword, true);
+    if (response?.status === 1 || response?.status === -1 || response?.status === -2) {
+      window.localStorage.removeItem('afterSalesBatchTaskId');
     }
   }
 
@@ -227,6 +285,10 @@ export function AfterSalesBatchPage() {
     void loadSettings();
     void loadEmployees();
     void loadWorkOrders(1, pageSize, keyword);
+    const savedTaskId = window.localStorage.getItem('afterSalesBatchTaskId');
+    if (savedTaskId) {
+      setTaskId(savedTaskId);
+    }
   }, []);
 
   useEffect(() => {
@@ -245,7 +307,7 @@ export function AfterSalesBatchPage() {
     showUploadList: false,
     beforeUpload: async (file) => {
       const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array' });
+      const workbook = XLSX.read(buffer, { type: 'array', codepage: 65001 });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
       const normalizedRows = normalizeImportedRows(rows).filter((row) => row.order_id && row.reply_greeting);
@@ -253,8 +315,23 @@ export function AfterSalesBatchPage() {
         message.error(t('No valid rows found. Please use the template and keep Order ID + Reply greeting.'));
         return Upload.LIST_IGNORE;
       }
-      await request('createWorkOrders', { records: normalizedRows });
-      message.success(`${t('Imported records')}: ${normalizedRows.length}`);
+      // 同一次导入内按订单号去重，避免手滑重复上传生成重复回答；不同时间的再次导入仍是新工单。
+      const seenOrderIds = new Set<string>();
+      const uniqueRows = normalizedRows.filter((row) => {
+        const orderId = String(row.order_id).trim();
+        if (seenOrderIds.has(orderId)) {
+          return false;
+        }
+        seenOrderIds.add(orderId);
+        return true;
+      });
+      const duplicateCount = normalizedRows.length - uniqueRows.length;
+      await request('createWorkOrders', { records: uniqueRows });
+      if (duplicateCount > 0) {
+        message.warning(t('Ignored duplicate orders', { count: duplicateCount, imported: uniqueRows.length }));
+      } else {
+        message.success(`${t('Imported records')}: ${uniqueRows.length}`);
+      }
       await loadWorkOrders(1, pageSize, keyword);
       return Upload.LIST_IGNORE;
     },
@@ -291,7 +368,8 @@ export function AfterSalesBatchPage() {
       employeeUsername,
       answerTimeoutSeconds,
     });
-    setTaskId(Number(response.id));
+    setTaskId(String(response.id));
+    window.localStorage.setItem('afterSalesBatchTaskId', String(response.id));
     message.success(t('Start batch'));
   }
 
@@ -331,9 +409,54 @@ export function AfterSalesBatchPage() {
       employeeUsername,
       answerTimeoutSeconds,
     });
-    setTaskId(Number(response.id));
+    setTaskId(String(response.id));
+    window.localStorage.setItem('afterSalesBatchTaskId', String(response.id));
     message.success(t('Retry'));
     await loadWorkOrders(page, pageSize, keyword);
+  }
+
+  async function handleViewGuide(record: Record<string, any>) {
+    const guideId = Number(record.ai_guide_id);
+    if (!Number.isInteger(guideId) || guideId <= 0) {
+      message.warning(t('No guide generated yet'));
+      return;
+    }
+    setGuideVisible(true);
+    setGuideLoading(true);
+    setGuideRecord(null);
+    setEditingReply(false);
+    setReplyDraft('');
+    try {
+      const response = await request('getGuide', { guideId });
+      setGuideRecord(response.record || null);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setGuideLoading(false);
+    }
+  }
+
+  async function handleSaveReply() {
+    const guideId = Number(guideRecord?.id);
+    if (!Number.isInteger(guideId) || guideId <= 0) {
+      return;
+    }
+    setReplySaving(true);
+    try {
+      const response = await request('saveGuideActualReply', { guideId, actualReplyBody: replyDraft });
+      setGuideRecord(response.record || guideRecord);
+      setEditingReply(false);
+      message.success(t('Saved'));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setReplySaving(false);
+    }
+  }
+
+  function handleCancelReply() {
+    setEditingReply(false);
+    setReplyDraft(guideRecord?.actual_seller_reply_body || '');
   }
 
   return (
@@ -380,8 +503,8 @@ export function AfterSalesBatchPage() {
             }
           />
           <Space>
-            {taskRecord?.status ? <Tag>{taskRecord.status}</Tag> : null}
-            {(taskRecord?.status === 'running' || taskRecord?.status === 'pending') && taskId ? (
+            {taskRecord?.status !== undefined ? <Tag>{formatTaskStatus(taskRecord.status)}</Tag> : null}
+            {(taskRecord?.status === 0 || taskRecord?.status === null) && taskId ? (
               <Button size="small" icon={<StopOutlined />} onClick={() => void handleStopBatch()}>
                 {t('Stop')}
               </Button>
@@ -452,13 +575,20 @@ export function AfterSalesBatchPage() {
             current: page,
             pageSize,
             total,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '30', '50', '100'],
             onChange: (nextPage, nextPageSize) => {
               void loadWorkOrders(nextPage, nextPageSize, keyword);
             },
           }}
           columns={[
             { title: t('Order ID'), dataIndex: 'order_id', key: 'order_id' },
-            { title: t('Buyer email'), dataIndex: 'buyer_email', key: 'buyer_email' },
+            {
+              title: t('Buyer email'),
+              dataIndex: 'buyer_email',
+              key: 'buyer_email',
+              ellipsis: { showTitle: true },
+            },
             { title: t('Reply greeting'), dataIndex: 'reply_greeting', key: 'reply_greeting' },
             { title: t('Email4Final depth'), dataIndex: 'email4final_depth', key: 'email4final_depth', width: 120 },
             {
@@ -486,18 +616,28 @@ export function AfterSalesBatchPage() {
             {
               title: t('Actions'),
               key: 'actions',
-              width: 120,
+              width: 200,
               render: (_value: unknown, record: Record<string, any>) => (
-                <Tooltip title={!employeeUsername ? t('Please select an AI employee') : undefined}>
+                <Space>
                   <Button
                     size="small"
-                    icon={<RedoOutlined />}
-                    disabled={record.processing_status === 'processing' || !employeeUsername}
-                    onClick={() => void handleRetryWorkOrder(record)}
+                    icon={<EyeOutlined />}
+                    disabled={!record.ai_guide_id}
+                    onClick={() => void handleViewGuide(record)}
                   >
-                    {t('Retry')}
+                    {t('View guide')}
                   </Button>
-                </Tooltip>
+                  <Tooltip title={!employeeUsername ? t('Please select an AI employee') : undefined}>
+                    <Button
+                      size="small"
+                      icon={<RedoOutlined />}
+                      disabled={record.processing_status === 'processing' || !employeeUsername}
+                      onClick={() => void handleRetryWorkOrder(record)}
+                    >
+                      {t('Retry')}
+                    </Button>
+                  </Tooltip>
+                </Space>
               ),
             },
           ]}
@@ -553,6 +693,70 @@ export function AfterSalesBatchPage() {
           </Space>
         </Form>
       </Modal>
+
+      <Drawer
+        title={t('AI guide detail')}
+        open={guideVisible}
+        onClose={() => setGuideVisible(false)}
+        width={720}
+        loading={guideLoading}
+      >
+        {guideRecord ? (
+          <Descriptions column={1} bordered size="small">
+            {GUIDE_DISPLAY_FIELDS.map(([field, label]) => (
+              <Descriptions.Item key={field} label={t(label)}>
+                {guideRecord[field] == null || guideRecord[field] === '' ? '-' : String(guideRecord[field])}
+              </Descriptions.Item>
+            ))}
+            <Descriptions.Item label={t('Actual seller reply')}>
+              {editingReply ? (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <Input.TextArea value={replyDraft} onChange={(e) => setReplyDraft(e.target.value)} rows={4} />
+                  <Space>
+                    <Button size="small" type="primary" loading={replySaving} onClick={() => void handleSaveReply()}>
+                      {t('Confirm')}
+                    </Button>
+                    <Button size="small" onClick={handleCancelReply}>
+                      {t('Cancel')}
+                    </Button>
+                  </Space>
+                </Space>
+              ) : (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <div style={{ whiteSpace: 'pre-wrap' }}>{guideRecord.actual_seller_reply_body || '-'}</div>
+                  {guideRecord.seller_reply_date_time ? (
+                    <Typography.Text type="secondary">
+                      {t('Reply time')}: {String(guideRecord.seller_reply_date_time)}
+                    </Typography.Text>
+                  ) : null}
+                  <Button
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => {
+                      setReplyDraft(guideRecord.actual_seller_reply_body || '');
+                      setEditingReply(true);
+                    }}
+                  >
+                    {t('Edit')}
+                  </Button>
+                </Space>
+              )}
+            </Descriptions.Item>
+            {['email_history_csv', 'realtime_express_txt'].map((artifactType) => {
+              const url = guideRecord[`${artifactType}_download_url`] as string | undefined;
+              return url ? (
+                <Descriptions.Item key={artifactType} label={t('Download')}>
+                  <a href={url} target="_blank" rel="noreferrer">
+                    {artifactType}
+                  </a>
+                </Descriptions.Item>
+              ) : null;
+            })}
+          </Descriptions>
+        ) : (
+          <Typography.Text type="secondary">{t('No guide generated yet')}</Typography.Text>
+        )}
+      </Drawer>
     </Space>
   );
 }

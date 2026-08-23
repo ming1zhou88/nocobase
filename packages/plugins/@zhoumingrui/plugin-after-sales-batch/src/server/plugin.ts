@@ -4,9 +4,11 @@ import type { AsyncTasksManager } from '@nocobase/plugin-async-task-manager';
 import { connectorClient } from './services/connector-client';
 import { AfterSalesGuideBatchTask, AFTER_SALES_GUIDE_BATCH_TASK_TYPE } from './tasks/after-sales-guide-batch';
 
-const DEFAULT_ANSWER_TIMEOUT_SECONDS = 60;
+const DEFAULT_ANSWER_TIMEOUT_SECONDS = 180;
 const MIN_ANSWER_TIMEOUT_SECONDS = 10;
 const MAX_ANSWER_TIMEOUT_SECONDS = 300;
+// 批处理工作台默认选中的 AI 员工；列表加载后优先排在第一位。
+const DEFAULT_AFTER_SALES_EMPLOYEE_USERNAME = '88xntp2sr1j';
 
 type EmployeeLike = {
   username?: unknown;
@@ -121,6 +123,13 @@ async function listEmployees(ctx: Context, next: Next) {
 
   const records = [...recordMap.values()].sort((a, b) => a.nickname.localeCompare(b.nickname));
 
+  // 默认员工置顶，保证批处理工作台默认选中它。
+  const defaultIndex = records.findIndex((record) => record.username === DEFAULT_AFTER_SALES_EMPLOYEE_USERNAME);
+  if (defaultIndex > 0) {
+    const [defaultEmployee] = records.splice(defaultIndex, 1);
+    records.unshift(defaultEmployee);
+  }
+
   ctx.body = {
     success: true,
     records,
@@ -187,8 +196,9 @@ async function startBatch(ctx: Context, next: Next) {
 }
 
 async function getTask(ctx: Context, next: Next) {
-  const taskId = Number(ctx.action.params.values?.taskId);
-  if (!Number.isInteger(taskId) || taskId <= 0) {
+  // asyncTasks 的主键是 UUID 字符串，前端把 startBatch 返回的 task id 原样回传。
+  const taskId = String(ctx.action.params.values?.taskId ?? '').trim();
+  if (!taskId) {
     ctx.throw(400, 'taskId is required');
   }
   const task = await ctx.db.getRepository('asyncTasks').findOne({
@@ -200,6 +210,25 @@ async function getTask(ctx: Context, next: Next) {
     ctx.throw(404, 'task not found');
   }
   ctx.body = task.toJSON();
+  await next();
+}
+
+async function getGuide(ctx: Context, next: Next) {
+  const guideId = Number(ctx.action.params.values?.guideId);
+  if (!Number.isInteger(guideId) || guideId <= 0) {
+    ctx.throw(400, 'guideId is required');
+  }
+  ctx.body = await connectorClient.getAfterSalesGuide(guideId);
+  await next();
+}
+
+async function saveGuideActualReply(ctx: Context, next: Next) {
+  const guideId = Number(ctx.action.params.values?.guideId);
+  if (!Number.isInteger(guideId) || guideId <= 0) {
+    ctx.throw(400, 'guideId is required');
+  }
+  const actualReplyBody = String(ctx.action.params.values?.actualReplyBody ?? '').trim();
+  ctx.body = await connectorClient.updateAfterSalesGuideActualReply(guideId, actualReplyBody);
   await next();
 }
 
@@ -238,6 +267,8 @@ export class PluginAfterSalesBatchServer extends Plugin {
         getSettings,
         startBatch,
         getTask,
+        getGuide,
+        saveGuideActualReply,
       },
     });
 
@@ -253,6 +284,8 @@ export class PluginAfterSalesBatchServer extends Plugin {
         'getSettings',
         'startBatch',
         'getTask',
+        'getGuide',
+        'saveGuideActualReply',
       ],
       'loggedIn',
     );

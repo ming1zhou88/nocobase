@@ -25,10 +25,29 @@ type WorkOrderRecord = Record<string, any>;
 
 const BATCH_SYSTEM_MESSAGE = [
   'You are running inside a background batch job.',
-  'Return exactly one valid JSON object and no surrounding Markdown.',
+  'Return exactly one valid JSON object and no surrounding Markdown (no ```json fences).',
   'Do not ask follow-up questions or ask the user to fill any table manually.',
   'The system will create the AIAfterSalesGuide record and refresh download snapshots automatically.',
   'When information is missing, write 不确定 or 需人工核实 according to the existing after-sales rules instead of requesting another message.',
+  '',
+  'The JSON object MUST use EXACTLY the following 17 snake_case fields, in this order, with no other fields and no nested objects or arrays. Every value must be a plain string.',
+  '1. store_name - 店铺名称',
+  '2. order_id - 订单编号（必须原样返回 Primary input 中的 order_id）',
+  '3. buyer_email - 买家邮箱地址',
+  '4. buyer_email_body - 买家邮件正文',
+  '5. buyer_email_date_time - 买家邮件日期时间',
+  '6. communication_history_summary - 买卖双方历史沟通总结',
+  '7. current_email_core_request - 当前来信核心诉求',
+  '8. current_issue_factual_summary - 当前问题事实摘要',
+  '9. case_background_risk_notes - 案件背景及风险提示',
+  '10. after_sales_issue_type - 售后问题类型',
+  '11. current_handling_stage - 当前处理阶段',
+  '12. ai_recommended_handling_plan - AI建议处理方案',
+  '13. seller_reply_draft_reference - 卖家回信正文参考',
+  '14. seller_internal_action_guide - 卖家附属行动指南及后续建议',
+  '15. manual_confirmation_required - 是否需要人工确认，取值只能是 "是" 或 "否"',
+  '16. ai_confidence_level - AI置信度，取值只能是 "高"、"中" 或 "低"',
+  '17. reasoning_explanation - 原因解释',
 ].join('\n');
 
 function formatDateTime(value: unknown) {
@@ -220,7 +239,10 @@ export class AfterSalesGuideBatchTask extends TaskType {
 
   async execute() {
     const params = (this.record.params || {}) as BatchTaskParams;
-    const ids = Array.isArray(params.ids) ? params.ids.filter((id) => Number.isInteger(id) && id > 0) : [];
+    // connector 用 bigNumberStrings 返回 id，前端勾选传回的是字符串，这里统一转成数字再过滤。
+    const ids = Array.isArray(params.ids)
+      ? params.ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+      : [];
     if (!ids.length) {
       throw new Error('No work orders selected for after-sales batch processing');
     }
@@ -291,6 +313,29 @@ export class AfterSalesGuideBatchTask extends TaskType {
           throw new Error(`No Email4Final record found for order ${workOrder.order_id}`);
         }
 
+        // 跨批次去重：若该订单已存在一份覆盖当前（或更新）买家邮件的指南，
+        // 说明之前批次已经处理过同一封邮件，直接跳过，避免同订单重复生成回答。
+        // 只有当 Email4Final 出现更新的买家邮件时才重新生成。
+        const buyerEmailDateTime = formatDateTime(emailRecord.received_time);
+        const coveredCheck = await connectorClient.hasGuideCoveringOrderEmail(
+          String(workOrder.order_id || ''),
+          buyerEmailDateTime,
+        );
+        if (coveredCheck.covered && coveredCheck.guideId) {
+          skipped += 1;
+          await connectorClient.updateWorkOrders([id], {
+            has_ai_guide: '是',
+            ai_guide_id: Number(coveredCheck.guideId),
+            processing_status: 'skipped',
+            processing_error: null,
+            last_task_id: String(this.record.id),
+            last_processed_at: new Date().toISOString(),
+          });
+          completed += 1;
+          this.reportProgress({ total, current: completed });
+          continue;
+        }
+
         const conversation = await aiPlugin.aiConversationsManager.create({
           userId: params.userId ? String(params.userId) : undefined,
           aiEmployee: { username: params.employeeUsername },
@@ -303,11 +348,15 @@ export class AfterSalesGuideBatchTask extends TaskType {
         });
 
         const taskContext = createTaskContext(this.app, conversation.sessionId, params.userId, currentRoles);
+        // 关键：像普通对话一样先解析员工绑定的模型，否则 AIEmployee 内部 this.model 为空，
+        // 调 getLLMService({}) 会直接抛 "LLM service not configured"。
+        const resolvedModel = await aiPlugin.aiEmployeesManager.resolveModel(employee as Model);
         const aiEmployee = new AIEmployee({
           ctx: taskContext,
           employee: employee as Model,
           sessionId: conversation.sessionId,
           systemMessage: BATCH_SYSTEM_MESSAGE,
+          model: resolvedModel,
         });
 
         const result = await invokeWithTimeout<any>(
