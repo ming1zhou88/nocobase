@@ -1,9 +1,81 @@
-const DEFAULT_CONNECTOR_BASE_URL = 'http://120.79.239.166:3000';
+/**
+ * 连接器 AI 网关客户端（阶段二 V2 接口）
+ *
+ * 契约来源：连接器仓库 routes/ai-gateway.js（阶段二接口段）
+ *  - 售后工单：/after-sales/work-orders/v2（建单/列表/更新/删除/触发前检查）
+ *  - 批次：/after-sales/guide-batches（创建/查询/后台执行/重试）
+ *  - 指南记录：/after-sales/guides/:guideSerial（查询、人工回填审核、核查文件下载）
+ *
+ * 编排（批次进度四项、失败重试、单事务落库）全部在连接器侧完成，NocoBase 只做展示与人工操作。
+ * 历史说明：旧版客户端指向 /after-sales/work-orders（数字主键 + 旧表 + AI 员工问答式生成），阶段二已全部切到 V2。
+ */
+const DEFAULT_CONNECTOR_BASE_URL = 'http://127.0.0.1:3000';
 
 type RequestOptions = {
   method?: 'GET' | 'POST';
   query?: Record<string, unknown>;
   body?: Record<string, unknown>;
+};
+
+export type WorkOrderRecord = {
+  id: number;
+  work_order_serial: string;
+  order_id: string | null;
+  buyer_email: string | null;
+  table_a_depth: number;
+  table_b_depth: number;
+  buyer_issue_type: string | null;
+  additional_context: string | null;
+  tone_and_language: string | null;
+  reply_preference: string | null;
+  email_length: string | null;
+  reply_greeting: string;
+  case_template_path: string | null;
+  created_at: string;
+  has_guide: '是' | '否';
+  guide_serial: string | null;
+  guide_generated_at: string | null;
+  updated_at: string;
+};
+
+export type GuideRecord = {
+  id: number;
+  guide_serial: string;
+  work_order_serial: string | null;
+  store_name: string | null;
+  order_id: string | null;
+  buyer_email: string | null;
+  buyer_email_body: string | null;
+  buyer_email_time: string | null;
+  mail_record_id: number | null;
+  communication_history_summary: string | null;
+  current_email_summary: string | null;
+  buyer_other_info: string | null;
+  seller_reply_draft: string | null;
+  seller_action_guide: string | null;
+  reasoning_explanation: string | null;
+  created_time: string;
+  actual_seller_reply_body: string | null;
+  seller_reply_time: string | null;
+  review_status: '已审核' | null;
+  email_history_csv_url: string | null;
+  realtime_express_txt_url: string | null;
+  updated_at: string;
+};
+
+export type GuideBatchRecord = {
+  id: number;
+  batch_serial: string;
+  triggered_by: string | null;
+  total_count: number;
+  done_count: number;
+  pending_count: number;
+  failed_count: number;
+  skipped_count: number;
+  status: 'running' | 'all_done' | 'part_failed';
+  failure_detail: { work_order_serial: string; reason: string; code?: string | null }[] | null;
+  started_at: string;
+  finished_at: string | null;
 };
 
 export class ConnectorClientError extends Error {
@@ -72,14 +144,18 @@ export class ConnectorClient {
     return data as T;
   }
 
+  // -------------------------------------------------------------------------
+  // 售后工单（V2）
+  // -------------------------------------------------------------------------
+
   listWorkOrders(params: Record<string, unknown>) {
     return this.request<{
       success: true;
       total: number;
       page: number;
       pageSize: number;
-      records: Record<string, unknown>[];
-    }>('/after-sales/work-orders', { query: params });
+      records: WorkOrderRecord[];
+    }>('/after-sales/work-orders/v2', { query: params });
   }
 
   listReplyGreetings() {
@@ -91,84 +167,121 @@ export class ConnectorClient {
   }
 
   createWorkOrders(records: Record<string, unknown>[]) {
-    return this.request<{ success: true; count: number; records: Record<string, unknown>[] }>(
-      '/after-sales/work-orders',
-      {
-        method: 'POST',
-        body: { records },
-      },
-    );
-  }
-
-  deleteWorkOrders(ids: number[]) {
-    return this.request<{ success: true; deletedCount: number }>('/after-sales/work-orders/bulk-delete', {
+    return this.request<{ success: true; count: number; records: WorkOrderRecord[] }>('/after-sales/work-orders/v2', {
       method: 'POST',
-      body: { ids },
+      body: { records },
     });
   }
 
-  updateWorkOrders(ids: number[], values: Record<string, unknown>) {
-    return this.request<{ success: true; count: number; records: Record<string, unknown>[] }>(
-      '/after-sales/work-orders/bulk-update',
-      {
-        method: 'POST',
-        body: { ids, values },
-      },
+  updateWorkOrders(workOrderSerials: string[], values: Record<string, unknown>) {
+    return this.request<{ success: true; count: number; records: WorkOrderRecord[] }>(
+      '/after-sales/work-orders/v2/bulk-update',
+      { method: 'POST', body: { work_order_serials: workOrderSerials, values } },
     );
   }
 
-  getWorkOrdersByIds(ids: number[]) {
-    return this.request<{ success: true; count: number; records: Record<string, unknown>[] }>(
-      '/after-sales/work-orders/query',
-      {
-        method: 'POST',
-        body: { ids },
-      },
+  deleteWorkOrders(workOrderSerials: string[]) {
+    return this.request<{ success: true; deletedCount: number; unboundCount: number }>(
+      '/after-sales/work-orders/v2/bulk-delete',
+      { method: 'POST', body: { work_order_serials: workOrderSerials } },
     );
   }
 
-  getTrackingEmail(orderId: string) {
-    return this.request<{ success: true; records: Record<string, unknown>[] }>('/tracking-email', {
-      query: { orderId },
-    });
-  }
-
-  createAfterSalesGuide(values: Record<string, unknown>) {
-    return this.request<{ success: true; record: Record<string, unknown> }>('/after-sales/guides', {
+  /** 触发前检查：哪些工单已有指南（页面据此提示"去除 / 重新生成"） */
+  inspectWorkOrders(workOrderSerials: string[]) {
+    return this.request<{
+      success: true;
+      count: number;
+      missing_serials: string[];
+      records: {
+        work_order_serial: string;
+        has_guide: boolean;
+        guide_serial: string | null;
+        review_status: string | null;
+        suggested_action: 'generate' | 'skip_or_regenerate';
+        work_order: WorkOrderRecord | null;
+      }[];
+    }>('/after-sales/work-orders/v2/inspect', {
       method: 'POST',
-      body: values,
+      body: { work_order_serials: workOrderSerials },
     });
   }
 
-  getAfterSalesGuide(guideId: number) {
-    return this.request<{ success: true; record: Record<string, unknown> }>(`/after-sales/guides/${guideId}`);
+  // -------------------------------------------------------------------------
+  // 指南与批次（编排在连接器侧）
+  // -------------------------------------------------------------------------
+
+  createGuideBatch(values: Record<string, unknown>) {
+    return this.request<{
+      success: true;
+      batch: GuideBatchRecord;
+      missing_serials: string[];
+      result: unknown;
+    }>('/after-sales/guide-batches', { method: 'POST', body: { ...values, start: false } });
   }
 
-  hasGuideCoveringOrderEmail(orderId: string, emailDateTime: string) {
-    return this.request<{ success: true; covered: boolean; guideId: number | null }>(
-      '/after-sales/guides/check-covered',
-      { query: { orderId, emailDateTime } },
+  /** 后台执行批次：立即返回，进度看批次表（页面轮询 getGuideBatch） */
+  runGuideBatch(batchSerial: string, concurrency?: number) {
+    return this.request<{ success: true; accepted: boolean; reason: string | null; batch: GuideBatchRecord }>(
+      `/after-sales/guide-batches/${encodeURIComponent(batchSerial)}/run`,
+      { method: 'POST', body: { concurrency } },
     );
   }
 
-  updateAfterSalesGuideActualReply(guideId: number, actualReplyBody: string) {
-    return this.request<{ success: true; record: Record<string, unknown> }>(
-      `/after-sales/guides/${guideId}/actual-reply`,
-      {
-        method: 'POST',
-        body: { actualReplyBody },
-      },
+  /** 最近批次（页面刷新后回显进度四项） */
+  listGuideBatches(limit = 5) {
+    return this.request<{ success: true; count: number; records: GuideBatchRecord[] }>('/after-sales/guide-batches', {
+      query: { limit },
+    });
+  }
+
+  getGuideBatch(batchSerial: string) {
+    return this.request<{ success: true; batch: GuideBatchRecord }>(
+      `/after-sales/guide-batches/${encodeURIComponent(batchSerial)}`,
     );
   }
 
-  refreshAfterSalesGuideDownloads(guideId: number, forceRefresh = false) {
-    return this.request<{ success: true; guideId: number; links: Record<string, string> }>(
-      `/after-sales-guide/${guideId}/context-snapshots`,
-      {
-        method: 'POST',
-        body: { forceRefresh },
-      },
+  retryGuideBatch(batchSerial: string, concurrency?: number) {
+    return this.request<{
+      success: true;
+      batch: GuideBatchRecord;
+      result: { retried: number; results: { work_order_serial: string; status: string }[] };
+    }>(`/after-sales/guide-batches/${encodeURIComponent(batchSerial)}/retry`, {
+      method: 'POST',
+      body: { concurrency },
+    });
+  }
+
+  getGuide(guideSerial: string) {
+    return this.request<{ success: true; guide: GuideRecord }>(
+      `/after-sales/guides/${encodeURIComponent(guideSerial)}`,
     );
+  }
+
+  /** 人工回填 / 审核（只写 ⑮⑯⑱ 与显式传入的人工修正字段） */
+  updateGuide(guideSerial: string, values: Record<string, unknown>) {
+    return this.request<{ success: true; guide: GuideRecord }>(
+      `/after-sales/guides/${encodeURIComponent(guideSerial)}/manual`,
+      { method: 'POST', body: values },
+    );
+  }
+
+  /** 解绑（"重新生成"前把旧记录摘掉，旧记录此后不参与参考） */
+  unbindGuides(workOrderSerials: string[]) {
+    return this.request<{
+      success: true;
+      count: number;
+      records: { work_order_serial: string; unboundGuideSerial: string | null }[];
+    }>('/after-sales/guides/unbind', { method: 'POST', body: { work_order_serials: workOrderSerials } });
+  }
+
+  /** 核查文件下载地址（⑲邮件历史 CSV / ⑳实时快递详情 TXT） */
+  buildArtifactUrl(guideSerial: string, artifactType: 'email_history_csv' | 'realtime_express_txt') {
+    return `${this.baseUrl}/ai/after-sales/guides/${encodeURIComponent(guideSerial)}/artifacts/${artifactType}`;
+  }
+
+  describe() {
+    return { baseUrl: this.baseUrl, hasToken: Boolean(this.token) };
   }
 }
 

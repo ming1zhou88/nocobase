@@ -1,5 +1,16 @@
 #!/usr/bin/env node
 /**
+ * ⚠️ 已过期（历史留档，2026-08-23 版本）
+ *
+ * 本脚本针对**旧版**链路：连接器旧表（AfterSalesWorkOrder / AIAfterSalesGuide，数字主键）
+ * + NocoBase 侧 AsyncTask 与 AI 员工问答式生成 17 字段指南，且指向生产连接器（120.79.239.166），
+ * 只做只读校验。阶段二已改为「连接器编排 + Dify 生成 20 字段指南」。
+ *
+ * 请使用新脚本：
+ *   node scripts/after-sales-batch-v2-selfcheck.js   # 链路自检（建单→生成→审核→下载）
+ *   node scripts/after-sales-batch-page-check.js     # 页面渲染检查（v1 / v2 客户端）
+ */
+/**
  * 售后批处理链路自检脚本（只读 + 本地临时表，零生产副作用）
  *
  * 目的：在不动生产库的前提下，验证 @zhoumingrui/plugin-after-sales-batch 的批处理链路是否真的能跑通。

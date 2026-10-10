@@ -1,51 +1,61 @@
 import { Context, Next } from '@nocobase/actions';
 import { Plugin } from '@nocobase/server';
-import type { AsyncTasksManager } from '@nocobase/plugin-async-task-manager';
 import { connectorClient } from './services/connector-client';
-import { AfterSalesGuideBatchTask, AFTER_SALES_GUIDE_BATCH_TASK_TYPE } from './tasks/after-sales-guide-batch';
 
-const DEFAULT_ANSWER_TIMEOUT_SECONDS = 180;
-const MIN_ANSWER_TIMEOUT_SECONDS = 10;
-const MAX_ANSWER_TIMEOUT_SECONDS = 300;
-// 批处理工作台默认选中的 AI 员工；列表加载后优先排在第一位。
-const DEFAULT_AFTER_SALES_EMPLOYEE_USERNAME = '88xntp2sr1j';
+/**
+ * 售后批处理（阶段二）：NocoBase 只做"工作台 + 人工操作"，编排全部在连接器侧。
+ *
+ * 链路：建单/导入 → 勾选 → 触发前检查（已有指南则选"去除 / 重新生成"）→ 创建批次并后台执行
+ *      → 轮询批次进度四项 → 查看指南（6 个 AI 字段）→ 人工审核 + 回填实际回信 → 下载核查文件
+ *
+ * 与旧版的差异：旧版由 NocoBase 侧 AsyncTask + AI 员工逐单生成 17 字段指南；阶段二改为
+ * 连接器调 Dify 生成 20 字段指南（字段口径见《阶段二实现规格-20261011》），故移除任务类型与 AI 员工选择。
+ */
 
-type EmployeeLike = {
-  username?: unknown;
-  nickname?: unknown;
-  position?: unknown;
-  profile?: unknown;
-  enabled?: unknown;
-  deprecated?: unknown;
-  toJSON?: () => EmployeeLike;
-  get?: (key: string) => unknown;
-};
+const WORK_ORDER_SERIAL_PATTERN = /^[A-Za-z0-9._:-]{1,40}$/;
 
-function readField(record: EmployeeLike | null | undefined, key: string): unknown {
-  if (!record) {
-    return undefined;
-  }
-  const plain = typeof record.toJSON === 'function' ? record.toJSON() : record;
-  const fromPlain = (plain as Record<string, unknown>)[key];
-  if (fromPlain !== undefined) {
-    return fromPlain;
-  }
-  if (typeof record.get === 'function') {
-    return record.get(key);
-  }
-  return undefined;
+function readValues(ctx: Context) {
+  return ctx.action.params.values || {};
 }
 
-function normalizeAnswerTimeoutSeconds(value: unknown) {
-  const seconds = Number(value);
-  if (!Number.isInteger(seconds) || seconds < MIN_ANSWER_TIMEOUT_SECONDS) {
-    return DEFAULT_ANSWER_TIMEOUT_SECONDS;
+/** 统一取"工单序列号数组"入参（兼容 serials/workOrderSerials 命名） */
+function readWorkOrderSerials(ctx: Context) {
+  const values = readValues(ctx);
+  const source = values.work_order_serials || values.workOrderSerials || values.serials || [];
+  const list = Array.isArray(source) ? source : [source];
+  const serials = list
+    .map((value: unknown) => String(value ?? '').trim())
+    .filter((value: string) => WORK_ORDER_SERIAL_PATTERN.test(value));
+  if (!serials.length) {
+    ctx.throw(400, 'work_order_serials is required');
   }
-  return Math.min(seconds, MAX_ANSWER_TIMEOUT_SECONDS);
+  return [...new Set(serials)];
 }
+
+function readGuideSerial(ctx: Context) {
+  const values = readValues(ctx);
+  const guideSerial = String(values.guide_serial || values.guideSerial || '').trim();
+  if (!guideSerial) {
+    ctx.throw(400, 'guide_serial is required');
+  }
+  return guideSerial;
+}
+
+function readBatchSerial(ctx: Context) {
+  const values = readValues(ctx);
+  const batchSerial = String(values.batch_serial || values.batchSerial || '').trim();
+  if (!batchSerial) {
+    ctx.throw(400, 'batch_serial is required');
+  }
+  return batchSerial;
+}
+
+// ---------------------------------------------------------------------------
+// 售后工单（V2）
+// ---------------------------------------------------------------------------
 
 async function listWorkOrders(ctx: Context, next: Next) {
-  ctx.body = await connectorClient.listWorkOrders(ctx.action.params.values || {});
+  ctx.body = await connectorClient.listWorkOrders(readValues(ctx));
   await next();
 }
 
@@ -55,240 +65,144 @@ async function listReplyGreetings(ctx: Context, next: Next) {
 }
 
 async function createWorkOrders(ctx: Context, next: Next) {
-  const records = Array.isArray(ctx.action.params.values?.records) ? ctx.action.params.values.records : [];
+  const records = readValues(ctx).records;
+  if (!Array.isArray(records) || !records.length) {
+    ctx.throw(400, 'records is required');
+  }
   ctx.body = await connectorClient.createWorkOrders(records);
   await next();
 }
 
-async function deleteWorkOrders(ctx: Context, next: Next) {
-  ctx.body = await connectorClient.deleteWorkOrders(ctx.action.params.values?.ids || []);
-  await next();
-}
-
 async function updateWorkOrders(ctx: Context, next: Next) {
-  ctx.body = await connectorClient.updateWorkOrders(
-    ctx.action.params.values?.ids || [],
-    ctx.action.params.values?.values || {},
-  );
+  const serials = readWorkOrderSerials(ctx);
+  const values = readValues(ctx).values || {};
+  ctx.body = await connectorClient.updateWorkOrders(serials, values);
   await next();
 }
 
-async function listEmployees(ctx: Context, next: Next) {
-  const merged: EmployeeLike[] = [];
-
-  try {
-    const aiPlugin = ctx.app.pm.get('ai') as {
-      aiEmployeesManager?: {
-        listEmployees?: () => Promise<EmployeeLike[]>;
-      };
-    };
-    const managerRecords = await aiPlugin?.aiEmployeesManager?.listEmployees?.();
-    if (Array.isArray(managerRecords)) {
-      merged.push(...managerRecords);
-    }
-  } catch (error) {
-    ctx.logger?.warn?.('Failed to list AI employees from manager, fallback to repository.');
-  }
-
-  const repository = ctx.db.getRepository('aiEmployees');
-  const dbRecords = (await repository.find({
-    filter: {
-      enabled: true,
-      deprecated: false,
-    },
-    sort: ['sort', 'username'],
-  })) as EmployeeLike[];
-  merged.push(...dbRecords);
-
-  const recordMap = new Map<string, { username: string; nickname: string }>();
-  for (const item of merged) {
-    const username = String(readField(item, 'username') || '').trim();
-    if (!username || recordMap.has(username)) {
-      continue;
-    }
-    if (readField(item, 'enabled') === false || readField(item, 'deprecated') === true) {
-      continue;
-    }
-    const profile = readField(item, 'profile');
-    const profileName =
-      profile && typeof profile === 'object' ? String((profile as Record<string, unknown>).name || '') : '';
-    const nickname = String(
-      readField(item, 'nickname') || readField(item, 'position') || profileName || username,
-    ).trim();
-    recordMap.set(username, {
-      username,
-      nickname: nickname || username,
-    });
-  }
-
-  const records = [...recordMap.values()].sort((a, b) => a.nickname.localeCompare(b.nickname));
-
-  // 默认员工置顶，保证批处理工作台默认选中它。
-  const defaultIndex = records.findIndex((record) => record.username === DEFAULT_AFTER_SALES_EMPLOYEE_USERNAME);
-  if (defaultIndex > 0) {
-    const [defaultEmployee] = records.splice(defaultIndex, 1);
-    records.unshift(defaultEmployee);
-  }
-
-  ctx.body = {
-    success: true,
-    records,
-  };
+async function deleteWorkOrders(ctx: Context, next: Next) {
+  ctx.body = await connectorClient.deleteWorkOrders(readWorkOrderSerials(ctx));
   await next();
 }
 
-async function getSettings(ctx: Context, next: Next) {
-  ctx.body = {
-    success: true,
-    answerTimeoutSeconds: DEFAULT_ANSWER_TIMEOUT_SECONDS,
-    minAnswerTimeoutSeconds: MIN_ANSWER_TIMEOUT_SECONDS,
-    maxAnswerTimeoutSeconds: MAX_ANSWER_TIMEOUT_SECONDS,
-  };
+/** 触发前检查：返回每个工单是否已有指南（页面据此提示去除/重新生成） */
+async function inspectWorkOrders(ctx: Context, next: Next) {
+  ctx.body = await connectorClient.inspectWorkOrders(readWorkOrderSerials(ctx));
   await next();
 }
 
-async function startBatch(ctx: Context, next: Next) {
-  const ids = Array.isArray(ctx.action.params.values?.ids) ? ctx.action.params.values.ids : [];
-  const employeeUsername = String(ctx.action.params.values?.employeeUsername || '').trim();
-  if (!ids.length) {
-    ctx.throw(400, 'Please select at least one work order');
-  }
-  if (!employeeUsername) {
-    ctx.throw(400, 'Please select an AI employee');
-  }
+// ---------------------------------------------------------------------------
+// 批次（编排在连接器侧）
+// ---------------------------------------------------------------------------
 
-  const taskManager = ctx.app.container.get('AsyncTaskManager') as AsyncTasksManager;
-  if (!taskManager) {
-    ctx.throw(500, 'AsyncTaskManager is not available');
-  }
-
-  const currentUserId = ctx.auth?.user?.id || ctx.state?.currentUser?.id;
-  const answerTimeoutSeconds = normalizeAnswerTimeoutSeconds(ctx.action.params.values?.answerTimeoutSeconds);
-  const currentRoles = Array.isArray(ctx.state?.currentRoles)
-    ? ctx.state.currentRoles
-    : ctx.state?.currentRoles
-      ? [ctx.state.currentRoles]
-      : [];
-
-  const task = await taskManager.createTask(
-    {
-      origin: 'afterSalesBatch',
-      type: AFTER_SALES_GUIDE_BATCH_TASK_TYPE,
-      title: `After-sales batch - ${ids.length}`,
-      params: {
-        ids,
-        employeeUsername,
-        userId: currentUserId,
-        currentRoles,
-        answerTimeoutSeconds,
-      },
-      createdById: currentUserId,
-      cancelable: true,
-    },
-    {
-      useQueue: true,
-      context: ctx,
-    },
-  );
-
-  ctx.body = task.toJSON();
-  await next();
-}
-
-async function getTask(ctx: Context, next: Next) {
-  // asyncTasks 的主键是 UUID 字符串，前端把 startBatch 返回的 task id 原样回传。
-  const taskId = String(ctx.action.params.values?.taskId ?? '').trim();
-  if (!taskId) {
-    ctx.throw(400, 'taskId is required');
-  }
-  const task = await ctx.db.getRepository('asyncTasks').findOne({
-    filter: {
-      id: taskId,
-    },
+/**
+ * 创建批次并后台执行。
+ * values.decisions: { [work_order_serial]: 'skip' | 'regenerate' | 'generate' }
+ * values.default_action: 'generate' | 'skip' | 'regenerate'
+ */
+async function startGuideBatch(ctx: Context, next: Next) {
+  const values = readValues(ctx);
+  const serials = readWorkOrderSerials(ctx);
+  const decisions = values.decisions && typeof values.decisions === 'object' ? values.decisions : {};
+  const created = await connectorClient.createGuideBatch({
+    work_order_serials: serials,
+    triggered_by: values.triggered_by || ctx.auth?.user?.nickname || ctx.auth?.user?.username || null,
+    default_action: values.default_action || 'generate',
+    decisions,
   });
-  if (!task) {
-    ctx.throw(404, 'task not found');
-  }
-  ctx.body = task.toJSON();
+
+  const batch = created.batch;
+  const run = await connectorClient.runGuideBatch(batch.batch_serial, values.concurrency);
+  ctx.body = {
+    success: true,
+    batch: run.batch || batch,
+    accepted: run.accepted,
+    reason: run.reason || null,
+    missing_serials: created.missing_serials || [],
+  };
   await next();
 }
+
+/** 最近批次列表（页面初始化时回显最近一次进度） */
+async function listGuideBatches(ctx: Context, next: Next) {
+  ctx.body = await connectorClient.listGuideBatches(Number(readValues(ctx).limit) || 5);
+  await next();
+}
+
+async function getGuideBatch(ctx: Context, next: Next) {
+  ctx.body = await connectorClient.getGuideBatch(readBatchSerial(ctx));
+  await next();
+}
+
+async function retryGuideBatch(ctx: Context, next: Next) {
+  ctx.body = await connectorClient.retryGuideBatch(readBatchSerial(ctx), readValues(ctx).concurrency);
+  await next();
+}
+
+/** 解绑（"去除"已有指南；旧记录保留但不参与后续参考） */
+async function unbindGuides(ctx: Context, next: Next) {
+  ctx.body = await connectorClient.unbindGuides(readWorkOrderSerials(ctx));
+  await next();
+}
+
+// ---------------------------------------------------------------------------
+// 指南记录（人工操作）
+// ---------------------------------------------------------------------------
 
 async function getGuide(ctx: Context, next: Next) {
-  const guideId = Number(ctx.action.params.values?.guideId);
-  if (!Number.isInteger(guideId) || guideId <= 0) {
-    ctx.throw(400, 'guideId is required');
-  }
-  ctx.body = await connectorClient.getAfterSalesGuide(guideId);
+  ctx.body = await connectorClient.getGuide(readGuideSerial(ctx));
   await next();
 }
 
-async function saveGuideActualReply(ctx: Context, next: Next) {
-  const guideId = Number(ctx.action.params.values?.guideId);
-  if (!Number.isInteger(guideId) || guideId <= 0) {
-    ctx.throw(400, 'guideId is required');
+/** 人工回填/审核：values = { review_status?, actual_seller_reply_body?, seller_reply_time?, <6 个 AI 字段>? } */
+async function updateGuide(ctx: Context, next: Next) {
+  const values = readValues(ctx).values || {};
+  if (!values || !Object.keys(values).length) {
+    ctx.throw(400, 'values is required');
   }
-  const actualReplyBody = String(ctx.action.params.values?.actualReplyBody ?? '').trim();
-  ctx.body = await connectorClient.updateAfterSalesGuideActualReply(guideId, actualReplyBody);
+  ctx.body = await connectorClient.updateGuide(readGuideSerial(ctx), values);
   await next();
 }
+
+/** 核查文件下载地址（⑲CSV / ⑳TXT），页面直接打开链接 */
+async function getGuideArtifactUrls(ctx: Context, next: Next) {
+  const guideSerial = readGuideSerial(ctx);
+  ctx.body = {
+    success: true,
+    guide_serial: guideSerial,
+    links: {
+      email_history_csv: connectorClient.buildArtifactUrl(guideSerial, 'email_history_csv'),
+      realtime_express_txt: connectorClient.buildArtifactUrl(guideSerial, 'realtime_express_txt'),
+    },
+  };
+  await next();
+}
+
+const ACTIONS = {
+  listWorkOrders,
+  listReplyGreetings,
+  createWorkOrders,
+  updateWorkOrders,
+  deleteWorkOrders,
+  inspectWorkOrders,
+  startGuideBatch,
+  listGuideBatches,
+  getGuideBatch,
+  retryGuideBatch,
+  unbindGuides,
+  getGuide,
+  updateGuide,
+  getGuideArtifactUrls,
+};
 
 export class PluginAfterSalesBatchServer extends Plugin {
-  private taskRegistered = false;
-
-  afterAdd() {
-    this.app.on('afterLoad', () => this.registerTaskType());
-  }
-
-  private registerTaskType() {
-    if (this.taskRegistered) {
-      return;
-    }
-    try {
-      const taskManager = this.app.container.get('AsyncTaskManager') as AsyncTasksManager;
-      taskManager.registerTaskType(AfterSalesGuideBatchTask);
-      this.taskRegistered = true;
-    } catch (error) {
-      this.log.warn('AsyncTaskManager is not available, skip after-sales batch task registration.');
-    }
-  }
-
   async load() {
-    this.registerTaskType();
-
     this.app.resourceManager.define({
       name: 'afterSalesBatch',
-      actions: {
-        listWorkOrders,
-        listReplyGreetings,
-        createWorkOrders,
-        deleteWorkOrders,
-        updateWorkOrders,
-        listEmployees,
-        getSettings,
-        startBatch,
-        getTask,
-        getGuide,
-        saveGuideActualReply,
-      },
+      actions: ACTIONS,
     });
 
-    this.app.acl.allow(
-      'afterSalesBatch',
-      [
-        'listWorkOrders',
-        'listReplyGreetings',
-        'createWorkOrders',
-        'deleteWorkOrders',
-        'updateWorkOrders',
-        'listEmployees',
-        'getSettings',
-        'startBatch',
-        'getTask',
-        'getGuide',
-        'saveGuideActualReply',
-      ],
-      'loggedIn',
-    );
+    this.app.acl.allow('afterSalesBatch', Object.keys(ACTIONS), 'loggedIn');
     this.app.acl.registerSnippet({
       name: `pm.${this.name}`,
       actions: ['afterSalesBatch:*'],
