@@ -280,6 +280,75 @@ export class ConnectorClient {
     return `${this.baseUrl}/ai/after-sales/guides/${encodeURIComponent(guideSerial)}/artifacts/${artifactType}`;
   }
 
+  // -------------------------------------------------------------------------
+  // 快递通知邮件发送（7E2 今日可发 → 7E1 正文 → Dify 逐封 → 连接器回写）
+  // -------------------------------------------------------------------------
+
+  /** 今日可发清单（美西当天；dry_run=1 时不校验发件授权码，便于先看清单） */
+  listEmailNotifySendable(params: Record<string, unknown>) {
+    return this.request<{
+      success: true;
+      window: { date: string; basis: string; start: string; end: string; note: string };
+      count: number;
+      sendable_count: number;
+      blocked_count: number;
+      records: Record<string, unknown>[];
+    }>('/email-notify/sendable', { query: params });
+  }
+
+  /** 店铺 → 发件邮箱映射 */
+  listEmailSenderMailboxes() {
+    return this.request<{ success: true; count: number; records: Record<string, unknown>[] }>(
+      '/email-notify/mailboxes',
+    );
+  }
+
+  createEmailNotifyJob(values: Record<string, unknown>) {
+    return this.request<{
+      success: true;
+      job_serial: string;
+      runnable_count: number;
+      skipped_count: number;
+      window: Record<string, unknown>;
+    }>('/email-notify/jobs', { method: 'POST', body: values });
+  }
+
+  /** 通过 Dify 工作流执行（Dify 逐封回调连接器 send-one，回写由连接器完成） */
+  runEmailNotifyJobViaDify(jobSerial: string, values: Record<string, unknown> = {}) {
+    return this.request<{
+      success: true;
+      job_serial: string;
+      summary: string;
+      sent: number;
+      failed: number;
+      skipped: number;
+      details: Record<string, unknown>[];
+      elapsed_ms: number;
+      job: Record<string, unknown>;
+    }>(`/email-notify/jobs/${encodeURIComponent(jobSerial)}/run-via-dify`, { method: 'POST', body: values });
+  }
+
+  getEmailNotifyJob(jobSerial: string) {
+    return this.request<{ success: true; job: Record<string, unknown>; items: Record<string, unknown>[] }>(
+      `/email-notify/jobs/${encodeURIComponent(jobSerial)}`,
+    );
+  }
+
+  listEmailNotifyJobs(limit = 5) {
+    return this.request<{ success: true; count: number; records: Record<string, unknown>[] }>('/email-notify/jobs', {
+      query: { limit },
+    });
+  }
+
+  retryEmailNotifyJob(jobSerial: string, values: Record<string, unknown> = {}) {
+    return this.request<{
+      success: true;
+      retried: number;
+      results: Record<string, unknown>[];
+      job: Record<string, unknown>;
+    }>(`/email-notify/jobs/${encodeURIComponent(jobSerial)}/retry`, { method: 'POST', body: values });
+  }
+
   describe() {
     return { baseUrl: this.baseUrl, hasToken: Boolean(this.token) };
   }

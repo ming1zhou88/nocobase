@@ -178,6 +178,84 @@ async function getGuideArtifactUrls(ctx: Context, next: Next) {
   await next();
 }
 
+// ---------------------------------------------------------------------------
+// 快递通知邮件发送（发起方在工作台页面上：筛 7E2 → 关联 7E1 → 勾选 → 触发 Dify 逐封）
+// ---------------------------------------------------------------------------
+
+/** 今日可发快递邮件清单（含 7E1 收件人/正文与发件邮箱） */
+async function listEmailNotifySendable(ctx: Context, next: Next) {
+  const values = readValues(ctx);
+  ctx.body = await connectorClient.listEmailNotifySendable({
+    date: values.date,
+    basis: values.basis,
+    limit: values.limit,
+    dry_run: values.dry_run,
+  });
+  await next();
+}
+
+async function listEmailSenderMailboxes(ctx: Context, next: Next) {
+  ctx.body = await connectorClient.listEmailSenderMailboxes();
+  await next();
+}
+
+/** 创建发送任务（勾选后的订单清单） */
+async function createEmailNotifyJob(ctx: Context, next: Next) {
+  const values = readValues(ctx);
+  const orderIds = Array.isArray(values.order_ids) ? values.order_ids : [];
+  if (!orderIds.length) {
+    ctx.throw(400, 'order_ids is required');
+  }
+  ctx.body = await connectorClient.createEmailNotifyJob({
+    order_ids: orderIds,
+    date: values.date,
+    basis: values.basis,
+    dry_run: values.dry_run,
+    write_back: values.write_back,
+    triggered_by: values.triggered_by || ctx.auth?.user?.nickname || ctx.auth?.user?.username || null,
+  });
+  await next();
+}
+
+/** 触发 Dify 逐封发送 */
+async function runEmailNotifyJobViaDify(ctx: Context, next: Next) {
+  const values = readValues(ctx);
+  const jobSerial = String(values.job_serial || '').trim();
+  if (!jobSerial) {
+    ctx.throw(400, 'job_serial is required');
+  }
+  ctx.body = await connectorClient.runEmailNotifyJobViaDify(jobSerial, {
+    dry_run: values.dry_run,
+    write_back: values.write_back,
+  });
+  await next();
+}
+
+async function getEmailNotifyJob(ctx: Context, next: Next) {
+  const values = readValues(ctx);
+  const jobSerial = String(values.job_serial || '').trim();
+  if (!jobSerial) {
+    ctx.throw(400, 'job_serial is required');
+  }
+  ctx.body = await connectorClient.getEmailNotifyJob(jobSerial);
+  await next();
+}
+
+async function listEmailNotifyJobs(ctx: Context, next: Next) {
+  ctx.body = await connectorClient.listEmailNotifyJobs(Number(readValues(ctx).limit) || 5);
+  await next();
+}
+
+async function retryEmailNotifyJob(ctx: Context, next: Next) {
+  const values = readValues(ctx);
+  const jobSerial = String(values.job_serial || '').trim();
+  if (!jobSerial) {
+    ctx.throw(400, 'job_serial is required');
+  }
+  ctx.body = await connectorClient.retryEmailNotifyJob(jobSerial, { dry_run: values.dry_run });
+  await next();
+}
+
 const ACTIONS = {
   listWorkOrders,
   listReplyGreetings,
@@ -193,6 +271,13 @@ const ACTIONS = {
   getGuide,
   updateGuide,
   getGuideArtifactUrls,
+  listEmailNotifySendable,
+  listEmailSenderMailboxes,
+  createEmailNotifyJob,
+  runEmailNotifyJobViaDify,
+  getEmailNotifyJob,
+  listEmailNotifyJobs,
+  retryEmailNotifyJob,
 };
 
 export class PluginAfterSalesBatchServer extends Plugin {

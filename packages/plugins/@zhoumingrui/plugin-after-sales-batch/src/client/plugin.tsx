@@ -3,8 +3,10 @@ import { Plugin } from '@nocobase/client';
 import { Typography } from 'antd';
 import { NAMESPACE, useT } from './locale';
 import { AfterSalesBatchPage } from './pages/AfterSalesBatchPage';
+import { EmailNotifyPage } from './pages/EmailNotifyPage';
 
 export const AFTER_SALES_BATCH_ROUTE_PATH = '/admin/after-sales/batch-workbench';
+export const AFTER_SALES_NOTIFY_ROUTE_PATH = '/admin/express-mail/notify';
 
 type AsyncTaskManagerClientPlugin = {
   taskOrigins: {
@@ -27,6 +29,11 @@ export class PluginAfterSalesBatchClient extends Plugin {
     this.app.router.add('admin.after-sales-batch', {
       path: AFTER_SALES_BATCH_ROUTE_PATH,
       Component: AfterSalesBatchPage,
+    });
+
+    this.app.router.add('admin.express-mail-notify', {
+      path: AFTER_SALES_NOTIFY_ROUTE_PATH,
+      Component: EmailNotifyPage,
     });
 
     (this.app.pm.get('async-task-manager') as AsyncTaskManagerClientPlugin | undefined)?.taskOrigins.register(

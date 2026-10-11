@@ -26,6 +26,11 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
       componentLoader: () => import('./pages/AfterSalesBatchPage'),
     });
 
+    this.router.add('express-mail-notify', {
+      path: '/express-mail/notify',
+      componentLoader: () => import('./pages/EmailNotifyPage'),
+    });
+
     (this.app.pm.get('async-task-manager') as AsyncTaskManagerClientV2Plugin | undefined)?.taskOrigins.register(
       'afterSalesBatch',
       {
