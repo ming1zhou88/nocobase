@@ -137,5 +137,15 @@
   "Dry run write back hint": "Dry run write back hint",
   "Dry run banner": "Dry run banner",
   "Dry run banner detail": "Dry run banner detail",
-  "Dry run hint": "Dry run hint"
+  "Dry run hint": "Dry run hint",
+  "en-CA": "en-CA",
+  "Day before yesterday": "Day before yesterday",
+  "US Pacific date hint": "US Pacific date hint",
+  "en-US": "en-US",
+  "Today": "Today",
+  "-": "-",
+  "Load sendable list": "Load sendable list",
+  "Yesterday": "Yesterday",
+  "YYYY-MM-DD": "YYYY-MM-DD",
+  "US Pacific": "US Pacific"
 }

@@ -14,9 +14,11 @@ import {
   Card,
   Descriptions,
   Drawer,
+  DatePicker,
   Input,
   Modal,
   Progress,
+  Segmented,
   Space,
   Statistic,
   Switch,
@@ -27,10 +29,55 @@ import {
 } from 'antd';
 import { useFlowContext } from '@nocobase/flow-engine';
 import React, { useEffect, useMemo, useState } from 'react';
+import dayjs from 'dayjs';
 import { useT } from '../locale';
 
 const NOTIFY_ROUTE = '/express-mail/notify';
 const POLL_INTERVAL_MS = 3000;
+
+// ---------------------------------------------------------------------------
+// 日期控件：统一按"美西太平洋日期"计算（不是浏览器本地日期）
+// ---------------------------------------------------------------------------
+const LA_TIME_ZONE = 'America/Los_Angeles';
+const LA_WEEKDAYS: Record<string, string> = {
+  Sun: '周日',
+  Mon: '周一',
+  Tue: '周二',
+  Wed: '周三',
+  Thu: '周四',
+  Fri: '周五',
+  Sat: '周六',
+};
+
+/** 美西当天（可偏移天数）的 YYYY-MM-DD */
+function laDateString(offsetDays = 0) {
+  const base = new Intl.DateTimeFormat('en-CA', {
+    timeZone: LA_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  if (!offsetDays) {
+    return base;
+  }
+  const [year, month, day] = base.split('-').map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + offsetDays));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(
+    shifted.getUTCDate(),
+  ).padStart(2, '0')}`;
+}
+
+/** 美西某日期的星期文案 + MM-DD（用于快捷项与当前日期提示） */
+function laDateLabel(dateStr: string) {
+  if (!dateStr) {
+    return '';
+  }
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const week = new Intl.DateTimeFormat('en-US', { timeZone: LA_TIME_ZONE, weekday: 'short' }).format(
+    new Date(Date.UTC(year, month - 1, day, 20, 0, 0)),
+  );
+  return `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')} ${LA_WEEKDAYS[week] || ''}`.trim();
+}
 
 const JOB_STATUS_MAP: Record<string, { color: string; label: string }> = {
   pending: { color: 'default', label: 'Pending' },
@@ -45,7 +92,7 @@ export default function EmailNotifyPage() {
   const { message, modal } = App.useApp();
 
   const [loading, setLoading] = useState(false);
-  const [date, setDate] = useState('');
+  const [date, setDate] = useState(laDateString(0));
   const [records, setRecords] = useState<Record<string, any>[]>([]);
   const [windowInfo, setWindowInfo] = useState<Record<string, any> | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -132,6 +179,16 @@ export default function EmailNotifyPage() {
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobSerial]);
+
+  // 快捷项高亮：当前日期落在"今天/昨天/前天"哪一档（美西口径）
+  const quickDateKey = useMemo(() => {
+    for (const offset of [0, -1, -2]) {
+      if (date === laDateString(offset)) {
+        return String(offset);
+      }
+    }
+    return '';
+  }, [date]);
 
   const sendableRecords = useMemo(() => records.filter((record) => record.sendable), [records]);
   const blockedRecords = useMemo(() => records.filter((record) => !record.sendable), [records]);
@@ -230,15 +287,47 @@ export default function EmailNotifyPage() {
         title={t('Sendable today')}
         extra={
           <Space wrap>
-            <Input
-              style={{ width: 160 }}
-              placeholder={t('US Pacific date')}
-              value={date}
-              onChange={(event) => setDate(event.target.value)}
-              onPressEnter={() => void loadSendable(date)}
+            <Segmented
+              value={quickDateKey}
+              onChange={(value) => {
+                const nextDate = laDateString(Number(value));
+                setDate(nextDate);
+                void loadSendable(nextDate);
+              }}
+              options={[
+                { label: `${t('Today')} ${laDateLabel(laDateString(0))}`, value: '0' },
+                { label: `${t('Yesterday')} ${laDateLabel(laDateString(-1))}`, value: '-1' },
+                { label: `${t('Day before yesterday')} ${laDateLabel(laDateString(-2))}`, value: '-2' },
+              ]}
             />
+            <Tooltip title={t('US Pacific date hint')}>
+              <DatePicker
+                value={date ? dayjs(date) : null}
+                format="YYYY-MM-DD"
+                allowClear={false}
+                inputReadOnly
+                style={{ width: 168 }}
+                disabledDate={(current) => current && current.isAfter(dayjs(laDateString(0)), 'day')}
+                presets={[
+                  { label: `${t('Today')}（${laDateLabel(laDateString(0))}）`, value: dayjs(laDateString(0)) },
+                  { label: `${t('Yesterday')}（${laDateLabel(laDateString(-1))}）`, value: dayjs(laDateString(-1)) },
+                  {
+                    label: `${t('Day before yesterday')}（${laDateLabel(laDateString(-2))}）`,
+                    value: dayjs(laDateString(-2)),
+                  },
+                ]}
+                onChange={(value) => {
+                  const nextDate = value ? value.format('YYYY-MM-DD') : laDateString(0);
+                  setDate(nextDate);
+                  void loadSendable(nextDate);
+                }}
+              />
+            </Tooltip>
+            <Typography.Text type="secondary">
+              {t('US Pacific')} · {laDateLabel(date) || '-'}
+            </Typography.Text>
             <Button icon={<ReloadOutlined />} type="primary" loading={loading} onClick={() => void loadSendable(date)}>
-              {t('Today sendable express emails')}
+              {t('Load sendable list')}
             </Button>
             <Button icon={<MailOutlined />} onClick={() => void loadMailboxes()}>
               {t('Sender mailboxes')}

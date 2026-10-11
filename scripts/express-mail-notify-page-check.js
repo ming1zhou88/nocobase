@@ -161,10 +161,53 @@ async function main() {
       check(label, count > 0, `命中 ${count} 处`);
     }
 
-    console.log('\n=== 3. 收件人与正文预览 ===');
-    await page.getByPlaceholder('美西日期（YYYY-MM-DD）').fill('2026-10-08');
-    await page.getByRole('button', { name: '今日可发快递邮件' }).first().click();
+    console.log('\n=== 2b. 日期控件（美西口径 + 快捷项） ===');
+    const laDate = (offset) => {
+      const base = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Los_Angeles',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+      if (!offset) return base;
+      const [y, m, d] = base.split('-').map(Number);
+      const shifted = new Date(Date.UTC(y, m - 1, d + offset));
+      return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(
+        shifted.getUTCDate(),
+      ).padStart(2, '0')}`;
+    };
+    for (const label of ['今天', '昨天', '前天']) {
+      const count = await page.getByText(label, { exact: false }).count();
+      check(`快捷项：${label}`, count > 0, `命中 ${count} 处`);
+    }
+    const dateInput = page.locator('.ant-picker-input input').first();
+    check('日期为选择器（只读输入 + 日历图标）', (await dateInput.count()) > 0, `值=${await dateInput.inputValue()}`);
+    check(
+      '默认日期 = 美西今天',
+      (await dateInput.inputValue()) === laDate(0),
+      `页面=${await dateInput.inputValue()} 期望=${laDate(0)}`,
+    );
+    await page.locator('.ant-picker-input input').first().click();
+    await page.waitForTimeout(1200);
+    const presetCount = await page.locator('.ant-picker-presets li').count();
+    check('日历面板带预设项（今天/昨天/前天）', presetCount >= 3, `${presetCount} 项`);
+    await page.keyboard.press('Escape');
+    await page.getByText('前天', { exact: false }).first().click();
     await page.waitForTimeout(6000);
+    const afterQuick = await dateInput.inputValue();
+    check('点「前天」后切到美西前天', afterQuick === laDate(-2), `页面=${afterQuick} 期望=${laDate(-2)}`);
+    const alertText = (await page.locator('.ant-alert').allInnerTexts()).join(' | ');
+    check('筛选窗口提示同步更新', alertText.includes(laDate(-2)), alertText.slice(0, 120).replace(/\n/g, ' '));
+    await page.screenshot({ path: SCREENSHOT.replace('.png', '-date.png'), fullPage: true });
+
+    console.log('\n=== 3. 收件人与正文预览 ===');
+    // 日期框是只读的（只能从日历选择），这里点开日历选 2026-10-08
+    await page.locator('.ant-picker-input input').first().click();
+    await page.waitForTimeout(1000);
+    await page.locator('.ant-picker-cell[title="2026-10-08"]').first().click();
+    await page.waitForTimeout(6000);
+    const pickedDate = await page.locator('.ant-picker-input input').first().inputValue();
+    check('从日历选择 2026-10-08 成功', pickedDate === '2026-10-08', `页面=${pickedDate}`);
     const rows = await page.locator('.ant-table-tbody tr.ant-table-row').count();
     check('可发清单表格已渲染数据行', rows > 0, `${rows} 行`);
     const subjectVisible = await page

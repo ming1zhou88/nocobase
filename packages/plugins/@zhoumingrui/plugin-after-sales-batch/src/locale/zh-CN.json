@@ -137,5 +137,15 @@
   "Dry run write back hint": "开启后演练也会真实回写 7E2/7E1 的状态列（仅用于本地验证，勿在生产开启）",
   "Dry run banner": "当前为演练模式：不会真正发出邮件",
   "Dry run banner detail": "演练模式下 Dify 仍会逐封调用连接器，连接器返回模拟结果；默认不回写 7E2/7E1。关闭开关即真实发送（需先配置各店铺发件邮箱授权码）。",
-  "Dry run hint": "开启时不真正发信，仅走通\"建任务 → Dify 逐封 → 回写/审计\"链路（授权码未配置时也能先验证）"
+  "Dry run hint": "开启时不真正发信，仅走通\"建任务 → Dify 逐封 → 回写/审计\"链路（授权码未配置时也能先验证）",
+  "en-CA": "en-CA",
+  "Day before yesterday": "前天",
+  "US Pacific date hint": "按美西太平洋日期筛选（与 7E2 的 platform_sendable_at 口径一致）；只能选到今天及以前",
+  "en-US": "en-US",
+  "Today": "今天",
+  "-": "-",
+  "Load sendable list": "加载该日期清单",
+  "Yesterday": "昨天",
+  "YYYY-MM-DD": "YYYY-MM-DD",
+  "US Pacific": "美西时间"
 }
