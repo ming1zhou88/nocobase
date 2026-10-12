@@ -1,19 +1,19 @@
 import {
   CopyOutlined,
-  DeleteOutlined,
   DownloadOutlined,
+  DeleteOutlined,
   EditOutlined,
   EyeOutlined,
   PlayCircleOutlined,
   PlusOutlined,
-  RedoOutlined,
   ReloadOutlined,
+  RedoOutlined,
+  StopOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import { useAPIClient } from '@nocobase/client';
 import { AFTER_SALES_BATCH_ROUTE_PATH } from '../plugin';
 import {
-  Alert,
   App,
   Button,
   Card,
@@ -24,10 +24,8 @@ import {
   InputNumber,
   Modal,
   Progress,
-  Radio,
   Select,
   Space,
-  Statistic,
   Table,
   Tag,
   Tooltip,
@@ -35,75 +33,66 @@ import {
   Upload,
 } from 'antd';
 import type { UploadProps } from 'antd';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useT } from '../locale';
 
 const WORK_ORDER_ROUTE = '/admin/after-sales/batch-workbench';
-const BATCH_POLL_INTERVAL_MS = 3000;
+const FALLBACK_ANSWER_TIMEOUT_SECONDS = 180;
 
-const DEFAULT_REPLY_GREETINGS = [
-  'Hi',
-  'Hello',
-  'Dear Buyer',
-  'Dear Customer',
-  'Hi Customer',
-  'Hi Buyer',
-  'Hello Customer',
-  'Hello Buyer',
-];
+const STATUS_COLOR_MAP: Record<string, string> = {
+  pending: 'default',
+  processing: 'processing',
+  succeeded: 'success',
+  failed: 'error',
+  skipped: 'warning',
+};
 
-const DEFAULT_GREETING_OPTIONS = DEFAULT_REPLY_GREETINGS.map((greeting) => ({ label: greeting, value: greeting }));
-
-// 指南详情：文档 20 字段（②～⑳），按顺序展示
+// 指南详情按顺序展示的字段（字段名 -> i18n 标签 key）
 const GUIDE_DISPLAY_FIELDS: Array<[string, string]> = [
-  ['guide_serial', 'Guide serial'],
   ['store_name', 'Store name'],
   ['order_id', 'Order ID'],
   ['buyer_email', 'Buyer email'],
   ['buyer_email_body', 'Buyer email body'],
-  ['buyer_email_time', 'Buyer email date time'],
-  ['mail_record_id', 'Mail record id'],
+  ['buyer_email_date_time', 'Buyer email date time'],
   ['communication_history_summary', 'Communication history summary'],
-  ['current_email_summary', 'Current email summary'],
-  ['buyer_other_info', 'Buyer other info'],
-  ['seller_reply_draft', 'Seller reply draft reference'],
-  ['seller_action_guide', 'Seller action guide'],
+  ['current_email_core_request', 'Current email core request'],
+  ['current_issue_factual_summary', 'Current issue factual summary'],
+  ['case_background_risk_notes', 'Case background risk notes'],
+  ['after_sales_issue_type', 'After-sales issue type'],
+  ['current_handling_stage', 'Current handling stage'],
+  ['ai_recommended_handling_plan', 'AI recommended handling plan'],
+  ['seller_reply_draft_reference', 'Seller reply draft reference'],
+  ['seller_internal_action_guide', 'Seller internal action guide'],
+  ['manual_confirmation_required', 'Manual confirmation required'],
+  ['ai_confidence_level', 'AI confidence level'],
   ['reasoning_explanation', 'Reasoning explanation'],
-  ['created_time', 'Created at'],
-  ['actual_seller_reply_body', 'Actual seller reply'],
-  ['seller_reply_time', 'Reply time'],
-  ['work_order_serial', 'Work order serial'],
-  ['review_status', 'Review status'],
 ];
 
-// 导入表头映射（阶段二字段名：tone_and_language / case_template_path / table_a_depth / table_b_depth）
 const IMPORT_HEADER_MAP: Record<string, string> = {
   订单编号: 'order_id',
   order_id: 'order_id',
   买家邮箱: 'buyer_email',
   buyer_email: 'buyer_email',
-  邮件抬头: 'reply_greeting',
-  回信抬头: 'reply_greeting',
-  reply_greeting: 'reply_greeting',
+  '表 A 获取深度': 'email4final_depth',
+  email4final_depth: 'email4final_depth',
+  '表 B 获取深度': 'ai_after_sales_guide_depth',
+  ai_after_sales_guide_depth: 'ai_after_sales_guide_depth',
   买家问题类型: 'buyer_issue_type',
   buyer_issue_type: 'buyer_issue_type',
   相关信息补充: 'additional_context',
   additional_context: 'additional_context',
-  语气和语言要求: 'tone_and_language',
-  tone_and_language: 'tone_and_language',
+  语气和语言要求: 'tone_and_language_requirement',
+  tone_and_language_requirement: 'tone_and_language_requirement',
   回复倾向: 'reply_preference',
   reply_preference: 'reply_preference',
   邮件篇幅: 'email_length',
   email_length: 'email_length',
-  标准参考案例模版路径: 'case_template_path',
-  case_template_path: 'case_template_path',
-  '表 A 获取深度': 'table_a_depth',
-  表A获取深度: 'table_a_depth',
-  table_a_depth: 'table_a_depth',
-  '表 B 获取深度': 'table_b_depth',
-  表B获取深度: 'table_b_depth',
-  table_b_depth: 'table_b_depth',
+  邮件抬头: 'reply_greeting',
+  回信抬头: 'reply_greeting',
+  reply_greeting: 'reply_greeting',
+  标准参考案例模版路径: 'standard_case_template_path',
+  standard_case_template_path: 'standard_case_template_path',
 };
 
 const IMPORT_TEMPLATE_COLUMNS = [
@@ -121,15 +110,15 @@ const IMPORT_TEMPLATE_COLUMNS = [
 ];
 
 const IMPORT_TEMPLATE_SAMPLE = [
-  '113-9233930-0206620',
+  'ORDER-20260814-001',
   'buyer@example.com',
   'Dear Customer',
-  '部件受损',
-  '买家反馈第二箱玻璃桌面碎裂，希望补发桌板',
-  '英文，礼貌专业',
-  '先安抚再给方案',
+  '物流未送达',
+  '买家表示超过预计送达时间 5 天仍未收到',
+  '专业、安抚、简洁',
+  '优先补寄，必要时退款',
   '中等',
-  '/templates/parts/damaged.md',
+  '/templates/logistics/not-delivered.md',
   3,
   1,
 ];
@@ -142,58 +131,62 @@ function normalizeImportedRows(rows: Record<string, unknown>[]) {
       if (!mappedKey) {
         continue;
       }
-      if (value === '' || value === null || value === undefined) {
-        continue;
-      }
       normalized[mappedKey] = value;
     }
     return normalized;
   });
 }
 
-/** 批次状态 -> 展示文案/颜色 */
-const BATCH_STATUS_MAP: Record<string, { color: string; label: string }> = {
-  running: { color: 'processing', label: 'Running' },
-  all_done: { color: 'success', label: 'All done' },
-  part_failed: { color: 'error', label: 'Part failed' },
-};
-
 export function AfterSalesBatchPage() {
   const api = useAPIClient();
   const t = useT();
-  const { message, modal } = App.useApp();
-
+  const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState<Record<string, any>[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(30);
-  const [keyword, setKeyword] = useState('');
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [greetingOptions, setGreetingOptions] = useState(DEFAULT_GREETING_OPTIONS);
   const [createVisible, setCreateVisible] = useState(false);
-  const [form] = Form.useForm();
-
-  const [batchSerial, setBatchSerial] = useState<string | null>(null);
-  const [batchRecord, setBatchRecord] = useState<Record<string, any> | null>(null);
-  const [starting, setStarting] = useState(false);
-
-  const [decisionVisible, setDecisionVisible] = useState(false);
-  const [decisionRows, setDecisionRows] = useState<Record<string, any>[]>([]);
-  const [decisionValues, setDecisionValues] = useState<Record<string, 'skip' | 'regenerate'>>({});
-  const pendingSerials = useRef<string[]>([]);
-
+  const [employeeOptions, setEmployeeOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [employeeUsername, setEmployeeUsername] = useState('');
+  const [answerTimeoutSeconds, setAnswerTimeoutSeconds] = useState(FALLBACK_ANSWER_TIMEOUT_SECONDS);
+  const [maxAnswerTimeoutSeconds, setMaxAnswerTimeoutSeconds] = useState(300);
+  const [minAnswerTimeoutSeconds, setMinAnswerTimeoutSeconds] = useState(10);
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [taskRecord, setTaskRecord] = useState<Record<string, any> | null>(null);
+  const [keyword, setKeyword] = useState('');
   const [guideVisible, setGuideVisible] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideRecord, setGuideRecord] = useState<Record<string, any> | null>(null);
   const [editingReply, setEditingReply] = useState(false);
   const [replyDraft, setReplyDraft] = useState('');
   const [replySaving, setReplySaving] = useState(false);
-  const [reviewSaving, setReviewSaving] = useState(false);
+  const [form] = Form.useForm();
+
+  // asyncTasks 的状态是数字：null=等待中 0=处理中 1=成功 -1=失败 -2=已取消
+  function formatTaskStatus(status: unknown) {
+    if (status === null || status === undefined) {
+      return t('Pending');
+    }
+    if (status === 0) {
+      return t('Processing');
+    }
+    if (status === 1) {
+      return t('Succeeded');
+    }
+    if (status === -1) {
+      return t('Failed');
+    }
+    if (status === -2) {
+      return t('Cancelled');
+    }
+    return String(status);
+  }
 
   async function request(action: string, values?: Record<string, unknown>) {
     const response = await api.request({
-      url: `afterSalesBatch:${action}`,
+      url: `afterSalesBatchLocal:${action}`,
       method: 'post',
       data: values || {},
     });
@@ -201,276 +194,42 @@ export function AfterSalesBatchPage() {
     return response?.data?.data ?? response?.data ?? {};
   }
 
-  async function loadGreetings() {
+  async function loadEmployees() {
     try {
-      const response = await request('listReplyGreetings');
-      const options = (response.records || []).map((item: Record<string, any>) => ({
-        label: String(item.greeting),
-        value: String(item.greeting),
+      const response = await request('listEmployees');
+      let sourceRecords = Array.isArray(response.records) ? response.records : [];
+
+      if (!sourceRecords.length) {
+        const fallback = await api.resource('aiEmployees').listByUser();
+        sourceRecords = Array.isArray(fallback?.data?.data) ? fallback.data.data : [];
+      }
+
+      const options = sourceRecords.map((item: Record<string, string>) => ({
+        label: item.nickname || item.username,
+        value: item.username,
       }));
-      setGreetingOptions(options.length ? options : DEFAULT_GREETING_OPTIONS);
-    } catch (error) {
-      setGreetingOptions(DEFAULT_GREETING_OPTIONS);
-    }
-  }
-
-  async function loadWorkOrders(nextPage = page, nextPageSize = pageSize, nextKeyword = keyword, silent = false) {
-    if (!silent) {
-      setLoading(true);
-    }
-    try {
-      const response = await request('listWorkOrders', {
-        page: nextPage,
-        pageSize: nextPageSize,
-        keyword: nextKeyword,
-      });
-      setRecords(response.records || []);
-      setTotal(Number(response.total || 0));
-      setPage(Number(response.page || nextPage));
-      setPageSize(Number(response.pageSize || nextPageSize));
-    } catch (error) {
-      if (!silent) {
-        message.error(error instanceof Error ? error.message : String(error));
+      setEmployeeOptions(options);
+      if (!employeeUsername && options[0]?.value) {
+        setEmployeeUsername(String(options[0].value));
       }
-    } finally {
-      if (!silent) {
-        setLoading(false);
+      if (!options.length) {
+        message.warning(t('No AI employees found'));
       }
-    }
-  }
-
-  async function loadBatch(currentBatchSerial: string, silent = true) {
-    const response = await request('getGuideBatch', { batch_serial: currentBatchSerial });
-    setBatchRecord(response.batch || null);
-    await loadWorkOrders(1, pageSize, keyword, silent);
-    return response.batch as Record<string, any> | null;
-  }
-
-  useEffect(() => {
-    void loadGreetings();
-    void loadWorkOrders(1, pageSize, keyword);
-    const savedBatchSerial = window.localStorage.getItem('afterSalesGuideBatchSerial');
-    if (savedBatchSerial) {
-      setBatchSerial(savedBatchSerial);
-    } else {
-      // 没有本地记录时回显最近一次批次，避免刷新后进度四项空白
-      void (async () => {
-        try {
-          const latest = await request('listGuideBatches', { limit: 1 });
-          const latestBatch = latest.records?.[0];
-          if (latestBatch?.batch_serial) {
-            setBatchSerial(String(latestBatch.batch_serial));
-            setBatchRecord(latestBatch);
-          }
-        } catch (error) {
-          // 取不到最近批次不影响页面
-        }
-      })();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!batchSerial) {
-      return;
-    }
-    void loadBatch(batchSerial);
-    const timer = window.setInterval(async () => {
-      const latest = await loadBatch(batchSerial);
-      if (latest && latest.status !== 'running') {
-        window.clearInterval(timer);
-      }
-    }, BATCH_POLL_INTERVAL_MS);
-    return () => window.clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batchSerial]);
-
-  const batchProgress = useMemo(() => {
-    const totalCount = Number(batchRecord?.total_count || 0);
-    const done = Number(batchRecord?.done_count || 0);
-    const pending = Number(batchRecord?.pending_count || 0);
-    const failed = Number(batchRecord?.failed_count || 0);
-    const skipped = Number(batchRecord?.skipped_count || 0);
-    return {
-      totalCount,
-      done,
-      pending,
-      failed,
-      skipped,
-      percent: totalCount ? Number((((done + failed + skipped) / totalCount) * 100).toFixed(2)) : 0,
-    };
-  }, [batchRecord]);
-
-  /** 触发批次：先创建（不执行）→ 后台执行 → 轮询进度 */
-  async function triggerBatch(serials: string[], decisions: Record<string, string> = {}, defaultAction = 'generate') {
-    if (!serials.length) {
-      message.warning(t('Please select at least one work order'));
-      return;
-    }
-    setStarting(true);
-    try {
-      const response = await request('startGuideBatch', {
-        work_order_serials: serials,
-        decisions,
-        default_action: defaultAction,
-      });
-      const nextBatchSerial = response.batch?.batch_serial;
-      if (nextBatchSerial) {
-        setBatchSerial(String(nextBatchSerial));
-        window.localStorage.setItem('afterSalesGuideBatchSerial', String(nextBatchSerial));
-      }
-      setBatchRecord(response.batch || null);
-      if (response.accepted === false && response.reason) {
-        message.info(String(response.reason));
-      } else {
-        message.success(t('Start batch'));
-      }
-      setSelectedRowKeys([]);
-      await loadWorkOrders(1, pageSize, keyword, true);
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : String(error));
-    } finally {
-      setStarting(false);
-    }
-  }
-
-  /** 触发前检查：已有指南的工单按规格第三步提示"去除 / 重新生成" */
-  async function handleStartBatch() {
-    const serials = selectedRowKeys.map((value) => String(value));
-    if (!serials.length) {
-      message.warning(t('Please select at least one work order'));
-      return;
-    }
-    try {
-      const inspected = await request('inspectWorkOrders', { work_order_serials: serials });
-      const existing = (inspected.records || []).filter((item: Record<string, any>) => item.has_guide);
-      if (existing.length) {
-        pendingSerials.current = serials;
-        setDecisionRows(existing);
-        setDecisionValues(
-          Object.fromEntries(existing.map((item: Record<string, any>) => [item.work_order_serial, 'regenerate'])),
-        );
-        setDecisionVisible(true);
-        return;
-      }
-      await triggerBatch(serials);
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error));
     }
   }
 
-  async function confirmDecisions() {
-    setDecisionVisible(false);
-    await triggerBatch(pendingSerials.current, decisionValues);
-  }
-
-  async function handleRetryBatch() {
-    if (!batchSerial) {
-      message.warning(t('No batch yet'));
-      return;
-    }
-    setStarting(true);
+  async function loadSettings() {
     try {
-      await request('retryGuideBatch', { batch_serial: batchSerial });
-      message.success(t('Retry'));
-      await loadBatch(batchSerial, false);
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : String(error));
-    } finally {
-      setStarting(false);
-    }
-  }
-
-  /** 单条"重新生成"：解绑旧记录（旧记录保留、不再参与参考）后单独跑一个批次 */
-  async function handleRegenerate(record: Record<string, any>) {
-    const serial = String(record.work_order_serial || '');
-    if (!serial) {
-      return;
-    }
-    modal.confirm({
-      title: t('Regenerate'),
-      content: t('Regenerate confirm'),
-      okText: t('Confirm'),
-      cancelText: t('Cancel'),
-      onOk: async () => {
-        await triggerBatch([serial], { [serial]: 'regenerate' });
-      },
-    });
-  }
-
-  async function handleDelete() {
-    const serials = selectedRowKeys.map((value) => String(value)).filter(Boolean);
-    if (!serials.length) {
-      return;
-    }
-    modal.confirm({
-      title: t('Delete selected'),
-      content: t('Delete confirm'),
-      okText: t('Confirm'),
-      cancelText: t('Cancel'),
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          await request('deleteWorkOrders', { work_order_serials: serials });
-          setSelectedRowKeys([]);
-          await loadWorkOrders(page, pageSize, keyword);
-          message.success(t('Deleted'));
-        } catch (error) {
-          message.error(error instanceof Error ? error.message : String(error));
-        }
-      },
-    });
-  }
-
-  async function handleCreate(values: Record<string, unknown>) {
-    try {
-      await request('createWorkOrders', { records: [values] });
-      setCreateVisible(false);
-      form.resetFields();
-      await loadWorkOrders(1, pageSize, keyword);
+      const response = await request('getSettings');
+      setAnswerTimeoutSeconds(Number(response.answerTimeoutSeconds || FALLBACK_ANSWER_TIMEOUT_SECONDS));
+      setMinAnswerTimeoutSeconds(Number(response.minAnswerTimeoutSeconds || 10));
+      setMaxAnswerTimeoutSeconds(Number(response.maxAnswerTimeoutSeconds || 300));
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error));
     }
   }
-
-  const uploadProps: UploadProps = {
-    accept: '.csv,.xlsx,.xls',
-    showUploadList: false,
-    beforeUpload: async (file) => {
-      try {
-        const buffer = await file.arrayBuffer();
-        const workbook = XLSX.read(buffer, { type: 'array', codepage: 65001 });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
-        const normalizedRows = normalizeImportedRows(rows).filter((row) => row.order_id || row.buyer_email);
-        if (!normalizedRows.length) {
-          message.error(t('No valid rows found. Please use the template and keep Order ID + Reply greeting.'));
-          return Upload.LIST_IGNORE;
-        }
-        // 同一次导入内按"订单号 + 邮箱"去重，避免重复上传；不同时间的再次导入仍是新工单。
-        const seen = new Set<string>();
-        const uniqueRows = normalizedRows.filter((row) => {
-          const key = `${row.order_id || ''}|${row.buyer_email || ''}`;
-          if (seen.has(key)) {
-            return false;
-          }
-          seen.add(key);
-          return true;
-        });
-        const duplicateCount = normalizedRows.length - uniqueRows.length;
-        await request('createWorkOrders', { records: uniqueRows });
-        if (duplicateCount > 0) {
-          message.warning(t('Ignored duplicate orders', { count: duplicateCount, imported: uniqueRows.length }));
-        } else {
-          message.success(`${t('Imported records')}: ${uniqueRows.length}`);
-        }
-        await loadWorkOrders(1, pageSize, keyword);
-      } catch (error) {
-        message.error(error instanceof Error ? error.message : String(error));
-      }
-      return Upload.LIST_IGNORE;
-    },
-  };
 
   function downloadImportTemplate() {
     const worksheet = XLSX.utils.aoa_to_sheet([IMPORT_TEMPLATE_COLUMNS, IMPORT_TEMPLATE_SAMPLE]);
@@ -491,9 +250,174 @@ export function AfterSalesBatchPage() {
     message.success(t('Download template'));
   }
 
+  async function loadWorkOrders(nextPage = page, nextPageSize = pageSize, nextKeyword = keyword, silent = false) {
+    if (!silent) {
+      setLoading(true);
+    }
+    try {
+      const response = await request('listWorkOrders', {
+        page: nextPage,
+        pageSize: nextPageSize,
+        keyword: nextKeyword,
+      });
+      setRecords(response.records || []);
+      setTotal(Number(response.total || 0));
+      setPage(Number(response.page || nextPage));
+      setPageSize(Number(response.pageSize || nextPageSize));
+    } finally {
+      if (!silent) {
+        setLoading(false);
+      }
+    }
+  }
+
+  async function loadTask(currentTaskId: string) {
+    const response = await request('getTask', { taskId: currentTaskId });
+    setTaskRecord(response);
+    // 处理过程中每轮也静默刷新一次列表，让每条工单的状态及时更新
+    await loadWorkOrders(1, pageSize, keyword, true);
+    if (response?.status === 1 || response?.status === -1 || response?.status === -2) {
+      window.localStorage.removeItem('afterSalesBatchTaskId');
+    }
+  }
+
+  useEffect(() => {
+    void loadSettings();
+    void loadEmployees();
+    void loadWorkOrders(1, pageSize, keyword);
+    const savedTaskId = window.localStorage.getItem('afterSalesBatchTaskId');
+    if (savedTaskId) {
+      setTaskId(savedTaskId);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!taskId) {
+      return;
+    }
+    void loadTask(taskId);
+    const timer = window.setInterval(() => {
+      void loadTask(taskId);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [taskId]);
+
+  const uploadProps: UploadProps = {
+    accept: '.csv,.xlsx,.xls',
+    showUploadList: false,
+    beforeUpload: async (file) => {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', codepage: 65001 });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+      const normalizedRows = normalizeImportedRows(rows).filter((row) => row.order_id && row.reply_greeting);
+      if (!normalizedRows.length) {
+        message.error(t('No valid rows found. Please use the template and keep Order ID + Reply greeting.'));
+        return Upload.LIST_IGNORE;
+      }
+      // 同一次导入内按订单号去重，避免手滑重复上传生成重复回答；不同时间的再次导入仍是新工单。
+      const seenOrderIds = new Set<string>();
+      const uniqueRows = normalizedRows.filter((row) => {
+        const orderId = String(row.order_id).trim();
+        if (seenOrderIds.has(orderId)) {
+          return false;
+        }
+        seenOrderIds.add(orderId);
+        return true;
+      });
+      const duplicateCount = normalizedRows.length - uniqueRows.length;
+      await request('createWorkOrders', { records: uniqueRows });
+      if (duplicateCount > 0) {
+        message.warning(t('Ignored duplicate orders', { count: duplicateCount, imported: uniqueRows.length }));
+      } else {
+        message.success(`${t('Imported records')}: ${uniqueRows.length}`);
+      }
+      await loadWorkOrders(1, pageSize, keyword);
+      return Upload.LIST_IGNORE;
+    },
+  };
+
+  async function handleCreate(values: Record<string, unknown>) {
+    await request('createWorkOrders', { records: [values] });
+    setCreateVisible(false);
+    form.resetFields();
+    await loadWorkOrders(1, pageSize, keyword);
+  }
+
+  async function handleDelete() {
+    const ids = selectedRowKeys.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0);
+    if (!ids.length) {
+      return;
+    }
+    await request('deleteWorkOrders', { ids });
+    setSelectedRowKeys([]);
+    await loadWorkOrders(page, pageSize, keyword);
+  }
+
+  async function handleStartBatch() {
+    if (!selectedRowKeys.length) {
+      message.warning(t('Please select at least one work order'));
+      return;
+    }
+    if (!employeeUsername) {
+      message.warning(t('Please select an AI employee'));
+      return;
+    }
+    const response = await request('startBatch', {
+      ids: selectedRowKeys,
+      employeeUsername,
+      answerTimeoutSeconds,
+    });
+    setTaskId(String(response.id));
+    window.localStorage.setItem('afterSalesBatchTaskId', String(response.id));
+    message.success(t('Start batch'));
+  }
+
+  async function handleStopBatch() {
+    if (!taskId) {
+      return;
+    }
+    await api.resource('asyncTasks').stop({ filterByTk: taskId });
+    await loadTask(taskId);
+    message.success(t('Stop'));
+  }
+
+  async function handleRetryWorkOrder(record: Record<string, any>) {
+    if (!employeeUsername) {
+      message.warning(t('Please select an AI employee'));
+      return;
+    }
+
+    const id = Number(record.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return;
+    }
+
+    await request('updateWorkOrders', {
+      ids: [id],
+      values: {
+        has_ai_guide: '否',
+        ai_guide_id: null,
+        ai_guide_generated_at: null,
+        processing_status: 'pending',
+        processing_error: null,
+      },
+    });
+
+    const response = await request('startBatch', {
+      ids: [id],
+      employeeUsername,
+      answerTimeoutSeconds,
+    });
+    setTaskId(String(response.id));
+    window.localStorage.setItem('afterSalesBatchTaskId', String(response.id));
+    message.success(t('Retry'));
+    await loadWorkOrders(page, pageSize, keyword);
+  }
+
   async function handleViewGuide(record: Record<string, any>) {
-    const guideSerial = String(record.guide_serial || '');
-    if (!guideSerial) {
+    const guideId = Number(record.ai_guide_id);
+    if (!Number.isInteger(guideId) || guideId <= 0) {
       message.warning(t('No guide generated yet'));
       return;
     }
@@ -503,23 +427,8 @@ export function AfterSalesBatchPage() {
     setEditingReply(false);
     setReplyDraft('');
     try {
-      const response = await request('getGuide', { guide_serial: guideSerial });
-      let record = response.guide || null;
-      // 核查文件链接以"插件侧配置的连接器地址"为准：
-      // 库里存的是连接器生成时的绝对地址（本地/生产环境不同），这里覆盖成本地可访问的地址。
-      try {
-        const links = await request('getGuideArtifactUrls', { guide_serial: guideSerial });
-        if (record && links?.links) {
-          record = {
-            ...record,
-            email_history_csv_url: links.links.email_history_csv,
-            realtime_express_txt_url: links.links.realtime_express_txt,
-          };
-        }
-      } catch (error) {
-        // 取不到就用库里存的绝对地址
-      }
-      setGuideRecord(record);
+      const response = await request('getGuide', { guideId });
+      setGuideRecord(response.record || null);
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -527,45 +436,15 @@ export function AfterSalesBatchPage() {
     }
   }
 
-  /** 审核：标"已审核"（表 B 参考的可用条件之一） */
-  async function handleReview(nextStatus: '已审核' | '') {
-    const guideSerial = String(guideRecord?.guide_serial || '');
-    if (!guideSerial) {
-      return;
-    }
-    setReviewSaving(true);
-    try {
-      const response = await request('updateGuide', {
-        guide_serial: guideSerial,
-        values: { review_status: nextStatus },
-      });
-      setGuideRecord(response.guide || guideRecord);
-      message.success(t('Saved'));
-      await loadWorkOrders(page, pageSize, keyword, true);
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : String(error));
-    } finally {
-      setReviewSaving(false);
-    }
-  }
-
   async function handleSaveReply() {
-    const guideSerial = String(guideRecord?.guide_serial || '');
-    if (!guideSerial) {
+    const guideId = Number(guideRecord?.id);
+    if (!Number.isInteger(guideId) || guideId <= 0) {
       return;
     }
     setReplySaving(true);
     try {
-      const now = new Date();
-      const pad = (value: number) => String(value).padStart(2, '0');
-      const sellerReplyTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(
-        now.getHours(),
-      )}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-      const response = await request('updateGuide', {
-        guide_serial: guideSerial,
-        values: { actual_seller_reply_body: replyDraft, seller_reply_time: sellerReplyTime },
-      });
-      setGuideRecord(response.guide || guideRecord);
+      const response = await request('saveGuideActualReply', { guideId, actualReplyBody: replyDraft });
+      setGuideRecord(response.record || guideRecord);
       setEditingReply(false);
       message.success(t('Saved'));
     } catch (error) {
@@ -575,14 +454,16 @@ export function AfterSalesBatchPage() {
     }
   }
 
-  const batchStatus = BATCH_STATUS_MAP[String(batchRecord?.status || '')] || null;
-  const failures = Array.isArray(batchRecord?.failure_detail) ? batchRecord.failure_detail : [];
+  function handleCancelReply() {
+    setEditingReply(false);
+    setReplyDraft(guideRecord?.actual_seller_reply_body || '');
+  }
 
   return (
     <Space direction="vertical" size={16} style={{ display: 'flex', padding: 24 }}>
       <Space align="center">
         <Typography.Title level={3} style={{ marginBottom: 0 }}>
-          {t('After-sales batch workbench')}
+          {t('AI after-sales guide A')}
         </Typography.Title>
         <Tooltip title={t('Copy route path')}>
           <Button
@@ -600,56 +481,58 @@ export function AfterSalesBatchPage() {
         {t('Route path')}: {WORK_ORDER_ROUTE}
       </Typography.Paragraph>
 
-      <Card
-        title={t('Batch progress')}
-        extra={
-          <Space>
-            {batchStatus ? <Tag color={batchStatus.color}>{t(batchStatus.label)}</Tag> : null}
-            <Typography.Text type="secondary">
-              {batchSerial ? `${t('Batch serial')}: ${batchSerial}` : t('No batch yet')}
-            </Typography.Text>
-            <Button
-              size="small"
-              icon={<RedoOutlined />}
-              loading={starting}
-              disabled={!batchSerial || Number(batchRecord?.failed_count || 0) === 0}
-              onClick={() => void handleRetryBatch()}
-            >
-              {t('Retry failed')}
-            </Button>
-          </Space>
-        }
-      >
-        <Space size={48} wrap>
-          <Statistic title={t('Total')} value={batchProgress.totalCount} />
-          <Statistic title={t('Completed')} value={batchProgress.done} valueStyle={{ color: '#3f8600' }} />
-          <Statistic title={t('Remaining')} value={batchProgress.pending} />
-          <Statistic title={t('Failed')} value={batchProgress.failed} valueStyle={{ color: '#cf1322' }} />
-          <Statistic title={t('Skipped')} value={batchProgress.skipped} />
-        </Space>
-        <Progress percent={batchProgress.percent} style={{ marginTop: 16 }} />
-        {failures.length ? (
-          <Alert
-            type="error"
-            style={{ marginTop: 12 }}
-            message={t('Failure detail')}
-            description={
-              <Space direction="vertical" size={2}>
-                {failures.map((item: Record<string, any>) => (
-                  <Typography.Text key={String(item.work_order_serial)}>
-                    {String(item.work_order_serial)}：{String(item.reason || '')}
-                  </Typography.Text>
-                ))}
-              </Space>
+      <Card title={t('Batch progress')}>
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <div>
+            {t('AI employee')}: {employeeUsername || '-'}
+          </div>
+          <div>
+            {t('Answer guard')}: {t('Each answer is limited to {{seconds}} seconds', { seconds: answerTimeoutSeconds })}
+          </div>
+          <div>
+            {t('Completed')}: {taskRecord?.progressCurrent || 0}
+          </div>
+          <div>
+            {t('Remaining')}: {Math.max((taskRecord?.progressTotal || 0) - (taskRecord?.progressCurrent || 0), 0)}
+          </div>
+          <Progress
+            percent={
+              taskRecord?.progressTotal
+                ? Number((((taskRecord?.progressCurrent || 0) / taskRecord.progressTotal) * 100).toFixed(2))
+                : 0
             }
           />
-        ) : null}
+          <Space>
+            {taskRecord?.status !== undefined ? <Tag>{formatTaskStatus(taskRecord.status)}</Tag> : null}
+            {(taskRecord?.status === 0 || taskRecord?.status === null) && taskId ? (
+              <Button size="small" icon={<StopOutlined />} onClick={() => void handleStopBatch()}>
+                {t('Stop')}
+              </Button>
+            ) : null}
+          </Space>
+        </Space>
       </Card>
 
       <Card
         title={t('Work orders')}
         extra={
-          <Space wrap>
+          <Space>
+            <Select
+              style={{ width: 240 }}
+              placeholder={t('AI employee')}
+              value={employeeUsername || undefined}
+              onChange={setEmployeeUsername}
+              options={employeeOptions}
+            />
+            <InputNumber
+              style={{ width: 180 }}
+              min={minAnswerTimeoutSeconds}
+              max={maxAnswerTimeoutSeconds}
+              value={answerTimeoutSeconds}
+              onChange={(value) => setAnswerTimeoutSeconds(Number(value || FALLBACK_ANSWER_TIMEOUT_SECONDS))}
+              addonBefore={t('Answer timeout')}
+              addonAfter={t('Seconds')}
+            />
             <Input.Search
               style={{ width: 240 }}
               placeholder={t('Keyword')}
@@ -671,7 +554,7 @@ export function AfterSalesBatchPage() {
             <Button icon={<PlusOutlined />} type="primary" onClick={() => setCreateVisible(true)}>
               {t('Create work order')}
             </Button>
-            <Button icon={<PlayCircleOutlined />} loading={starting} onClick={() => void handleStartBatch()}>
+            <Button icon={<PlayCircleOutlined />} onClick={() => void handleStartBatch()}>
               {t('Start batch')}
             </Button>
             <Button danger icon={<DeleteOutlined />} onClick={() => void handleDelete()}>
@@ -681,11 +564,13 @@ export function AfterSalesBatchPage() {
         }
       >
         <Table
-          rowKey="work_order_serial"
+          rowKey="id"
           loading={loading}
           dataSource={records}
-          rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-          scroll={{ x: 1400 }}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: setSelectedRowKeys,
+          }}
           pagination={{
             current: page,
             pageSize,
@@ -697,58 +582,61 @@ export function AfterSalesBatchPage() {
             },
           }}
           columns={[
-            { title: t('Work order serial'), dataIndex: 'work_order_serial', key: 'work_order_serial', width: 200 },
-            { title: t('Order ID'), dataIndex: 'order_id', key: 'order_id', width: 170 },
+            { title: t('Order ID'), dataIndex: 'order_id', key: 'order_id' },
             {
               title: t('Buyer email'),
               dataIndex: 'buyer_email',
               key: 'buyer_email',
               ellipsis: { showTitle: true },
-              width: 220,
             },
-            { title: t('Reply greeting'), dataIndex: 'reply_greeting', key: 'reply_greeting', width: 120 },
-            { title: t('Issue type'), dataIndex: 'buyer_issue_type', key: 'buyer_issue_type', width: 140 },
-            { title: t('Table A depth'), dataIndex: 'table_a_depth', key: 'table_a_depth', width: 110 },
-            { title: t('Table B depth'), dataIndex: 'table_b_depth', key: 'table_b_depth', width: 110 },
+            { title: t('Reply greeting'), dataIndex: 'reply_greeting', key: 'reply_greeting' },
+            { title: t('Email4Final depth'), dataIndex: 'email4final_depth', key: 'email4final_depth', width: 120 },
+            {
+              title: t('Guide depth'),
+              dataIndex: 'ai_after_sales_guide_depth',
+              key: 'ai_after_sales_guide_depth',
+              width: 120,
+            },
             {
               title: t('Has AI guide'),
-              dataIndex: 'has_guide',
-              key: 'has_guide',
-              width: 120,
+              dataIndex: 'has_ai_guide',
+              key: 'has_ai_guide',
               render: (value: string) => <Tag color={value === '是' ? 'success' : 'default'}>{value}</Tag>,
             },
+            { title: t('Guide ID'), dataIndex: 'ai_guide_id', key: 'ai_guide_id', width: 120 },
             {
-              title: t('Guide serial'),
-              dataIndex: 'guide_serial',
-              key: 'guide_serial',
-              width: 200,
-              render: (value: string | null) => value || '-',
+              title: t('Processing status'),
+              dataIndex: 'processing_status',
+              key: 'processing_status',
+              render: (value: string) => <Tag color={STATUS_COLOR_MAP[value] || 'default'}>{value}</Tag>,
             },
-            { title: t('Generated at'), dataIndex: 'guide_generated_at', key: 'guide_generated_at', width: 180 },
+            { title: t('Processing error'), dataIndex: 'processing_error', key: 'processing_error', ellipsis: true },
             { title: t('Created at'), dataIndex: 'created_at', key: 'created_at', width: 180 },
+            { title: t('Generated at'), dataIndex: 'ai_guide_generated_at', key: 'ai_guide_generated_at', width: 180 },
             {
               title: t('Actions'),
               key: 'actions',
-              fixed: 'right' as const,
-              width: 190,
+              width: 200,
               render: (_value: unknown, record: Record<string, any>) => (
                 <Space>
                   <Button
                     size="small"
                     icon={<EyeOutlined />}
-                    disabled={!record.guide_serial}
+                    disabled={!record.ai_guide_id}
                     onClick={() => void handleViewGuide(record)}
                   >
                     {t('View guide')}
                   </Button>
-                  <Button
-                    size="small"
-                    icon={<RedoOutlined />}
-                    disabled={!record.guide_serial}
-                    onClick={() => void handleRegenerate(record)}
-                  >
-                    {t('Regenerate')}
-                  </Button>
+                  <Tooltip title={!employeeUsername ? t('Please select an AI employee') : undefined}>
+                    <Button
+                      size="small"
+                      icon={<RedoOutlined />}
+                      disabled={record.processing_status === 'processing' || !employeeUsername}
+                      onClick={() => void handleRetryWorkOrder(record)}
+                    >
+                      {t('Retry')}
+                    </Button>
+                  </Tooltip>
                 </Space>
               ),
             },
@@ -761,23 +649,21 @@ export function AfterSalesBatchPage() {
         title={t('Create work order')}
         onCancel={() => setCreateVisible(false)}
         onOk={() => form.submit()}
-        destroyOnClose
       >
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ reply_greeting: 'Dear Customer', table_a_depth: 3, table_b_depth: 1 }}
+          initialValues={{ email4final_depth: 3, ai_after_sales_guide_depth: 1 }}
           onFinish={(values) => void handleCreate(values)}
         >
-          <Alert style={{ marginBottom: 12 }} type="info" message={t('Order id or buyer email required')} showIcon />
-          <Form.Item name="order_id" label={t('Order ID')}>
-            <Input placeholder="113-9233930-0206620" />
+          <Form.Item name="order_id" label={t('Order ID')} rules={[{ required: true }]}>
+            <Input />
           </Form.Item>
           <Form.Item name="buyer_email" label={t('Buyer email')}>
-            <Input placeholder="buyer@example.com" />
+            <Input />
           </Form.Item>
           <Form.Item name="reply_greeting" label={t('Reply greeting')} rules={[{ required: true }]}>
-            <Select options={greetingOptions} />
+            <Input />
           </Form.Item>
           <Form.Item name="buyer_issue_type" label={t('Issue type')}>
             <Input />
@@ -785,7 +671,7 @@ export function AfterSalesBatchPage() {
           <Form.Item name="additional_context" label={t('Additional context')}>
             <Input.TextArea rows={3} />
           </Form.Item>
-          <Form.Item name="tone_and_language" label={t('Tone and language')}>
+          <Form.Item name="tone_and_language_requirement" label={t('Tone and language')}>
             <Input.TextArea rows={2} />
           </Form.Item>
           <Form.Item name="reply_preference" label={t('Reply preference')}>
@@ -794,135 +680,43 @@ export function AfterSalesBatchPage() {
           <Form.Item name="email_length" label={t('Email length')}>
             <Input />
           </Form.Item>
-          <Form.Item name="case_template_path" label={t('Template path')}>
+          <Form.Item name="standard_case_template_path" label={t('Template path')}>
             <Input />
           </Form.Item>
           <Space style={{ width: '100%' }}>
-            <Form.Item name="table_a_depth" label={t('Table A depth')} style={{ flex: 1 }}>
+            <Form.Item name="email4final_depth" label={t('Email4Final depth')} style={{ flex: 1 }}>
               <InputNumber min={1} max={100} style={{ width: '100%' }} />
             </Form.Item>
-            <Form.Item name="table_b_depth" label={t('Table B depth')} style={{ flex: 1 }}>
+            <Form.Item name="ai_after_sales_guide_depth" label={t('Guide depth')} style={{ flex: 1 }}>
               <InputNumber min={1} max={100} style={{ width: '100%' }} />
             </Form.Item>
           </Space>
         </Form>
       </Modal>
 
-      <Modal
-        open={decisionVisible}
-        title={t('Existing guides found')}
-        onCancel={() => setDecisionVisible(false)}
-        onOk={() => void confirmDecisions()}
-        okText={t('Confirm')}
-        cancelText={t('Cancel')}
-      >
-        <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={t('Skip or regenerate tip')} />
-        <Space direction="vertical" style={{ width: '100%' }}>
-          {decisionRows.map((row) => (
-            <Space key={String(row.work_order_serial)} style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Typography.Text>
-                {String(row.work_order_serial)}（{String(row.guide_serial || '-')}）
-              </Typography.Text>
-              <Radio.Group
-                value={decisionValues[String(row.work_order_serial)] || 'regenerate'}
-                onChange={(event) =>
-                  setDecisionValues((prev) => ({
-                    ...prev,
-                    [String(row.work_order_serial)]: event.target.value,
-                  }))
-                }
-              >
-                <Radio.Button value="regenerate">{t('Regenerate')}</Radio.Button>
-                <Radio.Button value="skip">{t('Skip')}</Radio.Button>
-              </Radio.Group>
-            </Space>
-          ))}
-        </Space>
-      </Modal>
-
       <Drawer
         title={t('AI guide detail')}
         open={guideVisible}
         onClose={() => setGuideVisible(false)}
-        width={860}
+        width={720}
         loading={guideLoading}
-        extra={
-          guideRecord ? (
-            <Space>
-              <Tag color={guideRecord.review_status === '已审核' ? 'success' : 'default'}>
-                {guideRecord.review_status === '已审核' ? t('Reviewed') : t('Not reviewed')}
-              </Tag>
-              <Button
-                size="small"
-                type="primary"
-                loading={reviewSaving}
-                disabled={guideRecord.review_status === '已审核'}
-                onClick={() => void handleReview('已审核')}
-              >
-                {t('Mark reviewed')}
-              </Button>
-              <Button
-                size="small"
-                loading={reviewSaving}
-                disabled={guideRecord.review_status !== '已审核'}
-                onClick={() => void handleReview('')}
-              >
-                {t('Clear review')}
-              </Button>
-              {guideRecord.email_history_csv_url ? (
-                <Button
-                  size="small"
-                  icon={<DownloadOutlined />}
-                  href={String(guideRecord.email_history_csv_url)}
-                  target="_blank"
-                >
-                  {t('Email history CSV')}
-                </Button>
-              ) : null}
-              {guideRecord.realtime_express_txt_url ? (
-                <Button
-                  size="small"
-                  icon={<DownloadOutlined />}
-                  href={String(guideRecord.realtime_express_txt_url)}
-                  target="_blank"
-                >
-                  {t('Realtime express TXT')}
-                </Button>
-              ) : null}
-            </Space>
-          ) : null
-        }
       >
         {guideRecord ? (
           <Descriptions column={1} bordered size="small">
             {GUIDE_DISPLAY_FIELDS.map(([field, label]) => (
               <Descriptions.Item key={field} label={t(label)}>
-                {guideRecord[field] == null || guideRecord[field] === '' ? (
-                  '-'
-                ) : field === 'buyer_email_body' || String(guideRecord[field]).length > 120 ? (
-                  <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
-                    {String(guideRecord[field])}
-                  </Typography.Paragraph>
-                ) : (
-                  String(guideRecord[field])
-                )}
+                {guideRecord[field] == null || guideRecord[field] === '' ? '-' : String(guideRecord[field])}
               </Descriptions.Item>
             ))}
             <Descriptions.Item label={t('Actual seller reply')}>
               {editingReply ? (
                 <Space direction="vertical" style={{ width: '100%' }}>
-                  <Input.TextArea value={replyDraft} onChange={(event) => setReplyDraft(event.target.value)} rows={6} />
+                  <Input.TextArea value={replyDraft} onChange={(e) => setReplyDraft(e.target.value)} rows={4} />
                   <Space>
                     <Button size="small" type="primary" loading={replySaving} onClick={() => void handleSaveReply()}>
                       {t('Confirm')}
                     </Button>
-                    <Button
-                      size="small"
-                      onClick={() => {
-                        setEditingReply(false);
-                        setReplyDraft(guideRecord.actual_seller_reply_body || '');
-                      }}
-                    >
+                    <Button size="small" onClick={handleCancelReply}>
                       {t('Cancel')}
                     </Button>
                   </Space>
@@ -930,6 +724,11 @@ export function AfterSalesBatchPage() {
               ) : (
                 <Space direction="vertical" style={{ width: '100%' }}>
                   <div style={{ whiteSpace: 'pre-wrap' }}>{guideRecord.actual_seller_reply_body || '-'}</div>
+                  {guideRecord.seller_reply_date_time ? (
+                    <Typography.Text type="secondary">
+                      {t('Reply time')}: {String(guideRecord.seller_reply_date_time)}
+                    </Typography.Text>
+                  ) : null}
                   <Button
                     size="small"
                     icon={<EditOutlined />}
@@ -943,6 +742,16 @@ export function AfterSalesBatchPage() {
                 </Space>
               )}
             </Descriptions.Item>
+            {['email_history_csv', 'realtime_express_txt'].map((artifactType) => {
+              const url = guideRecord[`${artifactType}_download_url`] as string | undefined;
+              return url ? (
+                <Descriptions.Item key={artifactType} label={t('Download')}>
+                  <a href={url} target="_blank" rel="noreferrer">
+                    {artifactType}
+                  </a>
+                </Descriptions.Item>
+              ) : null;
+            })}
           </Descriptions>
         ) : (
           <Typography.Text type="secondary">{t('No guide generated yet')}</Typography.Text>

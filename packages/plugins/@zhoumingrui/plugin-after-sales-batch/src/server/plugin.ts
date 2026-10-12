@@ -1,15 +1,20 @@
 import { Context, Next } from '@nocobase/actions';
 import { Plugin } from '@nocobase/server';
+import type { AsyncTasksManager } from '@nocobase/plugin-async-task-manager';
 import { connectorClient } from './services/connector-client';
+import { AfterSalesGuideBatchTask, LOCAL_ACTIONS } from './actions-local';
 
 /**
- * 售后批处理（阶段二）：NocoBase 只做"工作台 + 人工操作"，编排全部在连接器侧。
+ * 售后处理指南：两条并行的生成路径。
  *
- * 链路：建单/导入 → 勾选 → 触发前检查（已有指南则选"去除 / 重新生成"）→ 创建批次并后台执行
- *      → 轮询批次进度四项 → 查看指南（6 个 AI 字段）→ 人工审核 + 回填实际回信 → 下载核查文件
+ * 【Dify 路径】资源 afterSalesBatch（本文件）
+ *   链路：建单/导入 → 勾选 → 触发前检查 → 创建批次并后台执行（连接器调 Dify）
+ *        → 轮询批次进度 → 查看指南 → 人工审核 + 回填实际回信 → 下载核查文件
+ *   指南口径：20 字段（见《阶段二实现规格-20261011》）。
  *
- * 与旧版的差异：旧版由 NocoBase 侧 AsyncTask + AI 员工逐单生成 17 字段指南；阶段二改为
- * 连接器调 Dify 生成 20 字段指南（字段口径见《阶段二实现规格-20261011》），故移除任务类型与 AI 员工选择。
+ * 【本地生成路径】资源 afterSalesBatchLocal（见 actions-local.ts）
+ *   由 NocoBase 内置 AI 员工逐单生成 17 字段指南，不经过 Dify。
+ *   用途：Dify 不可用时兜底。两套资源、两套数据表，互不影响。
  */
 
 const WORK_ORDER_SERIAL_PATTERN = /^[A-Za-z0-9._:-]{1,40}$/;
@@ -281,16 +286,52 @@ const ACTIONS = {
 };
 
 export class PluginAfterSalesBatchServer extends Plugin {
+  private taskRegistered = false;
+
+  afterAdd() {
+    this.app.on('afterLoad', () => this.registerTaskType());
+  }
+
+  /**
+   * 注册本地生成路径的异步任务类型。
+   * 只有本地路径依赖 AsyncTaskManager，注册失败不影响 Dify 路径。
+   */
+  private registerTaskType() {
+    if (this.taskRegistered) {
+      return;
+    }
+    try {
+      const taskManager = this.app.container.get('AsyncTaskManager') as AsyncTasksManager;
+      taskManager.registerTaskType(AfterSalesGuideBatchTask);
+      this.taskRegistered = true;
+    } catch (error) {
+      this.log.warn('AsyncTaskManager is not available, skip local after-sales batch task registration.');
+    }
+  }
+
   async load() {
+    this.registerTaskType();
+
+    // ---- Dify 路径（新版）----
     this.app.resourceManager.define({
       name: 'afterSalesBatch',
       actions: ACTIONS,
     });
-
     this.app.acl.allow('afterSalesBatch', Object.keys(ACTIONS), 'loggedIn');
     this.app.acl.registerSnippet({
       name: `pm.${this.name}`,
       actions: ['afterSalesBatch:*'],
+    });
+
+    // ---- 本地生成路径（原版，Dify 不可用时兜底）----
+    this.app.resourceManager.define({
+      name: 'afterSalesBatchLocal',
+      actions: LOCAL_ACTIONS,
+    });
+    this.app.acl.allow('afterSalesBatchLocal', Object.keys(LOCAL_ACTIONS), 'loggedIn');
+    this.app.acl.registerSnippet({
+      name: `pm.${this.name}.local`,
+      actions: ['afterSalesBatchLocal:*'],
     });
   }
 }
