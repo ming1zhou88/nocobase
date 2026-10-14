@@ -166,6 +166,66 @@ export class ConnectorClient {
     }>('/after-sales/reply-greetings');
   }
 
+  /**
+   * 7D4 快递异常指派（服务端唯一入口）。
+   *
+   * 页面上的「售后处理人」内联编辑会被 tracking-exception-assign.ts 的中间件拦截并转发到这里，
+   * 由连接器在同一事务内补齐 handler_id、推进状态、留痕、回写负责人表。
+   * 依据：doc/nocobase/检查-7D4快递异常实现现状-v1.md
+   */
+  assignTrackingException(payload: {
+    rowIds?: number[];
+    orderIds?: string[];
+    owner: { id: number; name: string; account?: string | null };
+    operator?: { id?: number; name?: string };
+    source?: string;
+  }) {
+    return this.request<{ success: true; updated: number; orderIds: string[] }>('/tracking-exception/assign', {
+      method: 'POST',
+      body: payload,
+    });
+  }
+
+  /**
+   * 每日售后订单指派（服务端唯一入口）。
+   *
+   * 工作台上「售后负责人」列的内联编辑会被 daily-after-sales-assign.ts 的中间件
+   * 拦截并转发到这里，由连接器在同一事务内补齐 owner_id / assign_status / 留痕，
+   * 并回写负责人表（供邮件链路的自动派单共用）。
+   *
+   * 不这么做就会"指派了但对方看不到"：原生 CRUD 只写 owner_name，
+   * 而专员的行级隔离 scope 用的是 owner_id。
+   */
+  assignDailyAfterSalesOrder(payload: {
+    rowIds?: number[];
+    identityKeys?: string[];
+    owner: { id: number; name: string; account?: string | null };
+    operator?: { id?: number; name?: string };
+    source?: string;
+  }) {
+    return this.request<{ success: true; updated: number; identityKeys: string[] }>(
+      '/after-sales/daily-orders/assign',
+      { method: 'POST', body: payload },
+    );
+  }
+
+  /**
+   * 从「每日售后订单表」的一行发起售后工单。
+   *
+   * 连接器会：自动带出订单号/邮箱/问题类型 → 建单 → 回写 work_order_serial（防重复发起）。
+   * 已发起过时返回 created=false 与既有工单。
+   */
+  createDailyAfterSalesWorkOrder(payload: {
+    daily_order_id: number;
+    overrides?: Record<string, unknown>;
+    force?: boolean;
+  }) {
+    return this.request<{ success: true; created: boolean; workOrder: Record<string, unknown>; dailyOrderId: number }>(
+      '/after-sales/daily-orders/create-work-order',
+      { method: 'POST', body: payload },
+    );
+  }
+
   createWorkOrders(records: Record<string, unknown>[]) {
     return this.request<{ success: true; count: number; records: WorkOrderRecord[] }>('/after-sales/work-orders/v2', {
       method: 'POST',
@@ -220,11 +280,14 @@ export class ConnectorClient {
     }>('/after-sales/guide-batches', { method: 'POST', body: { ...values, start: false } });
   }
 
-  /** 后台执行批次：立即返回，进度看批次表（页面轮询 getGuideBatch） */
-  runGuideBatch(batchSerial: string, concurrency?: number) {
+  /**
+   * 后台执行批次：立即返回，进度看批次表（页面轮询 getGuideBatch）。
+   * provider 一般不用传：批次创建时已落库，连接器会沿用；仅在需要覆盖时才传。
+   */
+  runGuideBatch(batchSerial: string, concurrency?: number, provider?: string) {
     return this.request<{ success: true; accepted: boolean; reason: string | null; batch: GuideBatchRecord }>(
       `/after-sales/guide-batches/${encodeURIComponent(batchSerial)}/run`,
-      { method: 'POST', body: { concurrency } },
+      { method: 'POST', body: { concurrency, provider } },
     );
   }
 

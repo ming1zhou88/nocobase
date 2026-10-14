@@ -2,7 +2,6 @@ import {
   CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
-  EditOutlined,
   EyeOutlined,
   PlayCircleOutlined,
   PlusOutlined,
@@ -27,7 +26,6 @@ import {
   Radio,
   Select,
   Space,
-  Statistic,
   Table,
   Tag,
   Tooltip,
@@ -55,7 +53,14 @@ const DEFAULT_REPLY_GREETINGS = [
 
 const DEFAULT_GREETING_OPTIONS = DEFAULT_REPLY_GREETINGS.map((greeting) => ({ label: greeting, value: greeting }));
 
-// 指南详情：文档 20 字段（②～⑳），按顺序展示
+/**
+ * 抽屉里的通用字段列表（文档 20 字段中的②～⑳，按顺序展示）。
+ *
+ * 注意两个"回信正文"是**两个独立字段**，不要合并：
+ *   - `seller_reply_draft`       ⑪ AI 生成的「卖家回信正文参考」
+ *   - `actual_seller_reply_body` ⑮ 「实际发送的卖家回信正文」——由程序从表 A 的卖家邮件回填
+ * 各自单独一行展示，顺序与文档字段编号一致。
+ */
 const GUIDE_DISPLAY_FIELDS: Array<[string, string]> = [
   ['guide_serial', 'Guide serial'],
   ['store_name', 'Store name'],
@@ -134,6 +139,71 @@ const IMPORT_TEMPLATE_SAMPLE = [
   1,
 ];
 
+/**
+ * 单元格文字样式：装不下就换行，最多两行；超过两行才省略。
+ * 之前用 `nowrap`/`ellipsis` 会截断，必须先 hover 才能看到完整值，用户明确要求改成换行。
+ */
+const CELL_WRAP_STYLE: React.CSSProperties = {
+  display: '-webkit-box',
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: 'vertical',
+  overflow: 'hidden',
+  wordBreak: 'break-all',
+  lineHeight: 1.3,
+};
+
+/**
+ * 平台订单编号专用样式：**必须一行显示，不换行、不截断**（用户明确要求）。
+ * 实测平台单号固定 19 字符（`113-9233930-0206620`），等宽字体下宽度稳定可控。
+ */
+const ORDER_ID_STYLE: React.CSSProperties = {
+  whiteSpace: 'nowrap',
+  overflow: 'visible',
+  fontVariantNumeric: 'tabular-nums',
+  letterSpacing: '-0.2px',
+};
+
+/**
+ * 序列号显示。
+ *
+ * 现行格式：纯数字 11 位 = 类型前缀(1/2/3) + YYMMDD + 4 位序号，如 `12610130123`
+ *   → 本身就是最短形态，原样显示。
+ * 历史格式：`ASWO-20261011-GRPJJZ8Q`（旧数据仍在库里）
+ *   → 第一段（类型）已由列名表达，压成「日期-唯一码」两段显示。
+ * 两种形状都要兼容，所以这里按"是否含短横线"分支。
+ */
+function shortSerial(value: unknown) {
+  const text = String(value ?? '');
+  const parts = text.split('-');
+  if (parts.length < 3) {
+    return text;
+  }
+  return `${parts[parts.length - 2]}-${parts[parts.length - 1]}`;
+}
+
+/**
+ * 紧凑日期时间：后端返回的是 ISO 串（`2026-10-12T17:19:33.000Z`），
+ * 直接渲染会折成两行且带无意义的 `.000Z`。这里拆成日期/时间两行显示。
+ */
+function CompactDateTime({ value }: { value?: string | null }) {
+  if (!value) {
+    return <span>-</span>;
+  }
+  const text = String(value)
+    .replace('T', ' ')
+    .replace(/\.\d+Z?$/, '')
+    .replace(/Z$/, '');
+  const [date, time] = text.split(' ');
+  return (
+    <Tooltip title={String(value)}>
+      <div style={{ lineHeight: 1.25, whiteSpace: 'nowrap' }}>
+        <div>{date || '-'}</div>
+        {time ? <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{time}</div> : null}
+      </div>
+    </Tooltip>
+  );
+}
+
 function normalizeImportedRows(rows: Record<string, unknown>[]) {
   return rows.map((row) => {
     const normalized: Record<string, unknown> = {};
@@ -177,6 +247,12 @@ export function AfterSalesBatchDifyPage() {
   const [batchSerial, setBatchSerial] = useState<string | null>(null);
   const [batchRecord, setBatchRecord] = useState<Record<string, any> | null>(null);
   const [starting, setStarting] = useState(false);
+  /**
+   * 生成方式：dify = 走 Dify 工作流（默认）；local = 走 NocoBase 内置 AI 员工
+   * （本地驱动，Dify 不可用时的兜底）。两者写同一张 V2 表、六字段口径一致，
+   * 差别只在"谁来生成"，用于三方对比测试。
+   */
+  const [provider, setProvider] = useState<'dify' | 'local'>('dify');
 
   const [decisionVisible, setDecisionVisible] = useState(false);
   const [decisionRows, setDecisionRows] = useState<Record<string, any>[]>([]);
@@ -186,9 +262,6 @@ export function AfterSalesBatchDifyPage() {
   const [guideVisible, setGuideVisible] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideRecord, setGuideRecord] = useState<Record<string, any> | null>(null);
-  const [editingReply, setEditingReply] = useState(false);
-  const [replyDraft, setReplyDraft] = useState('');
-  const [replySaving, setReplySaving] = useState(false);
   const [reviewSaving, setReviewSaving] = useState(false);
 
   async function request(action: string, values?: Record<string, unknown>) {
@@ -313,6 +386,7 @@ export function AfterSalesBatchDifyPage() {
         work_order_serials: serials,
         decisions,
         default_action: defaultAction,
+        provider,
       });
       const nextBatchSerial = response.batch?.batch_serial;
       if (nextBatchSerial) {
@@ -500,8 +574,6 @@ export function AfterSalesBatchDifyPage() {
     setGuideVisible(true);
     setGuideLoading(true);
     setGuideRecord(null);
-    setEditingReply(false);
-    setReplyDraft('');
     try {
       const response = await request('getGuide', { guide_serial: guideSerial });
       let record = response.guide || null;
@@ -549,31 +621,13 @@ export function AfterSalesBatchDifyPage() {
     }
   }
 
-  async function handleSaveReply() {
-    const guideSerial = String(guideRecord?.guide_serial || '');
-    if (!guideSerial) {
-      return;
-    }
-    setReplySaving(true);
-    try {
-      const now = new Date();
-      const pad = (value: number) => String(value).padStart(2, '0');
-      const sellerReplyTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(
-        now.getHours(),
-      )}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-      const response = await request('updateGuide', {
-        guide_serial: guideSerial,
-        values: { actual_seller_reply_body: replyDraft, seller_reply_time: sellerReplyTime },
-      });
-      setGuideRecord(response.guide || guideRecord);
-      setEditingReply(false);
-      message.success(t('Saved'));
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : String(error));
-    } finally {
-      setReplySaving(false);
-    }
-  }
+  /*
+    原先这里有个 handleSaveReply：把人工输入的回信正文 + "当前系统时间"写进
+    actual_seller_reply_body / seller_reply_time。已移除，原因有两条：
+      1) 需求规定这两个字段由**程序从表 A 的卖家邮件回填**（正文 + 收件时间），不是人工填写；
+      2) 它把"卖家回信时间"填成了操作当时的系统时间，与需求要求的"表 A 该卖家邮件的收件时间"不符。
+    回填逻辑应在连接器侧按「平台订单编号 + 买家邮箱 + 买家邮件序列号」匹配表 B 指南行后写入。
+  */
 
   const batchStatus = BATCH_STATUS_MAP[String(batchRecord?.status || '')] || null;
   const failures = Array.isArray(batchRecord?.failure_detail) ? batchRecord.failure_detail : [];
@@ -582,11 +636,23 @@ export function AfterSalesBatchDifyPage() {
     <Space direction="vertical" size={16} style={{ display: 'flex', padding: 24 }}>
       <Space align="center">
         <Typography.Title level={3} style={{ marginBottom: 0 }}>
-          {t('AI after-sales guide B')}
+          {t('AI after-sales workbench')}
         </Typography.Title>
-        <Tooltip title={t('Copy route path')}>
+        {/* 路由信息是给运维挂菜单用的开发说明，收进图标里，不再占一整行 */}
+        <Tooltip
+          title={
+            <span>
+              {t(
+                'The route is independent, which makes it easier to mount under a custom admin menu on the target server.',
+              )}
+              <br />
+              {t('Route path')}: {WORK_ORDER_ROUTE}
+            </span>
+          }
+        >
           <Button
             size="small"
+            type="text"
             icon={<CopyOutlined />}
             onClick={async () => {
               await navigator.clipboard.writeText(AFTER_SALES_BATCH_ROUTE_PATH);
@@ -595,10 +661,6 @@ export function AfterSalesBatchDifyPage() {
           />
         </Tooltip>
       </Space>
-      <Typography.Paragraph type="secondary">
-        {t('The route is independent, which makes it easier to mount under a custom admin menu on the target server.')}{' '}
-        {t('Route path')}: {WORK_ORDER_ROUTE}
-      </Typography.Paragraph>
 
       <Card
         title={t('Batch progress')}
@@ -620,14 +682,41 @@ export function AfterSalesBatchDifyPage() {
           </Space>
         }
       >
-        <Space size={48} wrap>
-          <Statistic title={t('Total')} value={batchProgress.totalCount} />
-          <Statistic title={t('Completed')} value={batchProgress.done} valueStyle={{ color: '#3f8600' }} />
-          <Statistic title={t('Remaining')} value={batchProgress.pending} />
-          <Statistic title={t('Failed')} value={batchProgress.failed} valueStyle={{ color: '#cf1322' }} />
-          <Statistic title={t('Skipped')} value={batchProgress.skipped} />
+        {/* 紧凑进度：标签+数字同一行并排，避免 5 个大号数字占掉半屏 */}
+        <Space size={16} wrap split={<Typography.Text type="secondary">·</Typography.Text>}>
+          <Typography.Text>
+            {t('Total')} <Typography.Text strong>{batchProgress.totalCount}</Typography.Text>
+          </Typography.Text>
+          <Typography.Text>
+            {t('Completed')}{' '}
+            <Typography.Text strong style={{ color: '#3f8600' }}>
+              {batchProgress.done}
+            </Typography.Text>
+          </Typography.Text>
+          <Typography.Text>
+            {t('Remaining')} <Typography.Text strong>{batchProgress.pending}</Typography.Text>
+          </Typography.Text>
+          <Typography.Text>
+            {t('Failed')}{' '}
+            <Typography.Text strong style={{ color: batchProgress.failed ? '#cf1322' : undefined }}>
+              {batchProgress.failed}
+            </Typography.Text>
+          </Typography.Text>
+          <Typography.Text>
+            {t('Skipped')} <Typography.Text strong>{batchProgress.skipped}</Typography.Text>
+          </Typography.Text>
+          {/* 百分比放在「已去除」右侧，紧跟着绿色进度条，两者一起看更直观 */}
+          <Typography.Text strong style={{ color: batchProgress.percent >= 100 ? '#3f8600' : undefined }}>
+            {batchProgress.percent ?? 0}%
+          </Typography.Text>
+          <Progress
+            percent={batchProgress.percent}
+            size="small"
+            showInfo={false}
+            style={{ width: 220, marginBottom: 0 }}
+            strokeColor={batchProgress.percent >= 100 ? '#52c41a' : undefined}
+          />
         </Space>
-        <Progress percent={batchProgress.percent} style={{ marginTop: 16 }} />
         {failures.length ? (
           <Alert
             type="error"
@@ -649,34 +738,57 @@ export function AfterSalesBatchDifyPage() {
       <Card
         title={t('Work orders')}
         extra={
-          <Space wrap>
-            <Input.Search
-              style={{ width: 240 }}
-              placeholder={t('Keyword')}
-              allowClear
-              onSearch={(value) => {
-                setKeyword(value);
-                void loadWorkOrders(1, pageSize, value);
-              }}
-            />
-            <Button icon={<ReloadOutlined />} onClick={() => void loadWorkOrders(page, pageSize, keyword)}>
-              {t('Refresh')}
-            </Button>
-            <Upload {...uploadProps}>
-              <Button icon={<UploadOutlined />}>{t('Import file')}</Button>
-            </Upload>
-            <Button icon={<DownloadOutlined />} onClick={downloadImportTemplate}>
-              {t('Download template')}
-            </Button>
-            <Button icon={<PlusOutlined />} type="primary" onClick={() => setCreateVisible(true)}>
-              {t('Create work order')}
-            </Button>
-            <Button icon={<PlayCircleOutlined />} loading={starting} onClick={() => void handleStartBatch()}>
-              {t('Start batch')}
-            </Button>
-            <Button danger icon={<DeleteOutlined />} onClick={() => void handleDelete()}>
-              {t('Delete selected')}
-            </Button>
+          // 工具栏按用途分三段：查询 → 数据准备（导入/新建） → 批次动作（主操作放最后）
+          <Space wrap split={<span style={{ color: '#f0f0f0' }}>|</span>}>
+            <Space size={4}>
+              <Input.Search
+                style={{ width: 220 }}
+                placeholder={t('Keyword')}
+                allowClear
+                onSearch={(value) => {
+                  setKeyword(value);
+                  void loadWorkOrders(1, pageSize, value);
+                }}
+              />
+              <Tooltip title={t('Refresh')}>
+                <Button icon={<ReloadOutlined />} onClick={() => void loadWorkOrders(page, pageSize, keyword)} />
+              </Tooltip>
+            </Space>
+            <Space size={4}>
+              <Upload {...uploadProps}>
+                <Button icon={<UploadOutlined />}>{t('Import file')}</Button>
+              </Upload>
+              <Tooltip title={t('Download template')}>
+                <Button icon={<DownloadOutlined />} onClick={downloadImportTemplate} />
+              </Tooltip>
+              <Button icon={<PlusOutlined />} onClick={() => setCreateVisible(true)}>
+                {t('Create work order')}
+              </Button>
+            </Space>
+            <Space size={4}>
+              <Select
+                style={{ width: 150 }}
+                value={provider}
+                onChange={(value) => setProvider(value)}
+                options={[
+                  { value: 'dify', label: t('Dify workflow') },
+                  { value: 'local', label: t('Local AI employee') },
+                ]}
+              />
+              {/* 不再加悬浮说明：左侧下拉框已直接显示当前引擎（Dify 工作流 / 本地 AI 员工），
+                  再弹一层黑底提示属于重复信息 */}
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined />}
+                loading={starting}
+                onClick={() => void handleStartBatch()}
+              >
+                {t('Start batch')}
+              </Button>
+              <Button danger icon={<DeleteOutlined />} onClick={() => void handleDelete()}>
+                {t('Delete selected')}
+              </Button>
+            </Space>
           </Space>
         }
       >
@@ -685,7 +797,8 @@ export function AfterSalesBatchDifyPage() {
           loading={loading}
           dataSource={records}
           rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-          scroll={{ x: 1400 }}
+          // 各列宽度合计（100+178+190+100+130+95+95+120+105+105+160）；与列宽不符会导致折行
+          scroll={{ x: 1378 }}
           pagination={{
             current: page,
             pageSize,
@@ -697,44 +810,111 @@ export function AfterSalesBatchDifyPage() {
             },
           }}
           columns={[
-            { title: t('Work order serial'), dataIndex: 'work_order_serial', key: 'work_order_serial', width: 200 },
-            { title: t('Order ID'), dataIndex: 'order_id', key: 'order_id', width: 170 },
             {
+              // 序列号已改为纯 8 位数字，列可以收窄；不截断，装不下换行
+              title: t('Work order serial'),
+              dataIndex: 'work_order_serial',
+              key: 'work_order_serial',
+              width: 100,
+              render: (value: string) => (
+                <Tooltip title={value}>
+                  <Typography.Text style={CELL_WRAP_STYLE}>{shortSerial(value)}</Typography.Text>
+                </Tooltip>
+              ),
+            },
+            {
+              // 平台订单编号：用户明确要求**只能一行显示，不截断也不换行**。
+              // 实测平台单号固定 19 字符（如 113-9233930-0206620），用等宽字体 + nowrap 完整容纳。
+              title: t('Order ID'),
+              dataIndex: 'order_id',
+              key: 'order_id',
+              width: 178,
+              render: (value: string | null) =>
+                value ? (
+                  <Tooltip title={value}>
+                    <span style={ORDER_ID_STYLE}>{value}</span>
+                  </Tooltip>
+                ) : (
+                  '-'
+                ),
+            },
+            {
+              // 原来用 ellipsis 截断、只能靠 hover 看全 → 改为换行
               title: t('Buyer email'),
               dataIndex: 'buyer_email',
               key: 'buyer_email',
-              ellipsis: { showTitle: true },
-              width: 220,
+              width: 190,
+              render: (value: string | null) =>
+                value ? (
+                  <Tooltip title={value}>
+                    <Typography.Text style={CELL_WRAP_STYLE}>{value}</Typography.Text>
+                  </Tooltip>
+                ) : (
+                  '-'
+                ),
             },
-            { title: t('Reply greeting'), dataIndex: 'reply_greeting', key: 'reply_greeting', width: 120 },
-            { title: t('Issue type'), dataIndex: 'buyer_issue_type', key: 'buyer_issue_type', width: 140 },
-            { title: t('Table A depth'), dataIndex: 'table_a_depth', key: 'table_a_depth', width: 110 },
-            { title: t('Table B depth'), dataIndex: 'table_b_depth', key: 'table_b_depth', width: 110 },
+            { title: t('Reply greeting'), dataIndex: 'reply_greeting', key: 'reply_greeting', width: 100 },
             {
-              title: t('Has AI guide'),
-              dataIndex: 'has_guide',
-              key: 'has_guide',
-              width: 120,
-              render: (value: string) => <Tag color={value === '是' ? 'success' : 'default'}>{value}</Tag>,
+              title: t('Issue type'),
+              dataIndex: 'buyer_issue_type',
+              key: 'buyer_issue_type',
+              width: 130,
+              render: (value: string | null) => (value ? <span style={CELL_WRAP_STYLE}>{value}</span> : '-'),
             },
             {
+              title: t('Fetch depth (A/B)'),
+              key: 'fetch_depth',
+              width: 95,
+              render: (_value: unknown, record: Record<string, any>) =>
+                `${record.table_a_depth ?? '-'} / ${record.table_b_depth ?? '-'}`,
+            },
+            {
+              title: t('Guide'),
+              key: 'guide',
+              width: 95,
+              render: (_value: unknown, record: Record<string, any>) =>
+                record.guide_serial ? <Tag color="success">{t('Generated')}</Tag> : <Tag>{t('Not generated')}</Tag>,
+            },
+            {
+              // 需求第 13 项：AI 驱动售后处理指南记录序列号（此前被我合并进 Tag 悬停，列表上看不到）
               title: t('Guide serial'),
               dataIndex: 'guide_serial',
               key: 'guide_serial',
-              width: 200,
-              render: (value: string | null) => value || '-',
+              width: 120,
+              render: (value: string | null) =>
+                value ? (
+                  <Tooltip title={value}>
+                    <Typography.Text style={{ whiteSpace: 'nowrap' }}>{shortSerial(value)}</Typography.Text>
+                  </Tooltip>
+                ) : (
+                  '-'
+                ),
             },
-            { title: t('Generated at'), dataIndex: 'guide_generated_at', key: 'guide_generated_at', width: 180 },
-            { title: t('Created at'), dataIndex: 'created_at', key: 'created_at', width: 180 },
+            {
+              // 需求第 14 项：AI 处理指南生成时间（原来 "2026-10-1217:19:33.000Z" 会折两行）
+              title: t('Generated at'),
+              dataIndex: 'guide_generated_at',
+              key: 'guide_generated_at',
+              width: 105,
+              render: (value: string | null) => <CompactDateTime value={value} />,
+            },
+            {
+              title: t('Created at'),
+              dataIndex: 'created_at',
+              key: 'created_at',
+              width: 105,
+              render: (value: string | null) => <CompactDateTime value={value} />,
+            },
             {
               title: t('Actions'),
               key: 'actions',
-              fixed: 'right' as const,
-              width: 190,
+              // 去掉 fixed：列宽总量已够，固定列会多出一条分隔线把两个按钮挤在右侧
+              width: 160,
               render: (_value: unknown, record: Record<string, any>) => (
-                <Space>
+                <Space size={4}>
                   <Button
                     size="small"
+                    type="link"
                     icon={<EyeOutlined />}
                     disabled={!record.guide_serial}
                     onClick={() => void handleViewGuide(record)}
@@ -743,6 +923,7 @@ export function AfterSalesBatchDifyPage() {
                   </Button>
                   <Button
                     size="small"
+                    type="link"
                     icon={<RedoOutlined />}
                     disabled={!record.guide_serial}
                     onClick={() => void handleRegenerate(record)}
@@ -815,15 +996,36 @@ export function AfterSalesBatchDifyPage() {
         onOk={() => void confirmDecisions()}
         okText={t('Confirm')}
         cancelText={t('Cancel')}
+        width={560}
       >
-        <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={t('Skip or regenerate tip')} />
-        <Space direction="vertical" style={{ width: '100%' }}>
-          {decisionRows.map((row) => (
-            <Space key={String(row.work_order_serial)} style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Typography.Text>
-                {String(row.work_order_serial)}（{String(row.guide_serial || '-')}）
-              </Typography.Text>
+        <Alert type="warning" showIcon style={{ marginBottom: 16 }} message={t('Skip or regenerate tip')} />
+        <Space direction="vertical" size={0} style={{ width: '100%' }}>
+          {decisionRows.map((row, index) => (
+            <div
+              key={String(row.work_order_serial)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                padding: '10px 0',
+                borderTop: index === 0 ? 'none' : '1px solid #f0f0f0',
+              }}
+            >
+              {/* 左侧：工单号（新格式为 11 位纯数字，直接显示；旧格式压成两段），指南号降级为次要信息 */}
+              <div style={{ minWidth: 0 }}>
+                <Tooltip title={String(row.work_order_serial)}>
+                  <Typography.Text strong style={{ whiteSpace: 'nowrap' }}>
+                    {shortSerial(row.work_order_serial)}
+                  </Typography.Text>
+                </Tooltip>
+                <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>
+                  {t('Guide serial')}: {row.guide_serial ? shortSerial(row.guide_serial) : '-'}
+                </div>
+              </div>
               <Radio.Group
+                size="small"
+                style={{ flexShrink: 0 }}
                 value={decisionValues[String(row.work_order_serial)] || 'regenerate'}
                 onChange={(event) =>
                   setDecisionValues((prev) => ({
@@ -835,16 +1037,16 @@ export function AfterSalesBatchDifyPage() {
                 <Radio.Button value="regenerate">{t('Regenerate')}</Radio.Button>
                 <Radio.Button value="skip">{t('Skip')}</Radio.Button>
               </Radio.Group>
-            </Space>
+            </div>
           ))}
         </Space>
       </Modal>
 
       <Drawer
-        title={t('AI guide detail')}
+        title={t('After-sales handling guide')}
         open={guideVisible}
         onClose={() => setGuideVisible(false)}
-        width={860}
+        width={920}
         loading={guideLoading}
         extra={
           guideRecord ? (
@@ -894,7 +1096,13 @@ export function AfterSalesBatchDifyPage() {
         }
       >
         {guideRecord ? (
-          <Descriptions column={1} bordered size="small">
+          <Descriptions
+            column={1}
+            bordered
+            size="small"
+            // 标签列不固定宽度时会被挤成两三行（如「指南记录序号」），正文也跟着变窄
+            styles={{ label: { width: 132, whiteSpace: 'normal' } }}
+          >
             {GUIDE_DISPLAY_FIELDS.map(([field, label]) => (
               <Descriptions.Item key={field} label={t(label)}>
                 {guideRecord[field] == null || guideRecord[field] === '' ? (
@@ -908,41 +1116,6 @@ export function AfterSalesBatchDifyPage() {
                 )}
               </Descriptions.Item>
             ))}
-            <Descriptions.Item label={t('Actual seller reply')}>
-              {editingReply ? (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Input.TextArea value={replyDraft} onChange={(event) => setReplyDraft(event.target.value)} rows={6} />
-                  <Space>
-                    <Button size="small" type="primary" loading={replySaving} onClick={() => void handleSaveReply()}>
-                      {t('Confirm')}
-                    </Button>
-                    <Button
-                      size="small"
-                      onClick={() => {
-                        setEditingReply(false);
-                        setReplyDraft(guideRecord.actual_seller_reply_body || '');
-                      }}
-                    >
-                      {t('Cancel')}
-                    </Button>
-                  </Space>
-                </Space>
-              ) : (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <div style={{ whiteSpace: 'pre-wrap' }}>{guideRecord.actual_seller_reply_body || '-'}</div>
-                  <Button
-                    size="small"
-                    icon={<EditOutlined />}
-                    onClick={() => {
-                      setReplyDraft(guideRecord.actual_seller_reply_body || '');
-                      setEditingReply(true);
-                    }}
-                  >
-                    {t('Edit')}
-                  </Button>
-                </Space>
-              )}
-            </Descriptions.Item>
           </Descriptions>
         ) : (
           <Typography.Text type="secondary">{t('No guide generated yet')}</Typography.Text>

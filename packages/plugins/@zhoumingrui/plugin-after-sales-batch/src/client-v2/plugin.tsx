@@ -31,6 +31,11 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
       componentLoader: () => import('./pages/EmailNotifyPage'),
     });
 
+    this.router.add('mabang-order-full', {
+      path: '/mabang-order/full',
+      componentLoader: () => import('./pages/MabangOrderFullPage'),
+    });
+
     (this.app.pm.get('async-task-manager') as AsyncTaskManagerClientV2Plugin | undefined)?.taskOrigins.register(
       'afterSalesBatch',
       {
