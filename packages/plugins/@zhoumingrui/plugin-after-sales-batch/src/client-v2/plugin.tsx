@@ -21,8 +21,15 @@ const AfterSalesBatchTaskResult = ({ payload }: { payload?: Record<string, any> 
 
 export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> {
   async load() {
+    // A 页：本地生成（原版）
     this.router.add('after-sales-batch', {
       path: '/after-sales/batch-workbench',
+      componentLoader: () => import('./pages/AfterSalesBatchPage'),
+    });
+
+    // B 页：Dify 生成，复用 A 页组件（组件内部根据路由参数区分行为）
+    this.router.add('after-sales-batch-dify', {
+      path: '/after-sales/batch-workbench-b',
       componentLoader: () => import('./pages/AfterSalesBatchPage'),
     });
 

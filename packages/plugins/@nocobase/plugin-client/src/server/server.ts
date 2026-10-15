@@ -344,17 +344,55 @@ export class PluginClientServer extends Plugin {
   }
 
   registerActionHandlers() {
+    /**
+     * 构建菜单树结构（不依赖 path 表，使用 parentId 构建）
+     * 用于修复 path 表缺失记录导致的菜单不显示问题
+     */
+    const buildMenuTree = (items: any[], parentKey = 'parentId', key = 'id', childrenKey = 'children') => {
+      const map: Record<string, any> = {};
+      const roots: any[] = [];
+
+      // 先将所有节点放入 map
+      items.forEach((item) => {
+        map[item[key]] = { ...item };
+      });
+
+      // 构建树结构
+      items.forEach((item) => {
+        const id = item[key];
+        const parentId = item[parentKey];
+
+        if (parentId == null || parentId === '') {
+          // 根节点
+          roots.push(map[id]);
+        } else if (map[parentId]) {
+          // 子节点，挂载到父节点
+          if (!map[parentId][childrenKey]) {
+            map[parentId][childrenKey] = [];
+          }
+          map[parentId][childrenKey].push(map[id]);
+        } else {
+          // 父节点不在当前结果中，作为根节点处理
+          roots.push(map[id]);
+        }
+      });
+
+      return roots;
+    };
+
     this.app.resourceManager.registerActionHandler('desktopRoutes:listAccessible', async (ctx, next) => {
       const desktopRoutesRepository = ctx.db.getRepository('desktopRoutes');
       const rolesRepository = ctx.db.getRepository('roles');
       const { filter } = ctx.action.params;
 
       if (ctx.state.currentRoles.includes('root')) {
-        ctx.body = await desktopRoutesRepository.find({
-          tree: true,
+        // 使用 parentId 构建树结构，不依赖 path 表
+        // 这样可以避免 path 表缺失记录导致的菜单不显示问题
+        const allRoutes = await desktopRoutesRepository.find({
           sort: 'sort',
           filter,
         });
+        ctx.body = buildMenuTree(allRoutes);
         return await next();
       }
 
@@ -367,16 +405,15 @@ export class PluginClientServer extends Plugin {
 
       if (desktopRoutesId) {
         const ids = (await Promise.all(desktopRoutesId)).flat();
-        const result = await desktopRoutesRepository.find({
-          tree: true,
+        // 使用 parentId 构建树结构，不依赖 path 表
+        const allRoutes = await desktopRoutesRepository.find({
           sort: 'sort',
           filter: {
             ...filter,
             id: ids,
           },
         });
-
-        ctx.body = result;
+        ctx.body = buildMenuTree(allRoutes);
       }
 
       await next();
