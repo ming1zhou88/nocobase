@@ -76,6 +76,8 @@ export type GuideBatchRecord = {
   failure_detail: { work_order_serial: string; reason: string; code?: string | null }[] | null;
   started_at: string;
   finished_at: string | null;
+  provider: 'dify' | 'local' | null;
+  default_action?: 'generate' | 'skip' | 'regenerate';
 };
 
 export class ConnectorClientError extends Error {
