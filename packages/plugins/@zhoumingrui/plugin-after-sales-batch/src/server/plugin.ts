@@ -9,6 +9,7 @@ import type { AsyncTasksManager } from '@nocobase/plugin-async-task-manager';
 import { connectorClient } from './services/connector-client';
 import { AfterSalesGuideBatchTask, LOCAL_ACTIONS } from './actions-local';
 import { LOCAL_GUIDE_ACTIONS, LOCAL_GUIDE_RESOURCE } from './actions-local-guide';
+import { isAssigner } from './after-sales-roles';
 
 /**
  * 售后处理指南：三条并行的生成路径。
@@ -70,8 +71,38 @@ function readBatchSerial(ctx: Context) {
 // 售后工单（V2）
 // ---------------------------------------------------------------------------
 
+/**
+ * 当前查看者的数据范围：专员只看自己负责的工单/指南，主管/管理员看全部。
+ * 传给连接器由它做过滤（连接器无 NocoBase 登录态，必须由插件侧携带身份）。
+ */
+async function viewerOf(ctx: Context) {
+  const user = ctx.state?.currentUser;
+  return {
+    viewer_id: user?.id ? Number(user.id) : null,
+    viewer_is_assigner: await isAssigner(ctx),
+  };
+}
+
+/**
+ * 把连接器的 HTTP 状态透传给前端（403/404/409 等），避免统一变成 400。
+ */
+function rethrowConnectorError(ctx: Context, error: any): boolean {
+  const status = Number(error?.status || error?.statusCode);
+  if (Number.isInteger(status) && status >= 400 && status < 600) {
+    ctx.status = status;
+    ctx.body = { success: false, message: error?.message || 'Connector request failed', code: error?.code || null };
+    return true;
+  }
+  return false;
+}
+
 async function listWorkOrders(ctx: Context, next: Next) {
-  ctx.body = await connectorClient.listWorkOrders(readValues(ctx));
+  const viewer = await viewerOf(ctx);
+  ctx.body = await connectorClient.listWorkOrders({
+    ...readValues(ctx),
+    viewer_id: viewer.viewer_id,
+    viewer_is_assigner: viewer.viewer_is_assigner,
+  });
   await next();
 }
 
@@ -88,7 +119,13 @@ async function createWorkOrders(ctx: Context, next: Next) {
   // 本入口走连接器 V2 接口（只认工单表列名），而页面表单/Excel 导入用的是旧命名
   // （email4final_depth 等，与 Local 入口配套）—— 不归一化就会**静默丢弃**四个字段。
   // 详见 work-order-field-alias.ts
-  ctx.body = await connectorClient.createWorkOrders(normalizeWorkOrderRecords(records));
+  const currentUser = ctx.state?.currentUser;
+  const normalized = normalizeWorkOrderRecords(records).map((record) => ({
+    ...record,
+    owner_id: record.owner_id ?? (currentUser?.id ? Number(currentUser.id) : null),
+    owner_name: record.owner_name ?? currentUser?.nickname ?? currentUser?.username ?? null,
+  }));
+  ctx.body = await connectorClient.createWorkOrders(normalized);
   await next();
 }
 
@@ -106,7 +143,13 @@ async function deleteWorkOrders(ctx: Context, next: Next) {
 
 /** 触发前检查：返回每个工单是否已有指南（页面据此提示去除/重新生成） */
 async function inspectWorkOrders(ctx: Context, next: Next) {
-  ctx.body = await connectorClient.inspectWorkOrders(readWorkOrderSerials(ctx));
+  const viewer = await viewerOf(ctx);
+  try {
+    ctx.body = await connectorClient.inspectWorkOrders(readWorkOrderSerials(ctx), viewer);
+  } catch (error) {
+    if (rethrowConnectorError(ctx, error)) return;
+    throw error;
+  }
   await next();
 }
 
@@ -125,13 +168,21 @@ async function startGuideBatch(ctx: Context, next: Next) {
   const serials = readWorkOrderSerials(ctx);
   const decisions = values.decisions && typeof values.decisions === 'object' ? values.decisions : {};
   const provider = values.provider === 'local' ? 'local' : values.provider === 'dify' ? 'dify' : undefined;
-  const created = await connectorClient.createGuideBatch({
-    work_order_serials: serials,
-    triggered_by: values.triggered_by || ctx.auth?.user?.nickname || ctx.auth?.user?.username || null,
-    default_action: values.default_action || 'generate',
-    decisions,
-    provider,
-  });
+  const viewer = await viewerOf(ctx);
+  let created;
+  try {
+    created = await connectorClient.createGuideBatch({
+      work_order_serials: serials,
+      triggered_by: values.triggered_by || ctx.auth?.user?.nickname || ctx.auth?.user?.username || null,
+      default_action: values.default_action || 'generate',
+      decisions,
+      provider,
+      viewer,
+    });
+  } catch (error) {
+    if (rethrowConnectorError(ctx, error)) return;
+    throw error;
+  }
 
   const batch = created.batch;
   // provider 只传 undefined 时连接器会沿用批次落库的引擎，所以这里不必重复传值。
@@ -174,7 +225,13 @@ async function unbindGuides(ctx: Context, next: Next) {
 // ---------------------------------------------------------------------------
 
 async function getGuide(ctx: Context, next: Next) {
-  ctx.body = await connectorClient.getGuide(readGuideSerial(ctx));
+  const viewer = await viewerOf(ctx);
+  try {
+    ctx.body = await connectorClient.getGuide(readGuideSerial(ctx), viewer);
+  } catch (error) {
+    if (rethrowConnectorError(ctx, error)) return;
+    throw error;
+  }
   await next();
 }
 

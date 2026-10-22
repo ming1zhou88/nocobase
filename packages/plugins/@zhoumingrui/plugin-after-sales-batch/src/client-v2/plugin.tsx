@@ -2,6 +2,9 @@ import { Application, Plugin } from '@nocobase/client-v2';
 import { Typography } from 'antd';
 import React from 'react';
 import { NAMESPACE, useT } from './locale';
+import { DailyCreateWorkOrderActionModel } from './models/DailyCreateWorkOrderActionModel';
+import { DailyBatchAssignActionModel } from './models/DailyBatchAssignActionModel';
+import { DailyAssignActionModel } from './models/DailyAssignActionModel';
 
 type AsyncTaskManagerClientV2Plugin = {
   taskOrigins: {
@@ -21,15 +24,22 @@ const AfterSalesBatchTaskResult = ({ payload }: { payload?: Record<string, any> 
 
 export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> {
   async load() {
+    this.flowEngine.registerModels({
+      DailyCreateWorkOrderActionModel,
+      DailyBatchAssignActionModel,
+      DailyAssignActionModel,
+    });
+
     // A 页：本地生成（原版）
-    this.router.add('after-sales-batch', {
-      path: '/after-sales/batch-workbench',
+    // 命名为 admin.* 挂到 V2 的后台布局下（保留左侧菜单/顶栏），URL 形如 /v/admin/after-sales/batch-workbench
+    this.router.add('admin.after-sales-batch', {
+      path: 'after-sales/batch-workbench',
       componentLoader: () => import('./pages/AfterSalesBatchPage'),
     });
 
     // B 页：Dify 生成，复用 A 页组件（组件内部根据路由参数区分行为）
-    this.router.add('after-sales-batch-dify', {
-      path: '/after-sales/batch-workbench-b',
+    this.router.add('admin.after-sales-batch-dify', {
+      path: 'after-sales/batch-workbench-b',
       componentLoader: () => import('./pages/AfterSalesBatchPage'),
     });
 
@@ -41,6 +51,12 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
     this.router.add('mabang-order-full', {
       path: '/mabang-order/full',
       componentLoader: () => import('./pages/MabangOrderFullPage'),
+    });
+
+    // 快递异常工作台（预览）：只读 D4 Full，前端计算数据质量/异常状态；不改 7D4 查询逻辑。
+    this.router.add('tracking-exception-workbench', {
+      path: '/tracking-exception/workbench',
+      componentLoader: () => import('./pages/TrackingExceptionPage'),
     });
 
     (this.app.pm.get('async-task-manager') as AsyncTaskManagerClientV2Plugin | undefined)?.taskOrigins.register(

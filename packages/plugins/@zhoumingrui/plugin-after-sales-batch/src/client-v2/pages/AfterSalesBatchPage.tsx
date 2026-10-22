@@ -38,8 +38,57 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useT } from '../locale';
 
-const WORK_ORDER_ROUTE = '/after-sales/batch-workbench';
+// A 页 / B 页共用同一个组件，按当前地址给"复制路由"不同结果
+const WORK_ORDER_ROUTE =
+  typeof window !== 'undefined' && window.location.pathname.includes('batch-workbench-b')
+    ? '/after-sales/batch-workbench-b'
+    : '/after-sales/batch-workbench';
+const CN_TIME_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+/**
+ * 统一按北京时间显示（口径与飞书邮件时间一致）。
+ * 后端返回的 created_at / guide_generated_at 是同一时刻的 UTC ISO 串（如 2026-10-20T18:51:25.000Z），
+ * 这里转成 Asia/Shanghai 的 `YYYY-MM-DD HH:mm:ss`；已经是本地时间字符串的原样保留。
+ */
+function formatCnDateTime(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '-';
+  const date = value instanceof Date ? value : new Date(typeof value === 'number' ? value : String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+  const parts = CN_TIME_FORMATTER.formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
+}
+
+/** 原料来源（material_sources JSON）→ 人读文本 */
+function formatMaterialSources(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '-';
+  let data: any = value;
+  if (typeof value === 'string') {
+    try {
+      data = JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  const used: string[] = Array.isArray(data?.used_labels) ? data.used_labels : [];
+  const notes: string[] = Array.isArray(data?.notes) ? data.notes : [];
+  return [used.length ? `已用：${used.join('、')}` : '已用：无', notes.length ? `说明：${notes.join('；')}` : '']
+    .filter(Boolean)
+    .join('｜');
+}
+
 const BATCH_POLL_INTERVAL_MS = 3000;
+// 与连接器 MAX_BATCH_SIZE 保持一致（默认 50，可用环境变量覆盖时需同步调整）
+const MAX_BATCH_SIZE = 50;
 
 const DEFAULT_REPLY_GREETINGS = [
   'Hi',
@@ -54,7 +103,10 @@ const DEFAULT_REPLY_GREETINGS = [
 
 const DEFAULT_GREETING_OPTIONS = DEFAULT_REPLY_GREETINGS.map((greeting) => ({ label: greeting, value: greeting }));
 
-// 指南详情：文档 20 字段（②～⑳），按顺序展示
+// 指南详情里按北京时间展示的时间字段
+const GUIDE_TIME_FIELDS = new Set(['buyer_email_time', 'created_time', 'seller_reply_time']);
+
+// 指南详情：文档 20 字段（②～⑳），按顺序展示（实际回信正文单独一块渲染，避免重复）
 const GUIDE_DISPLAY_FIELDS: Array<[string, string]> = [
   ['guide_serial', 'Guide serial'],
   ['store_name', 'Store name'],
@@ -70,9 +122,9 @@ const GUIDE_DISPLAY_FIELDS: Array<[string, string]> = [
   ['seller_action_guide', 'Seller action guide'],
   ['reasoning_explanation', 'Reasoning explanation'],
   ['created_time', 'Created at'],
-  ['actual_seller_reply_body', 'Actual seller reply'],
   ['seller_reply_time', 'Reply time'],
   ['work_order_serial', 'Work order serial'],
+  ['material_sources', 'Material sources'],
   ['review_status', 'Review status'],
 ];
 
@@ -181,6 +233,9 @@ export default function AfterSalesBatchPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [greetingOptions, setGreetingOptions] = useState(DEFAULT_GREETING_OPTIONS);
   const [createVisible, setCreateVisible] = useState(false);
+  // 生成方式：dify = Dify 工作流（默认）；local = NocoBase 内置 AI 员工（本地驱动兜底）
+  const [provider, setProvider] = useState<'dify' | 'local'>('dify');
+  const [detailRecord, setDetailRecord] = useState<Record<string, any> | null>(null);
   const [form] = Form.useForm();
 
   const [batchSerial, setBatchSerial] = useState<string | null>(null);
@@ -195,6 +250,20 @@ export default function AfterSalesBatchPage() {
   const [guideVisible, setGuideVisible] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideRecord, setGuideRecord] = useState<Record<string, any> | null>(null);
+  const [guideSimilarity, setGuideSimilarity] = useState<{ score: number; guide_serial: string } | null>(null);
+  const guideMissingMaterials = useMemo(() => {
+    const raw = guideRecord?.material_sources;
+    if (!raw) return [] as string[];
+    let data: any = raw;
+    if (typeof raw === 'string') {
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        return [];
+      }
+    }
+    return Array.isArray(data?.notes) ? data.notes.filter((note: unknown) => typeof note === 'string') : [];
+  }, [guideRecord]);
   const [editingReply, setEditingReply] = useState(false);
   const [replyDraft, setReplyDraft] = useState('');
   const [replySaving, setReplySaving] = useState(false);
@@ -316,12 +385,17 @@ export default function AfterSalesBatchPage() {
       message.warning(t('Please select at least one work order'));
       return;
     }
+    if (serials.length > MAX_BATCH_SIZE) {
+      message.warning(t('Batch size limit', { max: MAX_BATCH_SIZE, count: serials.length }));
+      return;
+    }
     setStarting(true);
     try {
       const response = await request('startGuideBatch', {
         work_order_serials: serials,
         decisions,
         default_action: defaultAction,
+        provider,
       });
       const nextBatchSerial = response.batch?.batch_serial;
       if (nextBatchSerial) {
@@ -357,7 +431,12 @@ export default function AfterSalesBatchPage() {
         pendingSerials.current = serials;
         setDecisionRows(existing);
         setDecisionValues(
-          Object.fromEntries(existing.map((item: Record<string, any>) => [item.work_order_serial, 'regenerate'])),
+          Object.fromEntries(
+            existing.map((item: Record<string, any>) => [
+              item.work_order_serial,
+              item.has_actual_reply || item.review_status === '已审核' ? 'skip' : 'regenerate',
+            ]),
+          ),
         );
         setDecisionVisible(true);
         return;
@@ -429,6 +508,22 @@ export default function AfterSalesBatchPage() {
         }
       },
     });
+  }
+
+  async function openCreateModal() {
+    let greeting = '';
+    try {
+      const response = await ctx.api.request({ url: 'auth:check' });
+      const user = response?.data?.data ?? response?.data ?? {};
+      greeting = user.replyGreeting || user.reply_greeting || '';
+    } catch {
+      greeting = '';
+    }
+    if (!greeting) {
+      message.warning('请先配置个人邮件抬头');
+    }
+    form.setFieldsValue({ reply_greeting: greeting, table_a_depth: 3, table_b_depth: 1 });
+    setCreateVisible(true);
   }
 
   async function handleCreate(values: Record<string, unknown>) {
@@ -528,10 +623,12 @@ export default function AfterSalesBatchPage() {
     setGuideVisible(true);
     setGuideLoading(true);
     setGuideRecord(null);
+    setGuideSimilarity(null);
     setEditingReply(false);
     setReplyDraft('');
     try {
       const response = await request('getGuide', { guide_serial: guideSerial });
+      setGuideSimilarity((response as any).previous_guide_similarity || null);
       let record = response.guide || null;
       // 核查文件链接以"插件侧配置的连接器地址"为准：
       // 库里存的是连接器生成时的绝对地址（本地/生产环境不同），这里覆盖成本地可访问的地址。
@@ -696,15 +793,27 @@ export default function AfterSalesBatchPage() {
             <Button icon={<DownloadOutlined />} onClick={downloadImportTemplate}>
               {t('Download template')}
             </Button>
-            <Button icon={<PlusOutlined />} type="primary" onClick={() => setCreateVisible(true)}>
+            <Button icon={<PlusOutlined />} type="primary" onClick={() => void openCreateModal()}>
               {t('Create work order')}
             </Button>
+            <Select
+              style={{ width: 150 }}
+              value={provider}
+              onChange={(value) => setProvider(value)}
+              options={[
+                { value: 'dify', label: t('Dify workflow') },
+                { value: 'local', label: t('Local AI employee') },
+              ]}
+            />
             <Button icon={<PlayCircleOutlined />} loading={starting} onClick={() => void handleStartBatch()}>
               {t('Start batch')}
             </Button>
             <Button danger icon={<DeleteOutlined />} onClick={() => void handleDelete()}>
               {t('Delete selected')}
             </Button>
+            <Typography.Text type="secondary">
+              {t('Batch size hint')}（{selectedRowKeys.length}/{MAX_BATCH_SIZE}）
+            </Typography.Text>
           </Space>
         }
       >
@@ -726,18 +835,36 @@ export default function AfterSalesBatchPage() {
           }}
           columns={[
             { title: t('Work order serial'), dataIndex: 'work_order_serial', key: 'work_order_serial', width: 200 },
-            { title: t('Order ID'), dataIndex: 'order_id', key: 'order_id', width: 170 },
             {
-              title: t('Buyer email'),
-              dataIndex: 'buyer_email',
-              key: 'buyer_email',
-              ellipsis: { showTitle: true },
-              width: 220,
+              title: t('Creation source'),
+              dataIndex: 'creation_source',
+              key: 'creation_source',
+              width: 150,
+              render: (value: string) => (value === 'daily' ? t('Daily order push') : t('Local creation')),
             },
-            { title: t('Reply greeting'), dataIndex: 'reply_greeting', key: 'reply_greeting', width: 120 },
+            {
+              title: t('Owner'),
+              dataIndex: 'owner_name',
+              key: 'owner_name',
+              width: 100,
+              render: (value: string | null) => value || '-',
+            },
+            {
+              title: t('Order ID'),
+              dataIndex: 'order_id',
+              key: 'order_id',
+              width: 210,
+              render: (value: string | null) => (value ? <span style={{ whiteSpace: 'nowrap' }}>{value}</span> : '-'),
+            },
             { title: t('Issue type'), dataIndex: 'buyer_issue_type', key: 'buyer_issue_type', width: 140 },
-            { title: t('Table A depth'), dataIndex: 'table_a_depth', key: 'table_a_depth', width: 110 },
-            { title: t('Table B depth'), dataIndex: 'table_b_depth', key: 'table_b_depth', width: 110 },
+            {
+              // 表 A / 表 B 获取深度合并为一列，和旧版工作台一致（如 3/1）
+              title: t('Fetch depth (A/B)'),
+              key: 'fetch_depth',
+              width: 130,
+              render: (_value: unknown, record: Record<string, any>) =>
+                `${record.table_a_depth ?? '-'} / ${record.table_b_depth ?? '-'}`,
+            },
             {
               title: t('Has AI guide'),
               dataIndex: 'has_guide',
@@ -752,15 +879,30 @@ export default function AfterSalesBatchPage() {
               width: 200,
               render: (value: string | null) => value || '-',
             },
-            { title: t('Generated at'), dataIndex: 'guide_generated_at', key: 'guide_generated_at', width: 180 },
-            { title: t('Created at'), dataIndex: 'created_at', key: 'created_at', width: 180 },
+            {
+              title: t('Generated at'),
+              dataIndex: 'guide_generated_at',
+              key: 'guide_generated_at',
+              width: 180,
+              render: (value: string | null) => formatCnDateTime(value),
+            },
+            {
+              title: t('Created at'),
+              dataIndex: 'created_at',
+              key: 'created_at',
+              width: 180,
+              render: (value: string | null) => formatCnDateTime(value),
+            },
             {
               title: t('Actions'),
               key: 'actions',
               fixed: 'right' as const,
-              width: 190,
+              width: 260,
               render: (_value: unknown, record: Record<string, any>) => (
                 <Space>
+                  <Button size="small" type="link" onClick={() => setDetailRecord(record)}>
+                    {t('View details')}
+                  </Button>
                   <Button
                     size="small"
                     icon={<EyeOutlined />}
@@ -772,7 +914,16 @@ export default function AfterSalesBatchPage() {
                   <Button
                     size="small"
                     icon={<RedoOutlined />}
-                    disabled={!record.guide_serial}
+                    disabled={
+                      !record.guide_serial || record.guide_review_status === '已审核' || record.guide_has_actual_reply
+                    }
+                    title={
+                      record.guide_review_status === '已审核'
+                        ? t('Regenerate blocked reviewed')
+                        : record.guide_has_actual_reply
+                          ? t('Regenerate blocked replied')
+                          : undefined
+                    }
                     onClick={() => void handleRegenerate(record)}
                   >
                     {t('Regenerate')}
@@ -784,6 +935,77 @@ export default function AfterSalesBatchPage() {
         />
       </Card>
 
+      <Drawer
+        open={Boolean(detailRecord)}
+        title={t('Work order details')}
+        onClose={() => setDetailRecord(null)}
+        width={620}
+        destroyOnClose
+      >
+        {detailRecord ? (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <Descriptions
+              title={t('Basic info')}
+              bordered
+              column={1}
+              size="small"
+              labelStyle={{ width: 150, whiteSpace: 'nowrap' }}
+            >
+              <Descriptions.Item label={t('Work order serial')}>
+                {detailRecord.work_order_serial || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('Creation source')}>
+                {detailRecord.creation_source === 'daily' ? t('Daily order push') : t('Local creation')}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('Owner')}>{detailRecord.owner_name || '-'}</Descriptions.Item>
+              <Descriptions.Item label={t('Created at')}>{formatCnDateTime(detailRecord.created_at)}</Descriptions.Item>
+              <Descriptions.Item label={t('Generated at')}>
+                {formatCnDateTime(detailRecord.guide_generated_at)}
+              </Descriptions.Item>
+            </Descriptions>
+            <Descriptions
+              title={t('Order and buyer')}
+              bordered
+              column={1}
+              size="small"
+              labelStyle={{ width: 150, whiteSpace: 'nowrap' }}
+            >
+              <Descriptions.Item label={t('Order ID')}>{detailRecord.order_id || '-'}</Descriptions.Item>
+              <Descriptions.Item label={t('Buyer email')}>{detailRecord.buyer_email || '-'}</Descriptions.Item>
+              <Descriptions.Item label={t('Issue type')}>{detailRecord.buyer_issue_type || '-'}</Descriptions.Item>
+            </Descriptions>
+            <Descriptions
+              title={t('Reply settings')}
+              bordered
+              column={1}
+              size="small"
+              labelStyle={{ width: 150, whiteSpace: 'nowrap' }}
+            >
+              <Descriptions.Item label={t('Reply greeting')}>{detailRecord.reply_greeting || '-'}</Descriptions.Item>
+              <Descriptions.Item label={t('Additional context')}>
+                <div style={{ whiteSpace: 'pre-wrap' }}>{detailRecord.additional_context || '-'}</div>
+              </Descriptions.Item>
+              <Descriptions.Item label={t('Tone and language')}>
+                {detailRecord.tone_and_language || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('Reply preference')}>
+                {detailRecord.reply_preference || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('Email length')}>{detailRecord.email_length || '-'}</Descriptions.Item>
+            </Descriptions>
+            <Descriptions
+              title={t('Template')}
+              bordered
+              column={1}
+              size="small"
+              labelStyle={{ width: 150, whiteSpace: 'nowrap' }}
+            >
+              <Descriptions.Item label={t('Template path')}>{detailRecord.case_template_path || '-'}</Descriptions.Item>
+            </Descriptions>
+          </Space>
+        ) : null}
+      </Drawer>
+
       <Modal
         open={createVisible}
         title={t('Create work order')}
@@ -794,7 +1016,7 @@ export default function AfterSalesBatchPage() {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ reply_greeting: 'Dear Customer', table_a_depth: 3, table_b_depth: 1 }}
+          initialValues={{ table_a_depth: 3, table_b_depth: 1 }}
           onFinish={(values) => void handleCreate(values)}
         >
           <Alert style={{ marginBottom: 12 }} type="info" message={t('Order id or buyer email required')} showIcon />
@@ -850,6 +1072,13 @@ export default function AfterSalesBatchPage() {
             <Space key={String(row.work_order_serial)} style={{ width: '100%', justifyContent: 'space-between' }}>
               <Typography.Text>
                 {String(row.work_order_serial)}（{String(row.guide_serial || '-')}）
+                {row.has_actual_reply || row.review_status === '已审核' ? (
+                  <Typography.Text type="secondary" style={{ marginLeft: 8 }}>
+                    {row.review_status === '已审核'
+                      ? t('Regenerate blocked reviewed')
+                      : t('Regenerate blocked replied')}
+                  </Typography.Text>
+                ) : null}
               </Typography.Text>
               <Radio.Group
                 value={decisionValues[String(row.work_order_serial)] || 'regenerate'}
@@ -860,7 +1089,12 @@ export default function AfterSalesBatchPage() {
                   }))
                 }
               >
-                <Radio.Button value="regenerate">{t('Regenerate')}</Radio.Button>
+                <Radio.Button
+                  value="regenerate"
+                  disabled={Boolean(row.has_actual_reply) || row.review_status === '已审核'}
+                >
+                  {t('Regenerate')}
+                </Radio.Button>
                 <Radio.Button value="skip">{t('Skip')}</Radio.Button>
               </Radio.Group>
             </Space>
@@ -922,56 +1156,87 @@ export default function AfterSalesBatchPage() {
         }
       >
         {guideRecord ? (
-          <Descriptions column={1} bordered size="small">
-            {GUIDE_DISPLAY_FIELDS.map(([field, label]) => (
-              <Descriptions.Item key={field} label={t(label)}>
-                {guideRecord[field] == null || guideRecord[field] === '' ? (
-                  '-'
-                ) : field === 'buyer_email_body' || String(guideRecord[field]).length > 120 ? (
-                  <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
-                    {String(guideRecord[field])}
-                  </Typography.Paragraph>
+          <>
+            {guideSimilarity && guideSimilarity.score >= 0.85 ? (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 12 }}
+                message={t('Similar to previous guide')}
+                description={`${Math.round(guideSimilarity.score * 100)}% · ${guideSimilarity.guide_serial}`}
+              />
+            ) : null}
+            {guideMissingMaterials.length ? (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 12 }}
+                message={t('Material missing tip')}
+                description={guideMissingMaterials.join('；')}
+              />
+            ) : null}
+            <Descriptions column={1} bordered size="small" labelStyle={{ width: 120, whiteSpace: 'normal' }}>
+              {GUIDE_DISPLAY_FIELDS.map(([field, label]) => (
+                <Descriptions.Item key={field} label={t(label)}>
+                  {guideRecord[field] == null || guideRecord[field] === '' ? (
+                    '-'
+                  ) : field === 'material_sources' ? (
+                    formatMaterialSources(guideRecord[field])
+                  ) : GUIDE_TIME_FIELDS.has(field) ? (
+                    formatCnDateTime(guideRecord[field])
+                  ) : field === 'buyer_email_body' || String(guideRecord[field]).length > 120 ? (
+                    <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
+                      {String(guideRecord[field])}
+                    </Typography.Paragraph>
+                  ) : (
+                    String(guideRecord[field])
+                  )}
+                </Descriptions.Item>
+              ))}
+              <Descriptions.Item label={t('Actual seller reply')}>
+                {editingReply ? (
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <Input.TextArea
+                      value={replyDraft}
+                      onChange={(event) => setReplyDraft(event.target.value)}
+                      rows={6}
+                    />
+                    <Space>
+                      <Button size="small" type="primary" loading={replySaving} onClick={() => void handleSaveReply()}>
+                        {t('Confirm')}
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => {
+                          setEditingReply(false);
+                          setReplyDraft(guideRecord.actual_seller_reply_body || '');
+                        }}
+                      >
+                        {t('Cancel')}
+                      </Button>
+                    </Space>
+                  </Space>
                 ) : (
-                  String(guideRecord[field])
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{guideRecord.actual_seller_reply_body || '-'}</div>
+                    {guideRecord.actual_seller_reply_body ? null : (
+                      // 已发出的回信正文是既成事实，正常不提供编辑；只有抓取为空时允许补录
+                      <Button
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => {
+                          setReplyDraft('');
+                          setEditingReply(true);
+                        }}
+                      >
+                        {t('Backfill reply')}
+                      </Button>
+                    )}
+                  </Space>
                 )}
               </Descriptions.Item>
-            ))}
-            <Descriptions.Item label={t('Actual seller reply')}>
-              {editingReply ? (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Input.TextArea value={replyDraft} onChange={(event) => setReplyDraft(event.target.value)} rows={6} />
-                  <Space>
-                    <Button size="small" type="primary" loading={replySaving} onClick={() => void handleSaveReply()}>
-                      {t('Confirm')}
-                    </Button>
-                    <Button
-                      size="small"
-                      onClick={() => {
-                        setEditingReply(false);
-                        setReplyDraft(guideRecord.actual_seller_reply_body || '');
-                      }}
-                    >
-                      {t('Cancel')}
-                    </Button>
-                  </Space>
-                </Space>
-              ) : (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <div style={{ whiteSpace: 'pre-wrap' }}>{guideRecord.actual_seller_reply_body || '-'}</div>
-                  <Button
-                    size="small"
-                    icon={<EditOutlined />}
-                    onClick={() => {
-                      setReplyDraft(guideRecord.actual_seller_reply_body || '');
-                      setEditingReply(true);
-                    }}
-                  >
-                    {t('Edit')}
-                  </Button>
-                </Space>
-              )}
-            </Descriptions.Item>
-          </Descriptions>
+            </Descriptions>
+          </>
         ) : (
           <Typography.Text type="secondary">{t('No guide generated yet')}</Typography.Text>
         )}

@@ -156,12 +156,13 @@ export function parseLocalGuideInput(values: Record<string, any> = {}): LocalGui
 /**
  * 用户消息：原料包 + 工单提示。
  *
- * ⚠️ 末尾那句"检索语句"不是装饰，是**必需**的：
+ * ⚠️ 消息必须拆成两条：
  * plugin-ai 的知识库检索（ai-employee.ts buildChatContext）取的是
  * **最后一条 user 消息的整段 content** 当向量检索 query。
- * 原料包本身最长 6 万字符，若把它当 query，检索结果会退化成噪声。
- * 因此把 knowledge_query（连接器 side 用 buildKnowledgeQuery 拼好的短语句）
- * 放在消息**最后**，让检索 query 与 Dify 路径的口径一致。
+ * 原料包最长 6 万字符，整段当 query 会（a）检索退化成噪声、（b）超出 embedding
+ * 模型 8192 token 上限直接 500（实测 20KB 原料就会炸）。
+ * 因此：第一条消息放原料包/工单要求；第二条（最后一条）只放短的 knowledge_query，
+ * 检索 query 就与 Dify 路径的口径一致。
  */
 export function buildUserMessage(input: LocalGuideInput) {
   const hints = {
@@ -177,6 +178,11 @@ export function buildUserMessage(input: LocalGuideInput) {
   return [
     '请为下面这一个售后工单生成一条售后处理指南 JSON 记录（严格按你的角色提示词中的 6 字段格式）。',
     '',
+    '【输出语言要求】seller_reply_draft 必须「中英双语」：先写中文版本（供售后人员审核），' +
+      '再写英文版本（可直接发给买家）；两段之间用单独一行 --- 分隔；英文要自然完整，不要逐字直译。其余字段用中文。',
+    '【同订单参考】若原料包中的「历史 AI 指南」包含**同一订单**的上一版指南，只能参考其事实与规则；' +
+      '回信草稿必须重写，不得逐句照抄；若本次没有新增信息，需在 reasoning_explanation 中说明与上一版的差异。',
+    '',
     '【工单与回复偏好】',
     JSON.stringify(hints, null, 2),
     '',
@@ -184,8 +190,19 @@ export function buildUserMessage(input: LocalGuideInput) {
       '它只作为事实依据，不要拿它当知识库检索词）',
     input.materialJson,
     '',
-    '【知识库检索语句】以上事实依据请结合下面这句检索到的知识库内容来判断与作答：',
-    input.knowledgeQuery || '(本次没有提供检索语句，请按工单问题类型自行归纳)',
+    '【下一步】请结合随后的知识库检索结果与以上事实，输出 6 字段 JSON。',
+  ].join('\n');
+}
+
+/**
+ * 最后一条 user 消息：只放短检索语句（plugin-ai 用它做向量检索 query）。
+ * 不把原料包放进来，避免 embedding 超 8192 token 直接 500。
+ */
+export function buildKnowledgeQueryMessage(input: LocalGuideInput) {
+  const query = String(input.knowledgeQuery || '').trim();
+  return [
+    '【知识库检索语句】' + (query || '(本次没有提供检索语句，请按工单问题类型自行归纳)'),
+    '请结合上一条消息中的原料包与上述检索到的知识库内容，输出 6 字段 JSON。',
   ].join('\n');
 }
 
@@ -243,6 +260,15 @@ export function parseJsonLoose(text: string) {
  *      `{type:'text', content:<纯文本>}` 落库，取最后一条最省事、也最不怕返回结构变化；
  *   2) invoke 返回值 `result.messages`：倒序扫描逐条尝试解析（老版批量任务的做法）。
  */
+/** 从 AI 消息 metadata 里取 token 用量（plugin-ai 把 usage_metadata 落在 aiMessages.metadata）。 */
+function tokenFromMetadata(record: any): number | null {
+  const meta = record?.metadata || record?.get?.('metadata') || {};
+  const usage = meta.usage_metadata || meta.usage || {};
+  const total = usage.total_tokens ?? usage.totalTokens ?? meta.total_tokens;
+  const value = Number(total);
+  return Number.isFinite(value) ? value : null;
+}
+
 export async function extractGuidePayload(
   result: any,
   options: { db?: any; sessionId?: string; employeeUsername?: string } = {},
@@ -253,6 +279,7 @@ export async function extractGuidePayload(
   }
 
   const candidates: string[] = [];
+  let persistedTokens: number | null = null;
   if (options.db && options.sessionId && options.employeeUsername) {
     try {
       const persisted = await options.db.getRepository('aiMessages').findOne({
@@ -260,6 +287,7 @@ export async function extractGuidePayload(
         sort: ['-messageId'],
       });
       const record = persisted && typeof persisted.toJSON === 'function' ? persisted.toJSON() : persisted;
+      persistedTokens = tokenFromMetadata(record);
       candidates.push(...normalizeTextCandidate(record?.content));
     } catch (error) {
       // 查库失败不影响主流程，退回扫描 invoke 结果。
@@ -279,7 +307,7 @@ export async function extractGuidePayload(
       throw new Error('AI answer exceeded the total text limit and was rejected');
     }
     try {
-      return { payload: parseJsonLoose(candidate), rawText: candidate };
+      return { payload: parseJsonLoose(candidate), rawText: candidate, tokens: persistedTokens };
     } catch {
       continue;
     }
@@ -447,7 +475,10 @@ async function generate(ctx: Context, next: Next) {
   const result = await invokeWithTimeout(
     aiEmployee,
     {
-      userMessages: [{ role: 'user', content: { type: 'text', content: buildUserMessage(input) } }],
+      userMessages: [
+        { role: 'user', content: { type: 'text', content: buildUserMessage(input) } },
+        { role: 'user', content: { type: 'text', content: buildKnowledgeQueryMessage(input) } },
+      ],
     },
     input.answerTimeoutSeconds * 1000,
   );
@@ -461,7 +492,11 @@ async function generate(ctx: Context, next: Next) {
     );
   }
 
-  const { payload, rawText } = await extractGuidePayload(result, {
+  const {
+    payload,
+    rawText,
+    tokens: extractedTokens,
+  } = await extractGuidePayload(result, {
     db: ctx.db,
     sessionId: String(sessionId),
     employeeUsername: input.employee,
@@ -472,7 +507,7 @@ async function generate(ctx: Context, next: Next) {
   }
 
   const usage = (result as any)?.usage || {};
-  const tokens = usage.total_tokens ?? usage.totalTokens ?? (result as any)?.total_tokens ?? null;
+  const tokens = usage.total_tokens ?? usage.totalTokens ?? (result as any)?.total_tokens ?? extractedTokens ?? null;
 
   ctx.log.info('[local-guide] 生成成功', {
     work_order_serial: input.workOrderSerial || null,

@@ -250,7 +250,7 @@ export class ConnectorClient {
   }
 
   /** 触发前检查：哪些工单已有指南（页面据此提示"去除 / 重新生成"） */
-  inspectWorkOrders(workOrderSerials: string[]) {
+  inspectWorkOrders(workOrderSerials: string[], viewer?: { viewer_id: number | null; viewer_is_assigner: boolean }) {
     return this.request<{
       success: true;
       count: number;
@@ -265,7 +265,7 @@ export class ConnectorClient {
       }[];
     }>('/after-sales/work-orders/v2/inspect', {
       method: 'POST',
-      body: { work_order_serials: workOrderSerials },
+      body: { work_order_serials: workOrderSerials, ...(viewer ? { viewer } : {}) },
     });
   }
 
@@ -317,9 +317,10 @@ export class ConnectorClient {
     });
   }
 
-  getGuide(guideSerial: string) {
+  getGuide(guideSerial: string, viewer?: { viewer_id: number | null; viewer_is_assigner: boolean }) {
     return this.request<{ success: true; guide: GuideRecord }>(
       `/after-sales/guides/${encodeURIComponent(guideSerial)}`,
+      viewer ? { query: viewer as any } : undefined,
     );
   }
 

@@ -61,6 +61,8 @@ const DEFAULT_GREETING_OPTIONS = DEFAULT_REPLY_GREETINGS.map((greeting) => ({ la
  *   - `actual_seller_reply_body` ⑮ 「实际发送的卖家回信正文」——由程序从表 A 的卖家邮件回填
  * 各自单独一行展示，顺序与文档字段编号一致。
  */
+const GUIDE_TIME_FIELDS = new Set(['buyer_email_time', 'created_time', 'seller_reply_time']);
+
 const GUIDE_DISPLAY_FIELDS: Array<[string, string]> = [
   ['guide_serial', 'Guide serial'],
   ['store_name', 'Store name'],
@@ -185,17 +187,35 @@ function shortSerial(value: unknown) {
  * 紧凑日期时间：后端返回的是 ISO 串（`2026-10-12T17:19:33.000Z`），
  * 直接渲染会折成两行且带无意义的 `.000Z`。这里拆成日期/时间两行显示。
  */
+const CN_TIME_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+/** 统一按北京时间显示（与飞书邮件时间口径一致），输出 `YYYY-MM-DD HH:mm:ss`。 */
+function formatCnDateTime(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '-';
+  const date = value instanceof Date ? value : new Date(typeof value === 'number' ? value : String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+  const parts = CN_TIME_FORMATTER.formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
+}
+
 function CompactDateTime({ value }: { value?: string | null }) {
   if (!value) {
     return <span>-</span>;
   }
-  const text = String(value)
-    .replace('T', ' ')
-    .replace(/\.\d+Z?$/, '')
-    .replace(/Z$/, '');
-  const [date, time] = text.split(' ');
+  const formatted = formatCnDateTime(value);
+  const [date, time] = formatted.split(' ');
   return (
-    <Tooltip title={String(value)}>
+    <Tooltip title={formatted}>
       <div style={{ lineHeight: 1.25, whiteSpace: 'nowrap' }}>
         <div>{date || '-'}</div>
         {time ? <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>{time}</div> : null}
@@ -260,6 +280,7 @@ export function AfterSalesBatchDifyPage() {
   const pendingSerials = useRef<string[]>([]);
 
   const [guideVisible, setGuideVisible] = useState(false);
+  const [detailRecord, setDetailRecord] = useState<Record<string, any> | null>(null);
   const [guideLoading, setGuideLoading] = useState(false);
   const [guideRecord, setGuideRecord] = useState<Record<string, any> | null>(null);
   const [reviewSaving, setReviewSaving] = useState(false);
@@ -815,7 +836,7 @@ export function AfterSalesBatchDifyPage() {
               title: t('Work order serial'),
               dataIndex: 'work_order_serial',
               key: 'work_order_serial',
-              width: 100,
+              width: 170,
               render: (value: string) => (
                 <Tooltip title={value}>
                   <Typography.Text style={CELL_WRAP_STYLE}>{shortSerial(value)}</Typography.Text>
@@ -823,12 +844,26 @@ export function AfterSalesBatchDifyPage() {
               ),
             },
             {
+              title: t('Creation source'),
+              dataIndex: 'creation_source',
+              key: 'creation_source',
+              width: 110,
+              render: (value: string) => (value === 'daily' ? t('Daily order push') : t('Local creation')),
+            },
+            {
+              title: t('Owner'),
+              dataIndex: 'owner_name',
+              key: 'owner_name',
+              width: 90,
+              render: (value: string | null) => value || '-',
+            },
+            {
               // 平台订单编号：用户明确要求**只能一行显示，不截断也不换行**。
               // 实测平台单号固定 19 字符（如 113-9233930-0206620），用等宽字体 + nowrap 完整容纳。
               title: t('Order ID'),
               dataIndex: 'order_id',
               key: 'order_id',
-              width: 178,
+              width: 210,
               render: (value: string | null) =>
                 value ? (
                   <Tooltip title={value}>
@@ -838,22 +873,6 @@ export function AfterSalesBatchDifyPage() {
                   '-'
                 ),
             },
-            {
-              // 原来用 ellipsis 截断、只能靠 hover 看全 → 改为换行
-              title: t('Buyer email'),
-              dataIndex: 'buyer_email',
-              key: 'buyer_email',
-              width: 190,
-              render: (value: string | null) =>
-                value ? (
-                  <Tooltip title={value}>
-                    <Typography.Text style={CELL_WRAP_STYLE}>{value}</Typography.Text>
-                  </Tooltip>
-                ) : (
-                  '-'
-                ),
-            },
-            { title: t('Reply greeting'), dataIndex: 'reply_greeting', key: 'reply_greeting', width: 100 },
             {
               title: t('Issue type'),
               dataIndex: 'buyer_issue_type',
@@ -880,7 +899,7 @@ export function AfterSalesBatchDifyPage() {
               title: t('Guide serial'),
               dataIndex: 'guide_serial',
               key: 'guide_serial',
-              width: 120,
+              width: 160,
               render: (value: string | null) =>
                 value ? (
                   <Tooltip title={value}>
@@ -895,23 +914,26 @@ export function AfterSalesBatchDifyPage() {
               title: t('Generated at'),
               dataIndex: 'guide_generated_at',
               key: 'guide_generated_at',
-              width: 105,
+              width: 150,
               render: (value: string | null) => <CompactDateTime value={value} />,
             },
             {
               title: t('Created at'),
               dataIndex: 'created_at',
               key: 'created_at',
-              width: 105,
+              width: 150,
               render: (value: string | null) => <CompactDateTime value={value} />,
             },
             {
               title: t('Actions'),
               key: 'actions',
-              // 去掉 fixed：列宽总量已够，固定列会多出一条分隔线把两个按钮挤在右侧
-              width: 160,
+              fixed: 'right' as const,
+              width: 260,
               render: (_value: unknown, record: Record<string, any>) => (
                 <Space size={4}>
+                  <Button size="small" type="link" onClick={() => setDetailRecord(record)}>
+                    {t('View details')}
+                  </Button>
                   <Button
                     size="small"
                     type="link"
@@ -1043,6 +1065,77 @@ export function AfterSalesBatchDifyPage() {
       </Modal>
 
       <Drawer
+        open={Boolean(detailRecord)}
+        title={t('Work order details')}
+        onClose={() => setDetailRecord(null)}
+        width={620}
+        destroyOnClose
+      >
+        {detailRecord ? (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <Descriptions
+              title={t('Basic info')}
+              bordered
+              column={1}
+              size="small"
+              labelStyle={{ width: 150, whiteSpace: 'nowrap' }}
+            >
+              <Descriptions.Item label={t('Work order serial')}>
+                {detailRecord.work_order_serial || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('Creation source')}>
+                {detailRecord.creation_source === 'daily' ? t('Daily order push') : t('Local creation')}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('Owner')}>{detailRecord.owner_name || '-'}</Descriptions.Item>
+              <Descriptions.Item label={t('Created at')}>{formatCnDateTime(detailRecord.created_at)}</Descriptions.Item>
+              <Descriptions.Item label={t('Generated at')}>
+                {formatCnDateTime(detailRecord.guide_generated_at)}
+              </Descriptions.Item>
+            </Descriptions>
+            <Descriptions
+              title={t('Order and buyer')}
+              bordered
+              column={1}
+              size="small"
+              labelStyle={{ width: 150, whiteSpace: 'nowrap' }}
+            >
+              <Descriptions.Item label={t('Order ID')}>{detailRecord.order_id || '-'}</Descriptions.Item>
+              <Descriptions.Item label={t('Buyer email')}>{detailRecord.buyer_email || '-'}</Descriptions.Item>
+              <Descriptions.Item label={t('Issue type')}>{detailRecord.buyer_issue_type || '-'}</Descriptions.Item>
+            </Descriptions>
+            <Descriptions
+              title={t('Reply settings')}
+              bordered
+              column={1}
+              size="small"
+              labelStyle={{ width: 150, whiteSpace: 'nowrap' }}
+            >
+              <Descriptions.Item label={t('Reply greeting')}>{detailRecord.reply_greeting || '-'}</Descriptions.Item>
+              <Descriptions.Item label={t('Additional context')}>
+                <div style={{ whiteSpace: 'pre-wrap' }}>{detailRecord.additional_context || '-'}</div>
+              </Descriptions.Item>
+              <Descriptions.Item label={t('Tone and language')}>
+                {detailRecord.tone_and_language || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('Reply preference')}>
+                {detailRecord.reply_preference || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('Email length')}>{detailRecord.email_length || '-'}</Descriptions.Item>
+            </Descriptions>
+            <Descriptions
+              title={t('Template')}
+              bordered
+              column={1}
+              size="small"
+              labelStyle={{ width: 150, whiteSpace: 'nowrap' }}
+            >
+              <Descriptions.Item label={t('Template path')}>{detailRecord.case_template_path || '-'}</Descriptions.Item>
+            </Descriptions>
+          </Space>
+        ) : null}
+      </Drawer>
+
+      <Drawer
         title={t('After-sales handling guide')}
         open={guideVisible}
         onClose={() => setGuideVisible(false)}
@@ -1101,12 +1194,14 @@ export function AfterSalesBatchDifyPage() {
             bordered
             size="small"
             // 标签列不固定宽度时会被挤成两三行（如「指南记录序号」），正文也跟着变窄
-            styles={{ label: { width: 132, whiteSpace: 'normal' } }}
+            styles={{ label: { width: 120, whiteSpace: 'normal' } }}
           >
             {GUIDE_DISPLAY_FIELDS.map(([field, label]) => (
               <Descriptions.Item key={field} label={t(label)}>
                 {guideRecord[field] == null || guideRecord[field] === '' ? (
                   '-'
+                ) : GUIDE_TIME_FIELDS.has(field) ? (
+                  formatCnDateTime(guideRecord[field])
                 ) : field === 'buyer_email_body' || String(guideRecord[field]).length > 120 ? (
                   <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
                     {String(guideRecord[field])}
