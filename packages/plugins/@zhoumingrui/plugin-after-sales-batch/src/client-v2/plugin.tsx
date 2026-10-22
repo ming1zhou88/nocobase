@@ -33,13 +33,13 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
     // A 页：本地生成（原版）
     // 命名为 admin.* 挂到 V2 的后台布局下（保留左侧菜单/顶栏），URL 形如 /v/admin/after-sales/batch-workbench
     this.router.add('admin.after-sales-batch', {
-      path: 'after-sales/batch-workbench',
+      path: '/admin/after-sales/batch-workbench',
       componentLoader: () => import('./pages/AfterSalesBatchPage'),
     });
 
     // B 页：Dify 生成，复用 A 页组件（组件内部根据路由参数区分行为）
     this.router.add('admin.after-sales-batch-dify', {
-      path: 'after-sales/batch-workbench-b',
+      path: '/admin/after-sales/batch-workbench-b',
       componentLoader: () => import('./pages/AfterSalesBatchPage'),
     });
 
