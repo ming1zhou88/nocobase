@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 /** 马帮完整订单（四表合一视图，字段清单见飞书《视图样表》） */
 const DATA_SOURCE_KEY = 'd_99cwsyi7q4k';
 const COLLECTION = 'v_MabangOrderFull';
-const ROUTE = '/mabang-order/full';
+const ROUTE = '/admin/mabang-order/full';
 
 type Row = Record<string, any>;
 

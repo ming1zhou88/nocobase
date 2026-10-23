@@ -30,13 +30,6 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
       DailyAssignActionModel,
     });
 
-    // A 页：本地生成（原版）
-    // 命名为 admin.* 挂到 V2 的后台布局下（保留左侧菜单/顶栏），URL 形如 /v/admin/after-sales/batch-workbench
-    this.router.add('admin.after-sales-batch', {
-      path: '/admin/after-sales/batch-workbench',
-      componentLoader: () => import('./pages/AfterSalesBatchPage'),
-    });
-
     // B 页：Dify 生成，复用 A 页组件（组件内部根据路由参数区分行为）
     this.router.add('admin.after-sales-batch-dify', {
       path: '/admin/after-sales/batch-workbench-b',
@@ -44,18 +37,18 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
     });
 
     this.router.add('express-mail-notify', {
-      path: '/express-mail/notify',
+      path: '/admin/express-mail/notify',
       componentLoader: () => import('./pages/EmailNotifyPage'),
     });
 
     this.router.add('mabang-order-full', {
-      path: '/mabang-order/full',
+      path: '/admin/mabang-order/full',
       componentLoader: () => import('./pages/MabangOrderFullPage'),
     });
 
     // 快递异常工作台（预览）：只读 D4 Full，前端计算数据质量/异常状态；不改 7D4 查询逻辑。
     this.router.add('tracking-exception-workbench', {
-      path: '/tracking-exception/workbench',
+      path: '/admin/tracking-exception/workbench',
       componentLoader: () => import('./pages/TrackingExceptionPage'),
     });
 

@@ -3,9 +3,6 @@ import { Plugin } from '@nocobase/client';
 import { Typography } from 'antd';
 import { NAMESPACE, useT } from './locale';
 import { AfterSalesBatchPage } from './pages/AfterSalesBatchPage';
-import { AfterSalesBatchDifyPage } from './pages/AfterSalesBatchPageDify';
-import { EmailNotifyPage } from './pages/EmailNotifyPage';
-import TrackingExceptionPage from './pages/TrackingExceptionPage';
 import { DailyCreateWorkOrderActionModel } from '../client-v2/models/DailyCreateWorkOrderActionModel';
 import { DailyBatchAssignActionModel } from '../client-v2/models/DailyBatchAssignActionModel';
 import { DailyAssignActionModel } from '../client-v2/models/DailyAssignActionModel';
@@ -57,23 +54,6 @@ export class PluginAfterSalesBatchClient extends Plugin {
     this.app.router.add('admin.after-sales-batch', {
       path: AFTER_SALES_BATCH_ROUTE_PATH,
       Component: AfterSalesBatchPage,
-    });
-
-    // B 页：Dify 生成，与原页面挂在同一父菜单下。
-    this.app.router.add('admin.after-sales-batch-dify', {
-      path: AFTER_SALES_BATCH_DIFY_ROUTE_PATH,
-      Component: AfterSalesBatchDifyPage,
-    });
-
-    this.app.router.add('admin.express-mail-notify', {
-      path: AFTER_SALES_NOTIFY_ROUTE_PATH,
-      Component: EmailNotifyPage,
-    });
-
-    // 快递异常工作台（预览）：只读 D4 Full，前端计算数据质量/异常状态；不改 7D4 查询逻辑。
-    this.app.router.add('admin.tracking-exception-workbench', {
-      path: '/admin/tracking-exception/workbench',
-      Component: TrackingExceptionPage,
     });
 
     (this.app.pm.get('async-task-manager') as AsyncTaskManagerClientPlugin | undefined)?.taskOrigins.register(
