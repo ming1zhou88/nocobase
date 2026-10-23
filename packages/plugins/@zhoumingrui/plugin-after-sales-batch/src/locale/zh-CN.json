@@ -114,7 +114,7 @@
   "Failure reason": "失败原因",
   "Not sendable reason": "不可发送原因",
   "Job serial": "发送任务号",
-  "Sent": "已发送",
+  "Sent": "已发",
   "US Pacific date": "美西日期（YYYY-MM-DD）",
   "Sender mailboxes": "发件邮箱映射",
   "Please select at least one order": "请至少选择一条订单",
@@ -210,5 +210,13 @@
   "Batch size hint": "单批最多 50 个工单；超出请分批生成（失败工单可单独重试）",
   "Generate guide": "生成指南",
   "Generate guide confirm": "将为这条工单生成一份新指南。确认继续？",
-  "Express mail body": "快递邮件正文"
+  "Express mail body": "快递邮件正文",
+  "Sendable at (Pacific)": "可发时间（美西太平洋）",
+  "Current delivery": "当前交付情况",
+  "Delivery at send": "快递邮件发出时交付情况",
+  "Created time (Beijing)": "创建时间（北京时间）",
+  "Updated time (Beijing)": "更新时间（北京时间）",
+  "Remark": "备注",
+  "Express mail sent": "已发快递邮件",
+  "Express mail details": "快递邮件详情"
 }

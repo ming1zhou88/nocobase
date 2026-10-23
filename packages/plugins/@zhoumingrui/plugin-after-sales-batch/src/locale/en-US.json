@@ -210,5 +210,13 @@
   "Batch size hint": "Up to 50 work orders per batch; split larger selections. Failed items can be retried.",
   "Generate guide": "Generate guide",
   "Generate guide confirm": "A new guide will be generated for this work order. Continue?",
-  "Express mail body": "Express mail body"
+  "Express mail body": "Express mail body",
+  "Sendable at (Pacific)": "Sendable at (Pacific)",
+  "Current delivery": "Current delivery",
+  "Delivery at send": "Delivery at send",
+  "Created time (Beijing)": "Created time (Beijing)",
+  "Updated time (Beijing)": "Updated time (Beijing)",
+  "Remark": "Remark",
+  "Express mail sent": "Express mail sent",
+  "Express mail details": "Express mail details"
 }

@@ -413,15 +413,21 @@ export default function EmailNotifyPage() {
           scroll={{ x: 1500 }}
           pagination={{ pageSize: 20, showSizeChanger: true }}
           columns={[
-            { title: t('Order ID'), dataIndex: 'order_id', key: 'order_id', width: 170, fixed: 'left' as const },
-            { title: t('Store name'), dataIndex: 'store_name', key: 'store_name', width: 140 },
-            { title: t('Sendable at'), dataIndex: 'platform_sendable_at', key: 'platform_sendable_at', width: 170 },
             {
-              title: t('Recipient'),
-              dataIndex: 'recipient_email',
-              key: 'recipient_email',
-              width: 230,
-              ellipsis: { showTitle: true },
+              title: t('Order ID'),
+              dataIndex: 'order_id',
+              key: 'order_id',
+              width: 200,
+              fixed: 'left' as const,
+              render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
+            },
+            { title: t('Store name'), dataIndex: 'store_name', key: 'store_name', width: 140 },
+            {
+              title: t('Sendable at (Pacific)'),
+              dataIndex: 'platform_sendable_at',
+              key: 'platform_sendable_at',
+              width: 190,
+              render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
             },
             {
               title: t('Sender'),
@@ -430,9 +436,41 @@ export default function EmailNotifyPage() {
               width: 220,
               ellipsis: { showTitle: true },
             },
-            { title: t('Subject'), dataIndex: 'subject', key: 'subject', width: 300, ellipsis: { showTitle: true } },
-            { title: t('Body chars'), dataIndex: 'body_chars', key: 'body_chars', width: 100 },
-            { title: t('Delivery details'), dataIndex: 'delivery_details', key: 'delivery_details', width: 110 },
+            { title: t('Current delivery'), dataIndex: 'delivery_details', key: 'delivery_details', width: 120 },
+            {
+              title: t('Delivery at send'),
+              dataIndex: 'delivery_details_at_send',
+              key: 'delivery_details_at_send',
+              width: 180,
+            },
+            {
+              title: t('Created time (Beijing)'),
+              dataIndex: 'create_time',
+              key: 'create_time',
+              width: 190,
+              render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
+            },
+            {
+              title: t('Updated time (Beijing)'),
+              dataIndex: 'update_time',
+              key: 'update_time',
+              width: 190,
+              render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
+            },
+            {
+              title: t('Remark'),
+              dataIndex: 'remark',
+              key: 'remark',
+              width: 180,
+              ellipsis: { showTitle: true },
+            },
+            {
+              title: t('Express mail sent'),
+              dataIndex: 'email_sent',
+              key: 'email_sent',
+              width: 140,
+              render: (value: unknown) => (Number(value) ? <Tag color="success">{t('Sent')}</Tag> : null),
+            },
             {
               title: t('Sender configured'),
               dataIndex: 'sender_configured',
@@ -556,7 +594,12 @@ export default function EmailNotifyPage() {
         ) : null}
       </Card>
 
-      <Drawer title={t('Email preview')} open={detailVisible} onClose={() => setDetailVisible(false)} width={720}>
+      <Drawer
+        title={t('Express mail details')}
+        open={detailVisible}
+        onClose={() => setDetailVisible(false)}
+        width={720}
+      >
         {detailRecord ? (
           <Descriptions column={1} bordered size="small">
             <Descriptions.Item label={t('Order ID')}>{String(detailRecord.order_id || '-')}</Descriptions.Item>
