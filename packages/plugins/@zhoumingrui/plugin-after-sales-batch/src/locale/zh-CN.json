@@ -207,5 +207,7 @@
   "Regenerate blocked replied": "该指南已回填卖家实际回信，不能重新生成",
   "Similar to previous guide": "与上一版指南高度相似，请确认本次是否有实质修改",
   "Batch size limit": "单批最多支持 {{max}} 个工单，本次选了 {{count}} 个，请分批生成",
-  "Batch size hint": "单批最多 50 个工单；超出请分批生成（失败工单可单独重试）"
+  "Batch size hint": "单批最多 50 个工单；超出请分批生成（失败工单可单独重试）",
+  "Generate guide": "生成指南",
+  "Generate guide confirm": "将为这条工单生成一份新指南。确认继续？"
 }

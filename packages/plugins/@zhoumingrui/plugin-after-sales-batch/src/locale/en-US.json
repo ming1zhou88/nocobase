@@ -207,5 +207,7 @@
   "Regenerate blocked replied": "The seller reply has been backfilled; regeneration is blocked",
   "Similar to previous guide": "Very similar to the previous guide; please check for substantive changes",
   "Batch size limit": "At most {{max}} work orders per batch (selected {{count}}); please split into batches",
-  "Batch size hint": "Up to 50 work orders per batch; split larger selections. Failed items can be retried."
+  "Batch size hint": "Up to 50 work orders per batch; split larger selections. Failed items can be retried.",
+  "Generate guide": "Generate guide",
+  "Generate guide confirm": "A new guide will be generated for this work order. Continue?"
 }
