@@ -469,6 +469,23 @@ export default function AfterSalesBatchPage() {
     }
   }
 
+  /** 单条“生成指南”：用于还没有指南的工单。 */
+  async function handleGenerate(record: Record<string, any>) {
+    const serial = String(record.work_order_serial || '');
+    if (!serial) {
+      return;
+    }
+    modal.confirm({
+      title: t('Generate guide'),
+      content: t('Generate guide confirm'),
+      okText: t('Confirm'),
+      cancelText: t('Cancel'),
+      onOk: async () => {
+        await triggerBatch([serial], {}, 'generate');
+      },
+    });
+  }
+
   /** 单条"重新生成"：解绑旧记录（旧记录保留、不再参与参考）后单独跑一个批次 */
   async function handleRegenerate(record: Record<string, any>) {
     const serial = String(record.work_order_serial || '');
@@ -527,6 +544,17 @@ export default function AfterSalesBatchPage() {
   }
 
   async function handleCreate(values: Record<string, unknown>) {
+    const orderId = String(values.order_id || '').trim();
+    const buyerEmail = String(values.buyer_email || '').trim();
+    if (!orderId && !buyerEmail) {
+      const hint = t('Order id or buyer email required');
+      form.setFields([
+        { name: 'order_id', errors: [hint] },
+        { name: 'buyer_email', errors: [hint] },
+      ]);
+      message.warning(hint);
+      return;
+    }
     try {
       await request('createWorkOrders', { records: [values] });
       setCreateVisible(false);
@@ -911,23 +939,28 @@ export default function AfterSalesBatchPage() {
                   >
                     {t('View guide')}
                   </Button>
-                  <Button
-                    size="small"
-                    icon={<RedoOutlined />}
-                    disabled={
-                      !record.guide_serial || record.guide_review_status === '已审核' || record.guide_has_actual_reply
-                    }
-                    title={
-                      record.guide_review_status === '已审核'
-                        ? t('Regenerate blocked reviewed')
-                        : record.guide_has_actual_reply
-                          ? t('Regenerate blocked replied')
-                          : undefined
-                    }
-                    onClick={() => void handleRegenerate(record)}
-                  >
-                    {t('Regenerate')}
-                  </Button>
+                  {(() => {
+                    const hasGuide = Boolean(record.guide_serial);
+                    const disabled =
+                      hasGuide && (record.guide_review_status === '已审核' || record.guide_has_actual_reply);
+                    return (
+                      <Button
+                        size="small"
+                        icon={<RedoOutlined />}
+                        disabled={disabled}
+                        title={
+                          record.guide_review_status === '已审核'
+                            ? t('Regenerate blocked reviewed')
+                            : record.guide_has_actual_reply
+                              ? t('Regenerate blocked replied')
+                              : undefined
+                        }
+                        onClick={() => void (hasGuide ? handleRegenerate(record) : handleGenerate(record))}
+                      >
+                        {hasGuide ? t('Regenerate') : t('Generate guide')}
+                      </Button>
+                    );
+                  })()}
                 </Space>
               ),
             },
