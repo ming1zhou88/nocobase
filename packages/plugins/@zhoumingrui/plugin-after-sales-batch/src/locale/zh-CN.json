@@ -218,5 +218,15 @@
   "Updated time (Beijing)": "更新时间（北京时间）",
   "Remark": "备注",
   "Express mail sent": "已发快递邮件",
-  "Express mail details": "快递邮件详情"
+  "Express mail details": "快递通知详情",
+  "All": "全部",
+  "Sendable": "可发送",
+  "Not sendable": "不可发送",
+  "Send express mail": "发送快递邮件",
+  "Sent express mail": "已发快递邮件",
+  "Send": "发送",
+  "Dry run send": "演练发送",
+  "Send job details": "发送任务明细",
+  "Sender mailboxes incomplete": "发件邮箱未完全配置（{{count}} 个）",
+  "Sender mailboxes all configured": "发件邮箱：已全部配置"
 }

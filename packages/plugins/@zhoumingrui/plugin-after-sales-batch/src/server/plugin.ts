@@ -271,6 +271,7 @@ async function listEmailNotifySendable(ctx: Context, next: Next) {
     basis: values.basis,
     limit: values.limit,
     dry_run: values.dry_run,
+    include_sent: values.include_sent,
   });
   await next();
 }

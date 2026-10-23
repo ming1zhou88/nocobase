@@ -97,6 +97,8 @@ export default function EmailNotifyPage() {
   const [records, setRecords] = useState<Record<string, any>[]>([]);
   const [windowInfo, setWindowInfo] = useState<Record<string, any> | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [activeTab, setActiveTab] = useState('all');
+  const [rowSending, setRowSending] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   // 演练模式：不真发（授权码未配置时也能先跑通整条链路）；"演练时也回写"仅用于本地验证
   const [dryRun, setDryRun] = useState(true);
@@ -133,6 +135,7 @@ export default function EmailNotifyPage() {
         date: nextDate,
         limit: 500,
         dry_run: dryRun ? 1 : '',
+        include_sent: 1,
       });
       setRecords(response.records || []);
       setWindowInfo(response.window || null);
@@ -195,7 +198,27 @@ export default function EmailNotifyPage() {
   }, [date]);
 
   const sendableRecords = useMemo(() => records.filter((record) => record.sendable), [records]);
-  const blockedRecords = useMemo(() => records.filter((record) => !record.sendable), [records]);
+  const sentRecords = useMemo(() => records.filter((record) => Number(record.email_sent)), [records]);
+  const blockedRecords = useMemo(
+    () => records.filter((record) => !record.sendable && !Number(record.email_sent)),
+    [records],
+  );
+  const displayRecords = useMemo(() => {
+    if (activeTab === 'sendable') return sendableRecords;
+    if (activeTab === 'blocked') return blockedRecords;
+    if (activeTab === 'sent') return sentRecords;
+    return records;
+  }, [activeTab, records, sendableRecords, blockedRecords, sentRecords]);
+  const senderSummary = useMemo(() => {
+    const status = new Map<string, boolean>();
+    for (const record of records) {
+      const email = String(record.sender_email || '').trim();
+      if (!email) continue;
+      status.set(email, Boolean(record.sender_configured));
+    }
+    const missing = [...status.entries()].filter(([, configured]) => !configured).map(([email]) => email);
+    return { total: status.size, missing };
+  }, [records]);
   const jobProgress = useMemo(() => {
     const total = Number(jobRecord?.total_count || 0);
     const done = Number(jobRecord?.done_count || 0);
@@ -204,9 +227,8 @@ export default function EmailNotifyPage() {
     return { total, done, failed, pending, percent: total ? Number((((done + failed) / total) * 100).toFixed(2)) : 0 };
   }, [jobRecord]);
 
-  /** 触发发送：建任务 → 调 Dify 逐封 → 轮询进度 */
-  async function handleSend() {
-    const orderIds = selectedRowKeys.map((value) => String(value));
+  /** 单行/批量共用的发送流程：建任务 → 调 Dify 逐封 → 刷新清单 */
+  async function sendOrders(orderIds: string[], rowOrderId?: string) {
     if (!orderIds.length) {
       message.warning(t('Please select at least one order'));
       return;
@@ -218,6 +240,7 @@ export default function EmailNotifyPage() {
       cancelText: t('Cancel'),
       onOk: async () => {
         setSending(true);
+        if (rowOrderId) setRowSending(rowOrderId);
         try {
           const job = await request('createEmailNotifyJob', {
             order_ids: orderIds,
@@ -239,9 +262,22 @@ export default function EmailNotifyPage() {
           message.error(error instanceof Error ? error.message : String(error));
         } finally {
           setSending(false);
+          if (rowOrderId) setRowSending(null);
         }
       },
     });
+  }
+
+  async function handleSend() {
+    await sendOrders(selectedRowKeys.map((value) => String(value)));
+  }
+
+  async function handleSendOne(record: Record<string, any>) {
+    if (!record.sendable) {
+      message.warning(String(record.reason || t('Not sendable')));
+      return;
+    }
+    await sendOrders([String(record.order_id)], String(record.order_id));
   }
 
   async function handleRetryFailed() {
@@ -346,12 +382,17 @@ export default function EmailNotifyPage() {
             <Typography.Text type="secondary">
               {t('US Pacific')} · {laDateLabel(date) || '-'}
             </Typography.Text>
-            <Button icon={<ReloadOutlined />} type="primary" loading={loading} onClick={() => void loadSendable(date)}>
-              {t('Load sendable list')}
-            </Button>
-            <Button icon={<MailOutlined />} onClick={() => void loadMailboxes()}>
+            <Tooltip title={t('Refresh')}>
+              <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadSendable(date)} />
+            </Tooltip>
+            <Button type="text" icon={<MailOutlined />} onClick={() => void loadMailboxes()}>
               {t('Sender mailboxes')}
             </Button>
+            <Tag color={senderSummary.missing.length ? 'warning' : 'success'}>
+              {senderSummary.missing.length
+                ? t('Sender mailboxes incomplete', { count: senderSummary.missing.length })
+                : t('Sender mailboxes all configured')}
+            </Tag>
             <Tooltip title={t('Dry run hint')}>
               <Space size={4}>
                 <Typography.Text>{t('Dry run')}</Typography.Text>
@@ -381,14 +422,6 @@ export default function EmailNotifyPage() {
             >
               {t('Trigger sending')}
             </Button>
-            <Button
-              icon={<RedoOutlined />}
-              loading={sending}
-              disabled={!jobSerial || jobProgress.failed === 0}
-              onClick={() => void handleRetryFailed()}
-            >
-              {t('Retry failed')}
-            </Button>
           </Space>
         }
       >
@@ -401,10 +434,55 @@ export default function EmailNotifyPage() {
             description={windowInfo.note}
           />
         ) : null}
+        <Card
+          size="small"
+          title={t('Sending progress')}
+          style={{ marginBottom: 12 }}
+          extra={
+            <Space>
+              {jobRecord ? (
+                <Tag color={JOB_STATUS_MAP[String(jobRecord.status)]?.color || 'default'}>
+                  {t(JOB_STATUS_MAP[String(jobRecord.status)]?.label || String(jobRecord.status))}
+                </Tag>
+              ) : null}
+              <Typography.Text type="secondary">
+                {jobSerial ? `${t('Job serial')}: ${jobSerial}` : t('No job yet')}
+              </Typography.Text>
+              <Button
+                size="small"
+                icon={<RedoOutlined />}
+                loading={sending}
+                disabled={!jobSerial || jobProgress.failed === 0}
+                onClick={() => void handleRetryFailed()}
+              >
+                {t('Retry failed')}
+              </Button>
+            </Space>
+          }
+        >
+          <Space size={32} wrap>
+            <Statistic title={t('Total')} value={jobProgress.total} />
+            <Statistic title={t('Sent')} value={jobProgress.done} valueStyle={{ color: '#3f8600' }} />
+            <Statistic title={t('Remaining')} value={jobProgress.pending} />
+            <Statistic title={t('Failed')} value={jobProgress.failed} valueStyle={{ color: '#cf1322' }} />
+          </Space>
+          <Progress percent={jobProgress.percent} style={{ marginTop: 8 }} />
+        </Card>
+        <Segmented
+          style={{ marginBottom: 12 }}
+          value={activeTab}
+          onChange={(value) => setActiveTab(String(value))}
+          options={[
+            { label: `${t('All')} (${records.length})`, value: 'all' },
+            { label: `${t('Sendable')} (${sendableRecords.length})`, value: 'sendable' },
+            { label: `${t('Not sendable')} (${blockedRecords.length})`, value: 'blocked' },
+            { label: `${t('Sent')} (${sentRecords.length})`, value: 'sent' },
+          ]}
+        />
         <Table
           rowKey="order_id"
           loading={loading}
-          dataSource={sendableRecords}
+          dataSource={displayRecords}
           rowSelection={{
             selectedRowKeys,
             onChange: setSelectedRowKeys,
@@ -413,20 +491,12 @@ export default function EmailNotifyPage() {
           scroll={{ x: 1500 }}
           pagination={{ pageSize: 20, showSizeChanger: true }}
           columns={[
+            { title: t('Store name'), dataIndex: 'store_name', key: 'store_name', width: 140, fixed: 'left' as const },
             {
               title: t('Order ID'),
               dataIndex: 'order_id',
               key: 'order_id',
               width: 200,
-              fixed: 'left' as const,
-              render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
-            },
-            { title: t('Store name'), dataIndex: 'store_name', key: 'store_name', width: 140 },
-            {
-              title: t('Sendable at (Pacific)'),
-              dataIndex: 'platform_sendable_at',
-              key: 'platform_sendable_at',
-              width: 190,
               render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
             },
             {
@@ -458,30 +528,46 @@ export default function EmailNotifyPage() {
               render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
             },
             {
-              title: t('Remark'),
-              dataIndex: 'remark',
-              key: 'remark',
-              width: 180,
-              ellipsis: { showTitle: true },
+              title: t('Sendable at (Pacific)'),
+              dataIndex: 'platform_sendable_at',
+              key: 'platform_sendable_at',
+              width: 190,
+              render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
+            },
+            { title: t('Remark'), dataIndex: 'remark', key: 'remark', width: 160, ellipsis: { showTitle: true } },
+            {
+              title: t('Send express mail'),
+              key: 'send',
+              width: 150,
+              fixed: 'right' as const,
+              render: (_value: unknown, record: Record<string, any>) => {
+                if (Number(record.email_sent)) {
+                  return <Tag color="success">{t('Sent express mail')}</Tag>;
+                }
+                if (!record.sendable) {
+                  return (
+                    <Tooltip title={String(record.reason || '-')}>
+                      <Button size="small" disabled>
+                        {t('Send')}
+                      </Button>
+                    </Tooltip>
+                  );
+                }
+                return (
+                  <Button
+                    size="small"
+                    type="primary"
+                    loading={rowSending === String(record.order_id)}
+                    disabled={sending}
+                    onClick={() => void handleSendOne(record)}
+                  >
+                    {dryRun ? t('Dry run send') : t('Send')}
+                  </Button>
+                );
+              },
             },
             {
-              title: t('Express mail sent'),
-              dataIndex: 'email_sent',
-              key: 'email_sent',
-              width: 140,
-              render: (value: unknown) => (Number(value) ? <Tag color="success">{t('Sent')}</Tag> : null),
-            },
-            {
-              title: t('Sender configured'),
-              dataIndex: 'sender_configured',
-              key: 'sender_configured',
-              width: 120,
-              render: (value: boolean) => (
-                <Tag color={value ? 'success' : 'warning'}>{value ? t('Configured') : t('Not configured')}</Tag>
-              ),
-            },
-            {
-              title: t('Actions'),
+              title: t('View details'),
               key: 'actions',
               fixed: 'right' as const,
               width: 110,
@@ -493,33 +579,16 @@ export default function EmailNotifyPage() {
                     void openDetail(record);
                   }}
                 >
-                  {t('Preview')}
+                  {t('View details')}
                 </Button>
               ),
             },
           ]}
         />
-        {blockedRecords.length ? (
-          <Alert
-            style={{ marginTop: 12 }}
-            type="warning"
-            showIcon
-            message={t('Not sendable count') + `: ${blockedRecords.length}`}
-            description={
-              <Space direction="vertical" size={2}>
-                {blockedRecords.slice(0, 8).map((record) => (
-                  <Typography.Text key={String(record.order_id)}>
-                    {String(record.order_id)}（{String(record.store_name)}）：{String(record.reason)}
-                  </Typography.Text>
-                ))}
-              </Space>
-            }
-          />
-        ) : null}
       </Card>
 
       <Card
-        title={t('Sending progress')}
+        title={t('Send job details')}
         extra={
           <Space>
             {jobRecord ? (
@@ -533,13 +602,6 @@ export default function EmailNotifyPage() {
           </Space>
         }
       >
-        <Space size={48} wrap>
-          <Statistic title={t('Total')} value={jobProgress.total} />
-          <Statistic title={t('Sent')} value={jobProgress.done} valueStyle={{ color: '#3f8600' }} />
-          <Statistic title={t('Remaining')} value={jobProgress.pending} />
-          <Statistic title={t('Failed')} value={jobProgress.failed} valueStyle={{ color: '#cf1322' }} />
-        </Space>
-        <Progress percent={jobProgress.percent} style={{ marginTop: 16 }} />
         {lastResult ? (
           <Alert
             style={{ marginTop: 12 }}
@@ -604,14 +666,25 @@ export default function EmailNotifyPage() {
           <Descriptions column={1} bordered size="small">
             <Descriptions.Item label={t('Order ID')}>{String(detailRecord.order_id || '-')}</Descriptions.Item>
             <Descriptions.Item label={t('Store name')}>{String(detailRecord.store_name || '-')}</Descriptions.Item>
-            <Descriptions.Item label={t('Recipient')}>{String(detailRecord.recipient_email || '-')}</Descriptions.Item>
             <Descriptions.Item label={t('Sender')}>{String(detailRecord.sender_email || '-')}</Descriptions.Item>
-            <Descriptions.Item label={t('Subject')}>{String(detailRecord.subject || '-')}</Descriptions.Item>
-            <Descriptions.Item label={t('Delivery details')}>
+            <Descriptions.Item label={t('Current delivery')}>
               {String(detailRecord.delivery_details || '-')}
             </Descriptions.Item>
-            <Descriptions.Item label={t('Sendable at')}>
+            <Descriptions.Item label={t('Delivery at send')}>
+              {String(detailRecord.delivery_details_at_send || '-')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('Created time (Beijing)')}>
+              {String(detailRecord.create_time || '-')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('Updated time (Beijing)')}>
+              {String(detailRecord.update_time || '-')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('Sendable at (Pacific)')}>
               {String(detailRecord.platform_sendable_at || '-')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('Remark')}>{String(detailRecord.remark || '-')}</Descriptions.Item>
+            <Descriptions.Item label={t('Express mail sent')}>
+              {Number(detailRecord.email_sent) ? <Tag color="success">{t('Sent express mail')}</Tag> : '-'}
             </Descriptions.Item>
             <Descriptions.Item label={t('Express mail body')}>
               {detailBodyLoading ? (

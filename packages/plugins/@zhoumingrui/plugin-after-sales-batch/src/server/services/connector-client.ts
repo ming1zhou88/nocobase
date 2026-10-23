@@ -357,6 +357,7 @@ export class ConnectorClient {
       window: { date: string; basis: string; start: string; end: string; note: string };
       count: number;
       sendable_count: number;
+      sent_count: number;
       blocked_count: number;
       records: Record<string, unknown>[];
     }>('/email-notify/sendable', { query: params });

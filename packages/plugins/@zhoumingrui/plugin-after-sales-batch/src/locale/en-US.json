@@ -218,5 +218,15 @@
   "Updated time (Beijing)": "Updated time (Beijing)",
   "Remark": "Remark",
   "Express mail sent": "Express mail sent",
-  "Express mail details": "Express mail details"
+  "Express mail details": "Express mail details",
+  "All": "All",
+  "Sendable": "Sendable",
+  "Not sendable": "Not sendable",
+  "Send express mail": "Send express mail",
+  "Sent express mail": "Sent express mail",
+  "Send": "Send",
+  "Dry run send": "Dry run send",
+  "Send job details": "Send job details",
+  "Sender mailboxes incomplete": "Sender mailboxes incomplete",
+  "Sender mailboxes all configured": "Sender mailboxes all configured"
 }
