@@ -20,6 +20,7 @@ import {
   Progress,
   Segmented,
   Space,
+  Spin,
   Statistic,
   Switch,
   Table,
@@ -108,6 +109,9 @@ export default function EmailNotifyPage() {
 
   const [detailVisible, setDetailVisible] = useState(false);
   const [detailRecord, setDetailRecord] = useState<Record<string, any> | null>(null);
+  const [detailBody, setDetailBody] = useState('');
+  const [detailBodyLoading, setDetailBodyLoading] = useState(false);
+  const [detailBodyError, setDetailBodyError] = useState('');
   const [mailboxVisible, setMailboxVisible] = useState(false);
   const [mailboxes, setMailboxes] = useState<Record<string, any>[]>([]);
 
@@ -254,6 +258,22 @@ export default function EmailNotifyPage() {
       message.error(error instanceof Error ? error.message : String(error));
     } finally {
       setSending(false);
+    }
+  }
+
+  async function openDetail(record: Record<string, any>) {
+    setDetailRecord(record);
+    setDetailVisible(true);
+    setDetailBody('');
+    setDetailBodyError('');
+    setDetailBodyLoading(true);
+    try {
+      const response = await request('getEmailNotifyBody', { order_id: record.order_id });
+      setDetailBody(String(response?.body || ''));
+    } catch (error) {
+      setDetailBodyError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDetailBodyLoading(false);
     }
   }
 
@@ -432,8 +452,7 @@ export default function EmailNotifyPage() {
                   size="small"
                   icon={<EyeOutlined />}
                   onClick={() => {
-                    setDetailRecord(record);
-                    setDetailVisible(true);
+                    void openDetail(record);
                   }}
                 >
                   {t('Preview')}
@@ -551,10 +570,16 @@ export default function EmailNotifyPage() {
             <Descriptions.Item label={t('Sendable at')}>
               {String(detailRecord.platform_sendable_at || '-')}
             </Descriptions.Item>
-            <Descriptions.Item label={t('Body preview')}>
-              <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
-                {String(detailRecord.body_preview || '-')}
-              </Typography.Paragraph>
+            <Descriptions.Item label={t('Express mail body')}>
+              {detailBodyLoading ? (
+                <Spin size="small" />
+              ) : detailBodyError ? (
+                <Typography.Text type="danger">{detailBodyError}</Typography.Text>
+              ) : (
+                <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
+                  {detailBody || '-'}
+                </Typography.Paragraph>
+              )}
             </Descriptions.Item>
             {detailRecord.sendable ? null : (
               <Descriptions.Item label={t('Not sendable reason')}>

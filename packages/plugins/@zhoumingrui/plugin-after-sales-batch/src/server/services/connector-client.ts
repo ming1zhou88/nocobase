@@ -394,6 +394,21 @@ export class ConnectorClient {
     }>(`/email-notify/jobs/${encodeURIComponent(jobSerial)}/run-via-dify`, { method: 'POST', body: values });
   }
 
+  /** 取 7E1 完整快递邮件正文（按 orderId，返回最新一封） */
+  getEmailNotifyBody(orderId: string) {
+    return this.request<{
+      success: true;
+      id: number;
+      order_id: string;
+      store_name: string;
+      recipient_email: string;
+      email_text: string;
+      delivery_details: string;
+      email_sent: number;
+      email_sent_at: string | null;
+    }>('/email-notify/body', { query: { orderId } });
+  }
+
   getEmailNotifyJob(jobSerial: string) {
     return this.request<{ success: true; job: Record<string, unknown>; items: Record<string, unknown>[] }>(
       `/email-notify/jobs/${encodeURIComponent(jobSerial)}`,

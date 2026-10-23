@@ -312,6 +312,22 @@ async function runEmailNotifyJobViaDify(ctx: Context, next: Next) {
   await next();
 }
 
+async function getEmailNotifyBody(ctx: Context, next: Next) {
+  const values = readValues(ctx);
+  const orderId = String(values.order_id || '').trim();
+  if (!orderId) {
+    ctx.throw(400, 'order_id is required');
+  }
+  const data = await connectorClient.getEmailNotifyBody(orderId);
+  ctx.body = {
+    order_id: orderId,
+    mail_record_id: data.id || null,
+    recipient_email: data.recipient_email || null,
+    body: data.email_text || '',
+  };
+  await next();
+}
+
 async function getEmailNotifyJob(ctx: Context, next: Next) {
   const values = readValues(ctx);
   const jobSerial = String(values.job_serial || '').trim();
@@ -357,6 +373,7 @@ const ACTIONS = {
   createEmailNotifyJob,
   runEmailNotifyJobViaDify,
   getEmailNotifyJob,
+  getEmailNotifyBody,
   listEmailNotifyJobs,
   retryEmailNotifyJob,
 };
