@@ -228,5 +228,10 @@
   "Dry run send": "Dry run send",
   "Send job details": "Send job details",
   "Sender mailboxes incomplete": "Sender mailboxes incomplete",
-  "Sender mailboxes all configured": "Sender mailboxes all configured"
+  "Sender mailboxes all configured": "Sender mailboxes all configured",
+  "Other date...": "Other date...",
+  "Select date": "Select date",
+  "Today sendable": "Today sendable",
+  "Today pending": "Today pending",
+  "Today sent": "Today sent"
 }

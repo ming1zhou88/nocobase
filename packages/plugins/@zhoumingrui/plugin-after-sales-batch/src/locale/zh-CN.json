@@ -228,5 +228,10 @@
   "Dry run send": "演练发送",
   "Send job details": "发送任务明细",
   "Sender mailboxes incomplete": "发件邮箱未完全配置（{{count}} 个）",
-  "Sender mailboxes all configured": "发件邮箱：已全部配置"
+  "Sender mailboxes all configured": "发件邮箱：已全部配置",
+  "Other date...": "其他日期…",
+  "Select date": "选择日期",
+  "Today sendable": "今日可发",
+  "Today pending": "今日待发",
+  "Today sent": "今日已发"
 }

@@ -19,6 +19,7 @@ import {
   Modal,
   Progress,
   Segmented,
+  Select,
   Space,
   Spin,
   Statistic,
@@ -98,6 +99,8 @@ export default function EmailNotifyPage() {
   const [windowInfo, setWindowInfo] = useState<Record<string, any> | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [activeTab, setActiveTab] = useState('all');
+  const [customDateOpen, setCustomDateOpen] = useState(false);
+  const [customDateDraft, setCustomDateDraft] = useState('');
   const [rowSending, setRowSending] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   // 演练模式：不真发（授权码未配置时也能先跑通整条链路）；"演练时也回写"仅用于本地验证
@@ -204,7 +207,7 @@ export default function EmailNotifyPage() {
     [records],
   );
   const displayRecords = useMemo(() => {
-    if (activeTab === 'sendable') return sendableRecords;
+    if (activeTab === 'pending') return sendableRecords;
     if (activeTab === 'blocked') return blockedRecords;
     if (activeTab === 'sent') return sentRecords;
     return records;
@@ -343,42 +346,26 @@ export default function EmailNotifyPage() {
         title={t('Sendable today')}
         extra={
           <Space wrap>
-            <Segmented
-              value={quickDateKey}
+            <Select
+              value={quickDateKey || 'custom'}
+              style={{ width: 260 }}
+              options={[
+                { label: `${t('Today')} · ${laDateLabel(laDateString(0))}`, value: '0' },
+                { label: `${t('Yesterday')} · ${laDateLabel(laDateString(-1))}`, value: '-1' },
+                { label: `${t('Day before yesterday')} · ${laDateLabel(laDateString(-2))}`, value: '-2' },
+                { label: t('Other date...'), value: 'custom' },
+              ]}
               onChange={(value) => {
+                if (value === 'custom') {
+                  setCustomDateDraft(date || laDateString(0));
+                  setCustomDateOpen(true);
+                  return;
+                }
                 const nextDate = laDateString(Number(value));
                 setDate(nextDate);
                 void loadSendable(nextDate);
               }}
-              options={[
-                { label: `${t('Today')} ${laDateLabel(laDateString(0))}`, value: '0' },
-                { label: `${t('Yesterday')} ${laDateLabel(laDateString(-1))}`, value: '-1' },
-                { label: `${t('Day before yesterday')} ${laDateLabel(laDateString(-2))}`, value: '-2' },
-              ]}
             />
-            <Tooltip title={t('US Pacific date hint')}>
-              <DatePicker
-                value={date ? dayjs(date) : null}
-                format="YYYY-MM-DD"
-                allowClear={false}
-                inputReadOnly
-                style={{ width: 168 }}
-                disabledDate={(current) => current && current.isAfter(dayjs(laDateString(0)), 'day')}
-                presets={[
-                  { label: `${t('Today')}（${laDateLabel(laDateString(0))}）`, value: dayjs(laDateString(0)) },
-                  { label: `${t('Yesterday')}（${laDateLabel(laDateString(-1))}）`, value: dayjs(laDateString(-1)) },
-                  {
-                    label: `${t('Day before yesterday')}（${laDateLabel(laDateString(-2))}）`,
-                    value: dayjs(laDateString(-2)),
-                  },
-                ]}
-                onChange={(value) => {
-                  const nextDate = value ? value.format('YYYY-MM-DD') : laDateString(0);
-                  setDate(nextDate);
-                  void loadSendable(nextDate);
-                }}
-              />
-            </Tooltip>
             <Typography.Text type="secondary">
               {t('US Pacific')} · {laDateLabel(date) || '-'}
             </Typography.Text>
@@ -406,14 +393,6 @@ export default function EmailNotifyPage() {
                 />
               </Space>
             </Tooltip>
-            {dryRun ? (
-              <Tooltip title={t('Dry run write back hint')}>
-                <Space size={4}>
-                  <Typography.Text type="secondary">{t('Write back in dry run')}</Typography.Text>
-                  <Switch size="small" checked={dryRunWriteBack} onChange={setDryRunWriteBack} />
-                </Space>
-              </Tooltip>
-            ) : null}
             <Button
               icon={<SendOutlined />}
               loading={sending}
@@ -473,10 +452,10 @@ export default function EmailNotifyPage() {
           value={activeTab}
           onChange={(value) => setActiveTab(String(value))}
           options={[
-            { label: `${t('All')} (${records.length})`, value: 'all' },
-            { label: `${t('Sendable')} (${sendableRecords.length})`, value: 'sendable' },
+            { label: `${t('Today sendable')} (${records.length})`, value: 'all' },
+            { label: `${t('Today pending')} (${sendableRecords.length})`, value: 'pending' },
+            { label: `${t('Today sent')} (${sentRecords.length})`, value: 'sent' },
             { label: `${t('Not sendable')} (${blockedRecords.length})`, value: 'blocked' },
-            { label: `${t('Sent')} (${sentRecords.length})`, value: 'sent' },
           ]}
         />
         <Table
@@ -488,7 +467,7 @@ export default function EmailNotifyPage() {
             onChange: setSelectedRowKeys,
             getCheckboxProps: (record) => ({ disabled: !record.sendable }),
           }}
-          scroll={{ x: 1500 }}
+          scroll={{ x: 1900 }}
           pagination={{ pageSize: 20, showSizeChanger: true }}
           columns={[
             { title: t('Store name'), dataIndex: 'store_name', key: 'store_name', width: 140, fixed: 'left' as const },
@@ -655,6 +634,29 @@ export default function EmailNotifyPage() {
           />
         ) : null}
       </Card>
+
+      <Modal
+        title={t('Select date')}
+        open={customDateOpen}
+        onCancel={() => setCustomDateOpen(false)}
+        onOk={() => {
+          const nextDate = customDateDraft || date || laDateString(0);
+          setDate(nextDate);
+          setCustomDateOpen(false);
+          void loadSendable(nextDate);
+        }}
+        okText={t('Confirm')}
+        cancelText={t('Cancel')}
+      >
+        <DatePicker
+          value={customDateDraft ? dayjs(customDateDraft) : null}
+          format="YYYY-MM-DD"
+          allowClear={false}
+          style={{ width: '100%' }}
+          disabledDate={(current) => current && current.isAfter(dayjs(laDateString(0)), 'day')}
+          onChange={(value) => setCustomDateDraft(value ? value.format('YYYY-MM-DD') : '')}
+        />
+      </Modal>
 
       <Drawer
         title={t('Express mail details')}
