@@ -12,12 +12,25 @@ function blockOf(ctx: any) {
   return context.blockModel || (ctx.model as any)?.parent;
 }
 
+function readApplied(resource: any): { selected: string[]; exact: boolean; active: boolean } {
+  const group = resource?.filterGroups?.get(FILTER_KEY);
+  if (!group) return { selected: [], exact: false, active: false };
+  if (group.type_label?.$eq) return { selected: [group.type_label.$eq], exact: true, active: true };
+  const items = Array.isArray(group.$and) ? group.$and : [];
+  const selected = items
+    .map((item: any) => item?.type_label?.$includes)
+    .filter((value: any) => typeof value === 'string');
+  return { selected, exact: false, active: selected.length > 0 };
+}
+
 function DailyTypeLabelFilterButton({ model }: { model: DailyTypeLabelFilterActionModel }) {
   const ctx = useFlowContext();
   const { message } = App.useApp();
   const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [exact, setExact] = useState(false);
+  const initial = readApplied(blockOf(ctx)?.resource);
+  const [selected, setSelected] = useState<string[]>(initial.selected);
+  const [exact, setExact] = useState(initial.exact);
+  const [active, setActive] = useState(initial.active);
 
   function applyFilter() {
     const block = blockOf(ctx);
@@ -33,6 +46,7 @@ function DailyTypeLabelFilterButton({ model }: { model: DailyTypeLabelFilterActi
     if (block?.setFilterActive) block.setFilterActive(FILTER_KEY, false);
 
     if (!selected.length) {
+      setActive(false);
       if (typeof resource.setPage === 'function') resource.setPage(1);
       resource.refresh();
       setOpen(false);
@@ -50,6 +64,7 @@ function DailyTypeLabelFilterButton({ model }: { model: DailyTypeLabelFilterActi
     }
     resource.addFilterGroup(FILTER_KEY, filter);
     if (block?.setFilterActive) block.setFilterActive(FILTER_KEY, true);
+    setActive(true);
     if (typeof resource.setPage === 'function') resource.setPage(1);
     resource.refresh();
     message.success(
@@ -67,6 +82,7 @@ function DailyTypeLabelFilterButton({ model }: { model: DailyTypeLabelFilterActi
     if (block?.setFilterActive) block.setFilterActive(FILTER_KEY, false);
     setSelected([]);
     setExact(false);
+    setActive(false);
     if (resource) {
       if (typeof resource.setPage === 'function') resource.setPage(1);
       resource.refresh();
@@ -75,9 +91,16 @@ function DailyTypeLabelFilterButton({ model }: { model: DailyTypeLabelFilterActi
 
   return (
     <>
-      <Button type={(model.props?.type as any) || 'default'} onClick={() => setOpen(true)}>
-        {model.props?.title || '问题类型筛选'}
-      </Button>
+      <Space>
+        <Button type={(model.props?.type as any) || 'default'} onClick={() => setOpen(true)}>
+          {active ? '问题类型筛选（已启用）' : model.props?.title || '问题类型筛选'}
+        </Button>
+        {active ? (
+          <Button type="link" size="small" onClick={clearFilter}>
+            清除问题类型筛选
+          </Button>
+        ) : null}
+      </Space>
       <Modal
         open={open}
         title="按问题类型标识筛选"
