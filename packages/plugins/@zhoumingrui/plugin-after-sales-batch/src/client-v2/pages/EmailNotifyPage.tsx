@@ -184,10 +184,15 @@ export default function EmailNotifyPage() {
     setBatchSearching(true);
     try {
       await loadSendable(date, false, ids, true);
-      setBatchOpen(false);
     } finally {
       setBatchSearching(false);
     }
+  }
+
+  async function resetBatchSearch() {
+    setBatchMeta(null);
+    setBatchInput('');
+    await loadSendable(date);
   }
 
   async function copySelectedOrderIds() {
@@ -450,11 +455,7 @@ export default function EmailNotifyPage() {
             >
               复制选中订单
             </Button>
-            {batchMeta ? (
-              <Tag color={batchMeta.missing.length ? 'warning' : 'success'}>
-                已搜索 {batchMeta.requested} 个 / 未匹配 {batchMeta.missing.length} 个
-              </Tag>
-            ) : null}
+            {batchMeta ? <Button onClick={() => void resetBatchSearch()}>清除搜索</Button> : null}
             <Button
               icon={<SendOutlined />}
               loading={sending}
