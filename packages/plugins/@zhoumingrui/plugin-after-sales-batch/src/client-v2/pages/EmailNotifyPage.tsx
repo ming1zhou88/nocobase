@@ -382,6 +382,7 @@ export default function EmailNotifyPage() {
             value={batchInput}
             onChange={(event) => setBatchInput(event.target.value)}
             placeholder="一行一个平台订单编号，也可用逗号/空格分隔"
+            style={{ width: 420, maxWidth: '100%' }}
           />
           <Space wrap>
             <Button type="primary" loading={batchSearching} onClick={() => void handleBatchSearch()}>
