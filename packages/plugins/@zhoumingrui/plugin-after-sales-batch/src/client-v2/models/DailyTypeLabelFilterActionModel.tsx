@@ -1,6 +1,7 @@
 import { ActionModel, ActionSceneEnum } from '@nocobase/client-v2';
 import { useFlowContext } from '@nocobase/flow-engine';
-import { App, Button, Checkbox, Modal, Select, Space, Typography } from 'antd';
+import { App, Button, Checkbox, Modal, Select, Space, Tooltip, Typography } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import type { ButtonProps } from 'antd';
 import React, { useState } from 'react';
 
@@ -91,16 +92,21 @@ function DailyTypeLabelFilterButton({ model }: { model: DailyTypeLabelFilterActi
 
   return (
     <>
-      <Space>
-        <Button type={(model.props?.type as any) || 'default'} onClick={() => setOpen(true)}>
+      <Tooltip title={active ? '点击清除问题类型筛选' : '按问题类型标识筛选'}>
+        <Button
+          type={(model.props?.type as any) || 'default'}
+          icon={active ? <ReloadOutlined /> : undefined}
+          onClick={() => {
+            if (active) {
+              clearFilter();
+              return;
+            }
+            setOpen(true);
+          }}
+        >
           {active ? '问题类型筛选（已启用）' : model.props?.title || '问题类型筛选'}
         </Button>
-        {active ? (
-          <Button type="link" size="small" onClick={clearFilter}>
-            清除问题类型筛选
-          </Button>
-        ) : null}
-      </Space>
+      </Tooltip>
       <Modal
         open={open}
         title="按问题类型标识筛选"
