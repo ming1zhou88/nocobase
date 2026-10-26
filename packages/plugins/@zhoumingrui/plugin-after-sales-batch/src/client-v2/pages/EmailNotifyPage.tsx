@@ -5,6 +5,7 @@ import {
   MailOutlined,
   ReloadOutlined,
   RedoOutlined,
+  SearchOutlined,
   SendOutlined,
 } from '@ant-design/icons';
 import {
@@ -119,6 +120,7 @@ export default function EmailNotifyPage() {
   const [detailBodyError, setDetailBodyError] = useState('');
   const [mailboxVisible, setMailboxVisible] = useState(false);
   const [mailboxes, setMailboxes] = useState<Record<string, any>[]>([]);
+  const [batchOpen, setBatchOpen] = useState(false);
   const [batchInput, setBatchInput] = useState('');
   const [batchSearching, setBatchSearching] = useState(false);
   const [batchMeta, setBatchMeta] = useState<{ requested: number; missing: string[] } | null>(null);
@@ -132,7 +134,7 @@ export default function EmailNotifyPage() {
     return response?.data?.data ?? response?.data ?? {};
   }
 
-  async function loadSendable(nextDate = date, silent = false, orderIds: string[] = []) {
+  async function loadSendable(nextDate = date, silent = false, orderIds: string[] = [], allDates = false) {
     if (!silent) {
       setLoading(true);
     }
@@ -143,6 +145,7 @@ export default function EmailNotifyPage() {
         dry_run: dryRun ? 1 : '',
         include_sent: 1,
         order_ids: orderIds,
+        all_dates: allDates ? 1 : '',
       });
       setRecords(response.records || []);
       setWindowInfo(response.window || null);
@@ -173,17 +176,28 @@ export default function EmailNotifyPage() {
           .map((value) => value.trim())
           .filter(Boolean),
       ),
-    ];
+    ].slice(0, 200);
     if (!ids.length) {
       message.warning('请先输入平台订单编号');
       return;
     }
     setBatchSearching(true);
     try {
-      await loadSendable(date, false, ids);
+      await loadSendable(date, false, ids, true);
+      setBatchOpen(false);
     } finally {
       setBatchSearching(false);
     }
+  }
+
+  async function copySelectedOrderIds() {
+    const ids = selectedRowKeys.map((value) => String(value)).filter(Boolean);
+    if (!ids.length) {
+      message.warning('请先勾选订单');
+      return;
+    }
+    await navigator.clipboard.writeText(ids.join('\n'));
+    message.success(`已复制 ${ids.length} 个平台订单编号`);
   }
 
   async function loadJob(currentJobSerial: string, silent = true) {
@@ -375,46 +389,6 @@ export default function EmailNotifyPage() {
         <Alert type="warning" showIcon message={t('Dry run banner')} description={t('Dry run banner detail')} />
       ) : null}
 
-      <Card size="small" title="按平台订单编号批量搜索">
-        <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          <Input.TextArea
-            rows={3}
-            value={batchInput}
-            onChange={(event) => setBatchInput(event.target.value)}
-            placeholder="一行一个平台订单编号，也可用逗号/空格分隔"
-            style={{ width: 420, maxWidth: '100%' }}
-          />
-          <Space wrap>
-            <Button type="primary" loading={batchSearching} onClick={() => void handleBatchSearch()}>
-              批量搜索
-            </Button>
-            <Button
-              onClick={() => {
-                setBatchInput('');
-                setBatchMeta(null);
-                void loadSendable(date);
-              }}
-            >
-              清除并回到日期筛选
-            </Button>
-            {batchMeta ? (
-              <Typography.Text type="secondary">
-                输入 {batchMeta.requested} 个，匹配 {batchMeta.requested - batchMeta.missing.length} 个，未匹配{' '}
-                {batchMeta.missing.length} 个
-              </Typography.Text>
-            ) : null}
-          </Space>
-          {batchMeta && batchMeta.missing.length ? (
-            <Alert
-              type="warning"
-              showIcon
-              message={`未匹配 ${batchMeta.missing.length} 个订单`}
-              description={batchMeta.missing.slice(0, 20).join('、')}
-            />
-          ) : null}
-        </Space>
-      </Card>
-
       <Card
         title={t('Sendable today')}
         extra={
@@ -466,6 +440,21 @@ export default function EmailNotifyPage() {
                 />
               </Space>
             </Tooltip>
+            <Button icon={<SearchOutlined />} onClick={() => setBatchOpen(true)}>
+              订单号批量搜索
+            </Button>
+            <Button
+              icon={<CopyOutlined />}
+              disabled={!selectedRowKeys.length}
+              onClick={() => void copySelectedOrderIds()}
+            >
+              复制选中订单
+            </Button>
+            {batchMeta ? (
+              <Tag color={batchMeta.missing.length ? 'warning' : 'success'}>
+                已搜索 {batchMeta.requested} 个 / 未匹配 {batchMeta.missing.length} 个
+              </Tag>
+            ) : null}
             <Button
               icon={<SendOutlined />}
               loading={sending}
@@ -780,6 +769,44 @@ export default function EmailNotifyPage() {
           </Descriptions>
         ) : null}
       </Drawer>
+
+      <Modal
+        title="按平台订单编号精确搜索"
+        open={batchOpen}
+        onCancel={() => setBatchOpen(false)}
+        width={560}
+        footer={[
+          <Button key="clear" onClick={() => setBatchInput('')}>
+            清空
+          </Button>,
+          <Button key="close" onClick={() => setBatchOpen(false)}>
+            关闭
+          </Button>,
+          <Button key="search" type="primary" loading={batchSearching} onClick={() => void handleBatchSearch()}>
+            搜索
+          </Button>,
+        ]}
+      >
+        <Space direction="vertical" size={10} style={{ width: '100%' }}>
+          <Typography.Text type="secondary">一行一个平台订单编号，最多 200 行；批量搜索不限日期。</Typography.Text>
+          <Input.TextArea
+            rows={8}
+            value={batchInput}
+            onChange={(event) => setBatchInput(event.target.value)}
+            placeholder={'精确搜索，一行一项，最多支持200行'}
+          />
+          {batchMeta ? (
+            <Alert
+              type={batchMeta.missing.length ? 'warning' : 'success'}
+              showIcon
+              message={`输入 ${batchMeta.requested} 个，匹配 ${
+                batchMeta.requested - batchMeta.missing.length
+              } 个，未匹配 ${batchMeta.missing.length} 个`}
+              description={batchMeta.missing.length ? batchMeta.missing.slice(0, 20).join('、') : undefined}
+            />
+          ) : null}
+        </Space>
+      </Modal>
 
       <Modal
         title={t('Sender mailboxes')}
