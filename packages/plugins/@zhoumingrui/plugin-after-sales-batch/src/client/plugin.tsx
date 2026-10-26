@@ -9,6 +9,7 @@ import { DailyAssignActionModel } from '../client-v2/models/DailyAssignActionMod
 import { DailyBatchCopyOrderIdsActionModel } from '../client-v2/models/DailyBatchCopyOrderIdsActionModel';
 import { DailyBatchMarkProcessedActionModel } from '../client-v2/models/DailyBatchMarkProcessedActionModel';
 import { DailyMarkProcessedActionModel } from '../client-v2/models/DailyMarkProcessedActionModel';
+import { DailyTypeLabelFilterActionModel } from '../client-v2/models/DailyTypeLabelFilterActionModel';
 
 /**
  * 售后处理指南：两个页面并行存在。
@@ -53,6 +54,7 @@ export class PluginAfterSalesBatchClient extends Plugin {
         DailyBatchCopyOrderIdsActionModel,
         DailyBatchMarkProcessedActionModel,
         DailyMarkProcessedActionModel,
+        DailyTypeLabelFilterActionModel,
       });
     }
 
