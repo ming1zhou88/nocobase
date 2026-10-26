@@ -189,12 +189,6 @@ export default function EmailNotifyPage() {
     }
   }
 
-  async function resetBatchSearch() {
-    setBatchMeta(null);
-    setBatchInput('');
-    await loadSendable(date);
-  }
-
   async function copySelectedOrderIds() {
     const ids = selectedRowKeys.map((value) => String(value)).filter(Boolean);
     if (!ids.length) {
@@ -446,16 +440,15 @@ export default function EmailNotifyPage() {
               </Space>
             </Tooltip>
             <Button icon={<SearchOutlined />} onClick={() => setBatchOpen(true)}>
-              订单号批量搜索
+              平台订单编号批量搜索
             </Button>
             <Button
               icon={<CopyOutlined />}
               disabled={!selectedRowKeys.length}
               onClick={() => void copySelectedOrderIds()}
             >
-              复制选中订单
+              复制选中的平台订单编号
             </Button>
-            {batchMeta ? <Button onClick={() => void resetBatchSearch()}>清除搜索</Button> : null}
             <Button
               icon={<SendOutlined />}
               loading={sending}
