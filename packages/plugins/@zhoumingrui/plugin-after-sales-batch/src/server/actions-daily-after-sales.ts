@@ -109,6 +109,36 @@ export async function batchAssignDailyAfterSales(ctx: Context, next: Next) {
   await next();
 }
 
+/**
+ * 批量标记每日售后订单的处理方式：人工处理 / 程序处理。
+ * 只更新 process_method，不改 handle_status；是否算“已处理”由业务另行判断。
+ */
+export async function batchMarkDailyProcessMethod(ctx: Context, next: Next) {
+  const values = (ctx.action.params?.values || ctx.request.body || {}) as Record<string, unknown>;
+  const processMethod = String(values.process_method ?? values.processMethod ?? '').trim();
+  if (!['人工处理', '程序处理'].includes(processMethod)) {
+    ctx.throw(400, 'process_method must be 人工处理 or 程序处理');
+  }
+  const rowIds = (Array.isArray(values.rowIds) ? values.rowIds : [values.rowIds])
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n > 0);
+  if (!rowIds.length) {
+    ctx.throw(400, 'rowIds is required');
+  }
+
+  const dataSource = (ctx.app.dataSourceManager as any).get('d_99cwsyi7q4k');
+  const repository = dataSource?.collectionManager?.getRepository('DailyAfterSalesOrder');
+  if (!repository) ctx.throw(500, 'DailyAfterSalesOrder repository unavailable');
+
+  await repository.update({
+    filter: { id: { $in: rowIds } },
+    values: { process_method: processMethod },
+  });
+
+  ctx.body = { success: true, updated: rowIds.length, process_method: processMethod };
+  await next();
+}
+
 /** 草稿 JSON 上限（字符数，约 64KB）：防止超大 payload 拖慢列表/响应。 */
 const DRAFT_MAX_CHARS = 64 * 1024;
 
@@ -242,4 +272,5 @@ export const DAILY_AFTER_SALES_ACTIONS = {
   saveDraft: saveDailyAfterSalesDraft,
   getDraft: getDailyAfterSalesDraft,
   listDraftStates: listDailyDraftStates,
+  batchMarkProcessMethod: batchMarkDailyProcessMethod,
 };

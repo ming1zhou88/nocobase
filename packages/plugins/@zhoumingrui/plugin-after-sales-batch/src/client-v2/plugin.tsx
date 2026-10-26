@@ -5,6 +5,8 @@ import { NAMESPACE, useT } from './locale';
 import { DailyCreateWorkOrderActionModel } from './models/DailyCreateWorkOrderActionModel';
 import { DailyBatchAssignActionModel } from './models/DailyBatchAssignActionModel';
 import { DailyAssignActionModel } from './models/DailyAssignActionModel';
+import { DailyBatchCopyOrderIdsActionModel } from './models/DailyBatchCopyOrderIdsActionModel';
+import { DailyBatchMarkProcessedActionModel } from './models/DailyBatchMarkProcessedActionModel';
 
 type AsyncTaskManagerClientV2Plugin = {
   taskOrigins: {
@@ -28,6 +30,8 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
       DailyCreateWorkOrderActionModel,
       DailyBatchAssignActionModel,
       DailyAssignActionModel,
+      DailyBatchCopyOrderIdsActionModel,
+      DailyBatchMarkProcessedActionModel,
     });
 
     // B 页：Dify 生成，复用 A 页组件（组件内部根据路由参数区分行为）

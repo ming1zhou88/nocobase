@@ -119,6 +119,9 @@ export default function EmailNotifyPage() {
   const [detailBodyError, setDetailBodyError] = useState('');
   const [mailboxVisible, setMailboxVisible] = useState(false);
   const [mailboxes, setMailboxes] = useState<Record<string, any>[]>([]);
+  const [batchInput, setBatchInput] = useState('');
+  const [batchSearching, setBatchSearching] = useState(false);
+  const [batchMeta, setBatchMeta] = useState<{ requested: number; missing: string[] } | null>(null);
 
   async function request(action: string, values?: Record<string, unknown>) {
     const response = await ctx.api.request({
@@ -129,7 +132,7 @@ export default function EmailNotifyPage() {
     return response?.data?.data ?? response?.data ?? {};
   }
 
-  async function loadSendable(nextDate = date, silent = false) {
+  async function loadSendable(nextDate = date, silent = false, orderIds: string[] = []) {
     if (!silent) {
       setLoading(true);
     }
@@ -139,17 +142,47 @@ export default function EmailNotifyPage() {
         limit: 500,
         dry_run: dryRun ? 1 : '',
         include_sent: 1,
+        order_ids: orderIds,
       });
       setRecords(response.records || []);
       setWindowInfo(response.window || null);
       setDate(response.window?.date || nextDate);
       setSelectedRowKeys([]);
+      setBatchMeta(
+        orderIds.length
+          ? {
+              requested: orderIds.length,
+              missing: Array.isArray(response.missing_order_ids) ? response.missing_order_ids : [],
+            }
+          : null,
+      );
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error));
     } finally {
       if (!silent) {
         setLoading(false);
       }
+    }
+  }
+
+  async function handleBatchSearch() {
+    const ids = [
+      ...new Set(
+        batchInput
+          .split(/[\s,，]+/)
+          .map((value) => value.trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (!ids.length) {
+      message.warning('请先输入平台订单编号');
+      return;
+    }
+    setBatchSearching(true);
+    try {
+      await loadSendable(date, false, ids);
+    } finally {
+      setBatchSearching(false);
     }
   }
 
@@ -341,6 +374,45 @@ export default function EmailNotifyPage() {
       {dryRun ? (
         <Alert type="warning" showIcon message={t('Dry run banner')} description={t('Dry run banner detail')} />
       ) : null}
+
+      <Card size="small" title="按平台订单编号批量搜索">
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Input.TextArea
+            rows={3}
+            value={batchInput}
+            onChange={(event) => setBatchInput(event.target.value)}
+            placeholder="一行一个平台订单编号，也可用逗号/空格分隔"
+          />
+          <Space wrap>
+            <Button type="primary" loading={batchSearching} onClick={() => void handleBatchSearch()}>
+              批量搜索
+            </Button>
+            <Button
+              onClick={() => {
+                setBatchInput('');
+                setBatchMeta(null);
+                void loadSendable(date);
+              }}
+            >
+              清除并回到日期筛选
+            </Button>
+            {batchMeta ? (
+              <Typography.Text type="secondary">
+                输入 {batchMeta.requested} 个，匹配 {batchMeta.requested - batchMeta.missing.length} 个，未匹配{' '}
+                {batchMeta.missing.length} 个
+              </Typography.Text>
+            ) : null}
+          </Space>
+          {batchMeta && batchMeta.missing.length ? (
+            <Alert
+              type="warning"
+              showIcon
+              message={`未匹配 ${batchMeta.missing.length} 个订单`}
+              description={batchMeta.missing.slice(0, 20).join('、')}
+            />
+          ) : null}
+        </Space>
+      </Card>
 
       <Card
         title={t('Sendable today')}

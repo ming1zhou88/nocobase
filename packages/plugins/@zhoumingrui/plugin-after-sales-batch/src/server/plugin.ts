@@ -272,6 +272,7 @@ async function listEmailNotifySendable(ctx: Context, next: Next) {
     limit: values.limit,
     dry_run: values.dry_run,
     include_sent: values.include_sent,
+    order_ids: values.order_ids,
   });
   await next();
 }
