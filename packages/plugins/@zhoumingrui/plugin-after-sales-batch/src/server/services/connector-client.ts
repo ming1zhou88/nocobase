@@ -431,6 +431,37 @@ export class ConnectorClient {
     }>(`/email-notify/jobs/${encodeURIComponent(jobSerial)}/retry`, { method: 'POST', body: values });
   }
 
+  // -------------------------------------------------------------------------
+  // 二次回复（7E3）
+  // -------------------------------------------------------------------------
+
+  checkSecondReplyReady(e3Id: number) {
+    return this.request<{ success: true; data: Record<string, unknown> }>(
+      `/second-reply/check-ready/${encodeURIComponent(String(e3Id))}`,
+    );
+  }
+
+  refreshSecondReply(dailyRowId: number) {
+    return this.request<{ success: true; data: Record<string, unknown> }>('/second-reply/refresh', {
+      method: 'POST',
+      body: { daily_row_id: dailyRowId },
+    });
+  }
+
+  generateSecondReply(e3Id: number) {
+    return this.request<{ success: true; data: Record<string, unknown> }>(
+      `/second-reply/${encodeURIComponent(String(e3Id))}/generate`,
+      { method: 'POST', body: {} },
+    );
+  }
+
+  sendSecondReply(e3Id: number, dryRun = false) {
+    return this.request<{ success: true; data: Record<string, unknown> }>(
+      `/second-reply/${encodeURIComponent(String(e3Id))}/send`,
+      { method: 'POST', body: { dry_run: dryRun } },
+    );
+  }
+
   describe() {
     return { baseUrl: this.baseUrl, hasToken: Boolean(this.token) };
   }

@@ -4,6 +4,7 @@ import { installDailyAfterSalesAssign } from './daily-after-sales-assign';
 import { installAssignmentFieldGuard } from './assignment-field-guard';
 import { normalizeWorkOrderRecord, normalizeWorkOrderRecords } from './work-order-field-alias';
 import { DAILY_AFTER_SALES_ACTIONS, DAILY_AFTER_SALES_RESOURCE } from './actions-daily-after-sales';
+import { SECOND_REPLY_ACTIONS, SECOND_REPLY_RESOURCE } from './actions-second-reply';
 import { Plugin } from '@nocobase/server';
 import type { AsyncTasksManager } from '@nocobase/plugin-async-task-manager';
 import { connectorClient } from './services/connector-client';
@@ -469,6 +470,17 @@ export class PluginAfterSalesBatchServer extends Plugin {
     this.app.acl.registerSnippet({
       name: `pm.${this.name}.dailyAfterSales`,
       actions: [`${DAILY_AFTER_SALES_RESOURCE}:*`],
+    });
+
+    // ---- 二次回复 7E3：薄转发到连接器 ----
+    this.app.resourceManager.define({
+      name: SECOND_REPLY_RESOURCE,
+      actions: SECOND_REPLY_ACTIONS,
+    });
+    this.app.acl.allow(SECOND_REPLY_RESOURCE, Object.keys(SECOND_REPLY_ACTIONS), 'loggedIn');
+    this.app.acl.registerSnippet({
+      name: `pm.${this.name}.secondReply`,
+      actions: [`${SECOND_REPLY_RESOURCE}:*`],
     });
   }
 }

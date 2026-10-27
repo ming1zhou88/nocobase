@@ -10,6 +10,8 @@ import { DailyBatchCopyOrderIdsActionModel } from '../client-v2/models/DailyBatc
 import { DailyBatchMarkProcessedActionModel } from '../client-v2/models/DailyBatchMarkProcessedActionModel';
 import { DailyMarkProcessedActionModel } from '../client-v2/models/DailyMarkProcessedActionModel';
 import { DailyTypeLabelFilterActionModel } from '../client-v2/models/DailyTypeLabelFilterActionModel';
+import { SecondReplyGenerateActionModel } from '../client-v2/models/SecondReplyGenerateActionModel';
+import { SecondReplySendActionModel } from '../client-v2/models/SecondReplySendActionModel';
 
 /**
  * 售后处理指南：两个页面并行存在。
@@ -55,6 +57,8 @@ export class PluginAfterSalesBatchClient extends Plugin {
         DailyBatchMarkProcessedActionModel,
         DailyMarkProcessedActionModel,
         DailyTypeLabelFilterActionModel,
+        SecondReplyGenerateActionModel,
+        SecondReplySendActionModel,
       });
     }
 

@@ -9,6 +9,8 @@ import { DailyBatchCopyOrderIdsActionModel } from './models/DailyBatchCopyOrderI
 import { DailyBatchMarkProcessedActionModel } from './models/DailyBatchMarkProcessedActionModel';
 import { DailyMarkProcessedActionModel } from './models/DailyMarkProcessedActionModel';
 import { DailyTypeLabelFilterActionModel } from './models/DailyTypeLabelFilterActionModel';
+import { SecondReplyGenerateActionModel } from './models/SecondReplyGenerateActionModel';
+import { SecondReplySendActionModel } from './models/SecondReplySendActionModel';
 
 type AsyncTaskManagerClientV2Plugin = {
   taskOrigins: {
@@ -36,6 +38,8 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
       DailyBatchMarkProcessedActionModel,
       DailyMarkProcessedActionModel,
       DailyTypeLabelFilterActionModel,
+      SecondReplyGenerateActionModel,
+      SecondReplySendActionModel,
     });
 
     // B 页：Dify 生成，复用 A 页组件（组件内部根据路由参数区分行为）
