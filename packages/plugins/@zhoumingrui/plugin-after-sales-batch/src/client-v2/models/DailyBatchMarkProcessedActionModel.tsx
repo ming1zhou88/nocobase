@@ -1,8 +1,14 @@
 import { ActionModel, ActionSceneEnum } from '@nocobase/client-v2';
 import { useFlowContext } from '@nocobase/flow-engine';
-import { App, Button, Modal } from 'antd';
+import { App, Button, Modal, Select } from 'antd';
 import type { ButtonProps } from 'antd';
 import React, { useState } from 'react';
+
+const OPTIONS = [
+  { label: '快递/邮件通知', value: '快递/邮件通知' },
+  { label: '二次回复', value: '二次回复' },
+  { label: '人工处理', value: '人工处理' },
+];
 
 function selectedRowsOf(ctx: any): Record<string, any>[] {
   const context = (ctx.model?.context || {}) as any;
@@ -18,6 +24,7 @@ function DailyBatchMarkButton({ model }: { model: DailyBatchMarkProcessedActionM
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [rows, setRows] = useState<Record<string, any>[]>([]);
+  const [method, setMethod] = useState('快递/邮件通知');
 
   function prepare() {
     const selected = selectedRowsOf(ctx);
@@ -26,6 +33,7 @@ function DailyBatchMarkButton({ model }: { model: DailyBatchMarkProcessedActionM
       return;
     }
     setRows(selected);
+    setMethod('快递/邮件通知');
     setOpen(true);
   }
 
@@ -40,9 +48,9 @@ function DailyBatchMarkButton({ model }: { model: DailyBatchMarkProcessedActionM
       await ctx.api.request({
         url: 'dailyAfterSales:batchMarkProcessMethod',
         method: 'post',
-        data: { rowIds, process_method: '程序处理' },
+        data: { rowIds, process_method: method },
       });
-      message.success(`已将 ${rowIds.length} 行标记为“程序处理”`);
+      message.success(`已将 ${rowIds.length} 行标记为“${method}”`);
       setOpen(false);
       const context = (ctx.model?.context || {}) as any;
       const blockModel = context.blockModel || (ctx.model as any)?.parent;
@@ -58,19 +66,21 @@ function DailyBatchMarkButton({ model }: { model: DailyBatchMarkProcessedActionM
   return (
     <>
       <Button type={(model.props?.type as any) || 'default'} onClick={prepare}>
-        {model.props?.title || '批量标记程序处理'}
+        {model.props?.title || '批量标记处理方式'}
       </Button>
       <Modal
         open={open}
         title="批量标记处理方式"
         onCancel={() => setOpen(false)}
         onOk={() => void submit()}
-        okText="标记为程序处理"
+        okText="确认标记"
         cancelText="取消"
         confirmLoading={saving}
         destroyOnClose
       >
-        将把已勾选的 {rows.length} 行标记为“程序处理”。该操作只更新处理方式，不修改处理状态。
+        <div style={{ marginBottom: 12 }}>已勾选 {rows.length} 行，请选择处理方式：</div>
+        <Select value={method} options={OPTIONS} onChange={setMethod} style={{ width: '100%' }} />
+        <div style={{ marginTop: 12, color: '#888' }}>该操作只更新处理方式，不修改处理状态。</div>
       </Modal>
     </>
   );
@@ -78,10 +88,10 @@ function DailyBatchMarkButton({ model }: { model: DailyBatchMarkProcessedActionM
 
 export class DailyBatchMarkProcessedActionModel extends ActionModel {
   static scene = ActionSceneEnum.collection;
-  defaultProps: ButtonProps = { children: '批量标记程序处理', type: 'default' };
+  defaultProps: ButtonProps = { children: '批量标记处理方式', type: 'default' };
   render() {
     return <DailyBatchMarkButton model={this} />;
   }
 }
 
-DailyBatchMarkProcessedActionModel.define({ label: '批量标记程序处理' });
+DailyBatchMarkProcessedActionModel.define({ label: '批量标记处理方式' });

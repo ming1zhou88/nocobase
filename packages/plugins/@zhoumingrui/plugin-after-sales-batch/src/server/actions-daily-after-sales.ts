@@ -116,8 +116,8 @@ export async function batchAssignDailyAfterSales(ctx: Context, next: Next) {
 export async function batchMarkDailyProcessMethod(ctx: Context, next: Next) {
   const values = (ctx.action.params?.values || ctx.request.body || {}) as Record<string, unknown>;
   const processMethod = String(values.process_method ?? values.processMethod ?? '').trim();
-  if (!['人工处理', '程序处理'].includes(processMethod)) {
-    ctx.throw(400, 'process_method must be 人工处理 or 程序处理');
+  if (!['二次回复', '快递/邮件通知', '人工处理'].includes(processMethod)) {
+    ctx.throw(400, 'process_method must be 二次回复 / 快递/邮件通知 / 人工处理');
   }
   const rowIds = (Array.isArray(values.rowIds) ? values.rowIds : [values.rowIds])
     .map(Number)
