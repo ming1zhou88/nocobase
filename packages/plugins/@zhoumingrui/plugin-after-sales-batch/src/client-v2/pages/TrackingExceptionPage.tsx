@@ -444,34 +444,7 @@ export default function TrackingExceptionPage() {
       const stamp = now.format('YYYY-MM-DD HH:mm');
       const actionText = action === 'recovered' ? '已核实恢复' : action === 'abnormal' ? '仍异常' : '备注';
       const line = `[人工核实 ${stamp}] ${actionText}${manualNote.trim() ? `：${manualNote.trim()}` : ''}`;
-      const note = [selected.handle_note, line].filter(Boolean).join('\n');
-      const status = action === 'recovered' ? '已关闭' : action === 'abnormal' ? '持续跟踪' : selected.handle_status;
-      await ctx.api.request({
-        url: `${COLLECTION}:update?filterByTk=${selected.id}`,
-        method: 'post',
-        headers: { 'x-data-source': DATA_SOURCE_KEY },
-        data: {
-          handle_status: status,
-          handle_note: note,
-          handle_updated_at: now.format('YYYY-MM-DD HH:mm:ss'),
-        },
-      });
-      message.success('已保存人工核实记录');
-      setSelected(null);
-      setManualNote('');
-      await load();
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : String(error));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function saveActionLog() {
-    if (!selected) return;
-    setSaving(true);
-    try {
-      const now = dayjs();
+      const actionType = action === 'recovered' ? 'close' : action === 'abnormal' ? 'tracking' : 'other';
       await ctx.api.request({
         url: `${ACTIONLOG_COLLECTION}:create`,
         method: 'post',
@@ -482,14 +455,15 @@ export default function TrackingExceptionPage() {
           'tracking-number': selected['tracking-number'],
           action_type: actionType,
           action_at: now.format('YYYY-MM-DD HH:mm:ss'),
-          action_status: 'done',
-          action_note: actionNote.trim() || null,
+          action_status: action === 'abnormal' ? 'in_progress' : 'done',
+          action_note: line,
+          close_reason: action === 'recovered' ? line : null,
           operator_name: ctx.currentUser?.nickname || ctx.currentUser?.username || '人工',
         },
       });
-      message.success('行动记录已新增');
-      setActionNote('');
-      await loadActionLogs(selected.id);
+      message.success('已记录人工核实行动');
+      setSelected(null);
+      setManualNote('');
       await load();
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error));
