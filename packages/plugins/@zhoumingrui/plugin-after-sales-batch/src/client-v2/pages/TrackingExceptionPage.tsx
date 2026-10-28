@@ -61,12 +61,20 @@ const FIELDS = [
   'handle_updated_at',
   'owner_name',
   'assign_source',
+  'exception_status',
+  'data_status',
+  'exception_type',
+  'exception_started_at',
+  'exception_resolved_at',
+  'manual_action',
+  'manual_action_at',
+  'manual_action_by',
 ];
 
 type Row = Record<string, any>;
 type Quality = '可用' | '查询异常' | '虚拟单号' | '非FedEx' | '数据不完整' | '天数异常' | '数据过旧';
 type ExceptionType = 'initial' | 'transit' | 'other';
-type ExceptionState = '异常中' | '已恢复' | '待核实';
+type ExceptionState = '异常中' | '已恢复' | '待核实' | '已作废';
 
 type EnrichedRow = Row & {
   _quality: Quality;
@@ -78,6 +86,7 @@ type EnrichedRow = Row & {
   _ageDays: number | null;
   _isClean: boolean;
   _isRecovered: boolean;
+  _isInvalid: boolean;
   _needsManual: boolean;
   _suggestion: string;
   _statusLabel: string;
@@ -132,7 +141,9 @@ function enrich(row: Row): EnrichedRow {
   const isNonFedex = Boolean(tracking) && !isFedex && !isVirtual;
   const delivered = Boolean(row.DeliveredDate) || /delivered|entregado/i.test(status);
   const noteRecovered = Boolean(note?.recoveredAt) || note?.active === false;
-  const isRecovered = delivered || noteRecovered;
+  const v2Recovered = row.exception_status === 'recovered';
+  const isInvalid = row.data_status === 'invalid';
+  const isRecovered = v2Recovered || delivered || noteRecovered;
 
   let quality: Quality = '可用';
   if (isVirtual) {
@@ -155,8 +166,8 @@ function enrich(row: Row): EnrichedRow {
     reasons.push('DaysBeforeOnline/DaysOfStalled 超出合理范围');
   }
 
-  const startedAt = note?.startedAt;
-  const recoveredAt = note?.recoveredAt || (delivered ? row.DeliveredDate : undefined);
+  const startedAt = row.exception_started_at || note?.startedAt;
+  const recoveredAt = row.exception_resolved_at || note?.recoveredAt || (delivered ? row.DeliveredDate : undefined);
   let ageDays: number | null = null;
   if (startedAt && dayjs(startedAt).isValid()) {
     ageDays = Math.max(0, dayjs().startOf('day').diff(dayjs(startedAt).startOf('day'), 'day'));
@@ -177,8 +188,8 @@ function enrich(row: Row): EnrichedRow {
     type = 'transit';
   }
 
-  const state: ExceptionState = isRecovered ? '已恢复' : isTechnical ? '待核实' : '异常中';
-  const isClean = quality === '可用' && isFedex && !isTechnical;
+  const state: ExceptionState = isInvalid ? '已作废' : isRecovered ? '已恢复' : isTechnical ? '待核实' : '异常中';
+  const isClean = quality === '可用' && isFedex && !isTechnical && !isInvalid;
   const needsManual = isTechnical || quality === '数据不完整' || quality === '天数异常' || quality === '数据过旧';
   const suggestion = isRecovered
     ? '已恢复，无需行动'
@@ -203,6 +214,7 @@ function enrich(row: Row): EnrichedRow {
     _ageDays: ageDays,
     _isClean: isClean,
     _isRecovered: isRecovered,
+    _isInvalid: isInvalid,
     _needsManual: needsManual,
     _suggestion: suggestion,
     _statusLabel: normalizeStatus(row.Status),
@@ -235,7 +247,8 @@ type FilterKey =
   | 'transit-7'
   | 'recent-30'
   | 'recovered'
-  | 'manual';
+  | 'manual'
+  | 'invalid';
 
 const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'all', label: '全部' },
@@ -248,12 +261,14 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'recent-30', label: '近 30 天' },
   { key: 'recovered', label: '已恢复' },
   { key: 'manual', label: '待人工核实' },
+  { key: 'invalid', label: '已作废' },
 ];
 
 function matchFilter(row: EnrichedRow, key: FilterKey) {
   if (key === 'all') return true;
   if (key === 'recovered') return row._isRecovered;
   if (key === 'manual') return row._needsManual;
+  if (key === 'invalid') return row._isInvalid;
   if (key === 'recent-30') {
     if (!row._startedAt) return false;
     return dayjs(row._startedAt).isAfter(dayjs().startOf('day').subtract(30, 'day'));
@@ -370,6 +385,7 @@ export default function TrackingExceptionPage() {
       'recent-30': 0,
       recovered: 0,
       manual: 0,
+      invalid: 0,
     };
     for (const row of scopedRows) {
       for (const filter of FILTERS) {
@@ -540,7 +556,11 @@ export default function TrackingExceptionPage() {
       dataIndex: '_state',
       width: 100,
       render: (value: ExceptionState) => (
-        <Tag color={value === '已恢复' ? 'green' : value === '待核实' ? 'orange' : 'red'}>{value}</Tag>
+        <Tag
+          color={value === '已恢复' ? 'green' : value === '已作废' ? 'default' : value === '待核实' ? 'orange' : 'red'}
+        >
+          {value}
+        </Tag>
       ),
     },
     {
@@ -559,6 +579,12 @@ export default function TrackingExceptionPage() {
       title: '处理人',
       dataIndex: 'handler_name',
       width: 100,
+      render: (value: string) => value || '-',
+    },
+    {
+      title: '当前处理',
+      dataIndex: 'manual_action',
+      width: 110,
       render: (value: string) => value || '-',
     },
     {
@@ -589,7 +615,7 @@ export default function TrackingExceptionPage() {
 
   return (
     <Card
-      title="快递异常工作台（预览）"
+      title="快递异常工作台"
       extra={
         <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
           刷新
@@ -602,8 +628,8 @@ export default function TrackingExceptionPage() {
         <Alert
           type="warning"
           showIcon
-          message="当前只做页面与人工流程，未修 7D4/D4/D5 查询逻辑"
-          description="默认只显示数据质量=可用的 12 位 FedEx 行；虚拟单号、非 FedEx、查询异常和天数异常需打开“显示可疑数据”后查看。等待参考值/恢复周期统计在数据链路修复前不做自动决策。"
+          message="v2 快递异常工作台：数据源 7D4"
+          description="异常状态来自 7D4 的 exception_status/data_status；行动记录写入 7D4_ActionLog。默认只显示数据质量=可用的 12 位 FedEx 行，可疑数据需手动打开。"
         />
 
         <Space size="large" wrap>
