@@ -39,6 +39,7 @@ const GUARDED_FIELDS: Record<string, string[]> = {
     'assigned_by',
     'assigned_at',
   ],
+  '7D4': ['handler_id', 'handler_name', 'owner_name', 'assign_source', 'assigned_by', 'assigned_at'],
 };
 
 /** 有资格改派负责人的角色 */

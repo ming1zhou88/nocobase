@@ -13,6 +13,7 @@ import {
   Switch,
   Table,
   Tag,
+  Timeline,
   Typography,
 } from 'antd';
 import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
@@ -25,12 +26,13 @@ import dayjs from 'dayjs';
  *
  * 设计边界：
  *  - 不改 7D4 / D4 的查询与同步逻辑；
- *  - 只读 TrackingException7D4Full，前端计算数据质量、异常类型、已恢复标记；
+ *  - 只读 v2 7D4，前端计算数据质量、异常类型、已恢复标记；
  *  - 人工核实只写现有的 handle_status / handle_note / handle_updated_at，不新增字段；
  *  - 默认只显示“可用”的 12 位 FedEx 行，可疑/非 FedEx/虚拟单号需手动打开开关。
  */
 const DATA_SOURCE_KEY = 'd_99cwsyi7q4k';
-const COLLECTION = 'TrackingException7D4Full';
+const COLLECTION = '7D4';
+const ACTIONLOG_COLLECTION = '7D4_ActionLog';
 const ROUTE = '/tracking-exception/workbench';
 const PAGE_SIZE = 500;
 
@@ -277,6 +279,10 @@ export default function TrackingExceptionPage() {
   const [qualityFilter, setQualityFilter] = useState<string>('all');
   const [selected, setSelected] = useState<EnrichedRow | null>(null);
   const [manualNote, setManualNote] = useState('');
+  const [actionLogs, setActionLogs] = useState<Row[]>([]);
+  const [actionLogsLoading, setActionLogsLoading] = useState(false);
+  const [actionType, setActionType] = useState('contacted_warehouse');
+  const [actionNote, setActionNote] = useState('');
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -310,6 +316,40 @@ export default function TrackingExceptionPage() {
       setLoading(false);
     }
   }, [ctx, message]);
+
+  const loadActionLogs = useCallback(
+    async (exceptionId: number) => {
+      setActionLogsLoading(true);
+      try {
+        const response = await ctx.api.request({
+          url: `${ACTIONLOG_COLLECTION}:list`,
+          method: 'get',
+          headers: { 'x-data-source': DATA_SOURCE_KEY },
+          params: {
+            pageSize: 200,
+            sort: 'action_at',
+            filter: JSON.stringify({ exception_id: exceptionId }),
+          },
+        });
+        setActionLogs(response?.data?.data ?? []);
+      } catch (error) {
+        setActionLogs([]);
+        message.error(error instanceof Error ? error.message : String(error));
+      } finally {
+        setActionLogsLoading(false);
+      }
+    },
+    [ctx, message],
+  );
+
+  useEffect(() => {
+    if (!selected) {
+      setActionLogs([]);
+      return;
+    }
+    void loadActionLogs(selected.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
 
   useEffect(() => {
     void load();
@@ -403,6 +443,37 @@ export default function TrackingExceptionPage() {
       message.success('已保存人工核实记录');
       setSelected(null);
       setManualNote('');
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveActionLog() {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      const now = dayjs();
+      await ctx.api.request({
+        url: `${ACTIONLOG_COLLECTION}:create`,
+        method: 'post',
+        headers: { 'x-data-source': DATA_SOURCE_KEY },
+        data: {
+          exception_id: selected.id,
+          orderItem_orderItemId: selected.orderItem_orderItemId,
+          'tracking-number': selected['tracking-number'],
+          action_type: actionType,
+          action_at: now.format('YYYY-MM-DD HH:mm:ss'),
+          action_status: 'done',
+          action_note: actionNote.trim() || null,
+          operator_name: ctx.currentUser?.nickname || ctx.currentUser?.username || '人工',
+        },
+      });
+      message.success('行动记录已新增');
+      setActionNote('');
+      await loadActionLogs(selected.id);
       await load();
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error));
@@ -647,6 +718,55 @@ export default function TrackingExceptionPage() {
                 </Typography.Paragraph>
               </Descriptions.Item>
             </Descriptions>
+
+            <Card size="small" title="行动时间线" loading={actionLogsLoading}>
+              {actionLogs.length ? (
+                <Timeline
+                  items={actionLogs.map((log) => ({
+                    children: (
+                      <Space direction="vertical" size={2}>
+                        <Typography.Text strong>
+                          {String(log.action_type || '-')} · {String(log.operator_name || '系统')}
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
+                          {log.action_at ? dayjs(log.action_at).format('YYYY-MM-DD HH:mm:ss') : '-'}
+                        </Typography.Text>
+                        {log.action_note ? <Typography.Text>{String(log.action_note)}</Typography.Text> : null}
+                      </Space>
+                    ),
+                  }))}
+                />
+              ) : (
+                <Typography.Text type="secondary">暂无行动记录</Typography.Text>
+              )}
+            </Card>
+
+            <Card size="small" title="新增行动记录">
+              <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                <Select
+                  value={actionType}
+                  onChange={setActionType}
+                  style={{ width: 220 }}
+                  options={[
+                    { label: '需跟踪', value: 'tracking' },
+                    { label: '已联系仓库', value: 'contacted_warehouse' },
+                    { label: '已补寄', value: 'reship' },
+                    { label: '已退款', value: 'refund' },
+                    { label: '完结', value: 'close' },
+                    { label: '其他', value: 'other' },
+                  ]}
+                />
+                <Input.TextArea
+                  rows={2}
+                  value={actionNote}
+                  onChange={(event) => setActionNote(event.target.value)}
+                  placeholder="行动说明"
+                />
+                <Button type="primary" loading={saving} onClick={() => void saveActionLog()}>
+                  记录行动
+                </Button>
+              </Space>
+            </Card>
 
             <Alert
               type={selected._needsManual ? 'warning' : 'info'}

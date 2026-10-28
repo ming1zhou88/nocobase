@@ -28,7 +28,7 @@ import { isAssigner } from './after-sales-roles';
 /** 外部数据源 key（power_automate = 本地/生产的 MySQL） */
 const DATA_SOURCE_KEY = process.env.AFTER_SALES_TRACKING_DATA_SOURCE || 'd_99cwsyi7q4k';
 /** 7D4 物化主表 */
-const COLLECTION = process.env.AFTER_SALES_TRACKING_COLLECTION || 'TrackingException7D4Full';
+const COLLECTION = process.env.AFTER_SALES_TRACKING_COLLECTION || '7D4';
 
 /** 会写数据的动作（含批量） */
 const WRITE_ACTIONS = new Set(['update', 'updateMany', 'updateOrCreate', 'firstOrCreate', 'create', 'createMany']);
