@@ -58,7 +58,7 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
       componentLoader: () => import('./pages/MabangOrderFullPage'),
     });
 
-    // 快递异常工作台（预览）：只读 D4 Full，前端计算数据质量/异常状态；不改 7D4 查询逻辑。
+    // 快递异常工作台（预览）：只读 7D4，前端计算数据质量/异常状态；不改 7D4 查询逻辑。
     this.router.add('tracking-exception-workbench', {
       path: '/admin/tracking-exception/workbench',
       componentLoader: () => import('./pages/TrackingExceptionPage'),
