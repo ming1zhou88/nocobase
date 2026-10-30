@@ -472,6 +472,37 @@ export default function TrackingExceptionPage() {
     }
   }
 
+  async function saveActionLog() {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      const now = dayjs();
+      await ctx.api.request({
+        url: `${ACTIONLOG_COLLECTION}:create`,
+        method: 'post',
+        headers: { 'x-data-source': DATA_SOURCE_KEY },
+        data: {
+          exception_id: selected.id,
+          orderItem_orderItemId: selected.orderItem_orderItemId,
+          'tracking-number': selected['tracking-number'],
+          action_type: actionType,
+          action_at: now.format('YYYY-MM-DD HH:mm:ss'),
+          action_status: 'done',
+          action_note: actionNote.trim() || null,
+          operator_name: ctx.currentUser?.nickname || ctx.currentUser?.username || '人工',
+        },
+      });
+      message.success('行动记录已新增');
+      setActionNote('');
+      await loadActionLogs(selected.id);
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const columns = [
     {
       title: '店铺',

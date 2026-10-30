@@ -336,7 +336,7 @@ export default function TrackingExceptionPage() {
     async (exceptionId: number) => {
       setActionLogsLoading(true);
       try {
-        const response = await ctx.api.request({
+        const response = await api.request({
           url: `${ACTIONLOG_COLLECTION}:list`,
           method: 'get',
           headers: { 'x-data-source': DATA_SOURCE_KEY },
@@ -354,7 +354,7 @@ export default function TrackingExceptionPage() {
         setActionLogsLoading(false);
       }
     },
-    [ctx, message],
+    [api, message],
   );
 
   useEffect(() => {
@@ -445,7 +445,7 @@ export default function TrackingExceptionPage() {
       const actionText = action === 'recovered' ? '已核实恢复' : action === 'abnormal' ? '仍异常' : '备注';
       const line = `[人工核实 ${stamp}] ${actionText}${manualNote.trim() ? `：${manualNote.trim()}` : ''}`;
       const actionType = action === 'recovered' ? 'close' : action === 'abnormal' ? 'tracking' : 'other';
-      await ctx.api.request({
+      await api.request({
         url: `${ACTIONLOG_COLLECTION}:create`,
         method: 'post',
         headers: { 'x-data-source': DATA_SOURCE_KEY },
@@ -458,12 +458,43 @@ export default function TrackingExceptionPage() {
           action_status: action === 'abnormal' ? 'in_progress' : 'done',
           action_note: line,
           close_reason: action === 'recovered' ? line : null,
-          operator_name: ctx.currentUser?.nickname || ctx.currentUser?.username || '人工',
+          operator_name: '人工',
         },
       });
       message.success('已记录人工核实行动');
       setSelected(null);
       setManualNote('');
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveActionLog() {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      const now = dayjs();
+      await api.request({
+        url: `${ACTIONLOG_COLLECTION}:create`,
+        method: 'post',
+        headers: { 'x-data-source': DATA_SOURCE_KEY },
+        data: {
+          exception_id: selected.id,
+          orderItem_orderItemId: selected.orderItem_orderItemId,
+          'tracking-number': selected['tracking-number'],
+          action_type: actionType,
+          action_at: now.format('YYYY-MM-DD HH:mm:ss'),
+          action_status: 'done',
+          action_note: actionNote.trim() || null,
+          operator_name: '人工',
+        },
+      });
+      message.success('行动记录已新增');
+      setActionNote('');
+      await loadActionLogs(selected.id);
       await load();
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error));
