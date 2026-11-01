@@ -81,3 +81,25 @@ node scripts/after-sales-batch-page-check.js --client=v2
    生产第二用户（如"售后组"）需由管理员重置密码后才能登录本地镜像。
 4. **改代码即时生效**：`yarn dev`（rsbuild）下改 `src/client*` 会热更新；改 `src/server` 会自动重启服务端。
 5. 表名与字段以连接器仓库 `material/database/power_automate_schema.sql` 为准（四张 V2 表）。
+
+## 快递异常工作台：平台订单快递信息（2026-10-31）
+
+`src/client-v2/pages/TrackingExceptionPage.tsx` 每行新增一列 **「平台订单快递信息」**（链接按钮）。
+
+- 点击后按该行的 `order-id`（平台订单号）聚合查询，抽屉里列出**该平台订单下全部子订单**的快递信息：
+  子订单号、平台SKU/数量、库存SKU/数量、快递单号、快递状态、附加状态、是否快递异常、发货时间、下单时间；
+- 数据源：`v_MabangOrderFullV3`（6A + V2 7D1/7D2/7D3 合集 + 是否快递异常），按 `order-id` 过滤；
+- 顶部「**是否已发快递通知邮件**」：查 `7E2`（通知发件状态表，一平台订单一行）——
+  `email_sent=1` → 是（绿），`0` → 否（橙），无记录 → 未生成通知；同时显示 `email_sent_at` 与 `platform_sendable_at`；
+- 接口调用方式与页面其它请求一致：`ctx.api.request` + `x-data-source: d_99cwsyi7q4k`。
+
+构建（改完 src 必须重编插件产物，页面读的是 `dist/client-v2`）：
+
+```bash
+cd /Users/OwenKarl/Software/nocobase
+yarn build @zhoumingrui/plugin-after-sales-batch --no-dts
+pm2 restart nocobase-dev
+```
+
+> 注意：`is_tracking_exception` 是**平台订单级**标记（该平台订单任一子订单在 7D4 中异常未恢复即为「是」），
+> 所以同一平台订单的多个子订单可能都显示「是」。

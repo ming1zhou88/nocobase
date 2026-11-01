@@ -299,6 +299,12 @@ export default function TrackingExceptionPage() {
   const [actionType, setActionType] = useState('contacted_warehouse');
   const [actionNote, setActionNote] = useState('');
   const [saving, setSaving] = useState(false);
+  // 平台订单快递信息（按平台订单号聚合全部子订单）
+  const [expressOpen, setExpressOpen] = useState(false);
+  const [expressOrderId, setExpressOrderId] = useState('');
+  const [expressRows, setExpressRows] = useState<Row[]>([]);
+  const [expressMail, setExpressMail] = useState<Row | null>(null);
+  const [expressLoading, setExpressLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -352,6 +358,50 @@ export default function TrackingExceptionPage() {
         message.error(error instanceof Error ? error.message : String(error));
       } finally {
         setActionLogsLoading(false);
+      }
+    },
+    [ctx, message],
+  );
+
+  const openExpressInfo = useCallback(
+    async (row: Row) => {
+      const orderId = String(row['order-id'] ?? '').trim();
+      setExpressOrderId(orderId);
+      setExpressOpen(true);
+      setExpressRows([]);
+      setExpressMail(null);
+      if (!orderId) {
+        return;
+      }
+      setExpressLoading(true);
+      try {
+        const [listRes, mailRes] = await Promise.all([
+          ctx.api.request({
+            url: 'v_MabangOrderFullV3:list',
+            method: 'get',
+            headers: { 'x-data-source': DATA_SOURCE_KEY },
+            params: {
+              pageSize: 200,
+              sort: ['-purchase-date'],
+              filter: JSON.stringify({ $and: [{ 'order-id': { $eq: orderId } }] }),
+            },
+          }),
+          ctx.api.request({
+            url: '7E2:list',
+            method: 'get',
+            headers: { 'x-data-source': DATA_SOURCE_KEY },
+            params: {
+              pageSize: 1,
+              filter: JSON.stringify({ $and: [{ 'order-id': { $eq: orderId } }] }),
+            },
+          }),
+        ]);
+        setExpressRows(listRes?.data?.data ?? []);
+        setExpressMail((mailRes?.data?.data ?? [])[0] ?? null);
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : String(error));
+      } finally {
+        setExpressLoading(false);
       }
     },
     [ctx, message],
@@ -599,6 +649,17 @@ export default function TrackingExceptionPage() {
       render: (value: string) => value || '-',
     },
     {
+      title: '平台订单快递信息',
+      key: 'express-info',
+      width: 150,
+      fixed: 'right' as const,
+      render: (_: unknown, row: EnrichedRow) => (
+        <Button type="link" size="small" onClick={() => void openExpressInfo(row)}>
+          查看快递信息
+        </Button>
+      ),
+    },
+    {
       title: '操作',
       key: 'action',
       width: 90,
@@ -830,6 +891,81 @@ export default function TrackingExceptionPage() {
             </Space>
           </Space>
         ) : null}
+      </Drawer>
+
+      <Drawer
+        open={expressOpen}
+        width={980}
+        title={`平台订单快递信息${expressOrderId ? ` · ${expressOrderId}` : ''}`}
+        onClose={() => setExpressOpen(false)}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Descriptions bordered size="small" column={3}>
+            <Descriptions.Item label="平台订单编号">{expressOrderId || '-'}</Descriptions.Item>
+            <Descriptions.Item label="子订单数">{expressRows.length}</Descriptions.Item>
+            <Descriptions.Item label="是否已发快递通知邮件">
+              {expressMail ? (
+                Number(expressMail.email_sent) === 1 ? (
+                  <Tag color="green">是</Tag>
+                ) : (
+                  <Tag color="orange">否</Tag>
+                )
+              ) : (
+                <Tag>未生成通知</Tag>
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label="通知邮件发送时间" span={2}>
+              {expressMail?.email_sent_at ? dayjs(expressMail.email_sent_at).format('YYYY-MM-DD HH:mm:ss') : '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="可发时间">
+              {expressMail?.platform_sendable_at
+                ? dayjs(expressMail.platform_sendable_at).format('YYYY-MM-DD HH:mm:ss')
+                : '-'}
+            </Descriptions.Item>
+          </Descriptions>
+
+          <Table<Row>
+            rowKey={(row) => String(row.id)}
+            size="small"
+            loading={expressLoading}
+            dataSource={expressRows}
+            pagination={false}
+            scroll={{ x: 1100 }}
+            columns={[
+              { title: '子订单号', dataIndex: 'order-id-in-warehouse', width: 190, ellipsis: true },
+              { title: '平台SKU', dataIndex: 'msku', width: 160, ellipsis: true },
+              { title: '平台数量', dataIndex: 'msku-quantity', width: 90 },
+              { title: '库存SKU', dataIndex: 'sku-in-stock', width: 150, ellipsis: true },
+              { title: '库存数量', dataIndex: 'sku-in-stock-quantity', width: 90 },
+              {
+                title: '快递单号',
+                dataIndex: 'tracking-number',
+                width: 160,
+                render: (value: string) => (value ? <Typography.Text copyable>{value}</Typography.Text> : '-'),
+              },
+              { title: '快递状态', dataIndex: 'Status', width: 130, render: (value: string) => value || '-' },
+              { title: '附加状态', dataIndex: 'AdditionalStatus', width: 150, render: (value: string) => value || '-' },
+              {
+                title: '是否快递异常',
+                dataIndex: 'is_tracking_exception',
+                width: 120,
+                render: (value: string) => (value === '是' ? <Tag color="red">是</Tag> : <Tag color="green">否</Tag>),
+              },
+              {
+                title: '发货时间',
+                dataIndex: 'operate-shipment',
+                width: 150,
+                render: (value: string) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-'),
+              },
+              {
+                title: '下单时间',
+                dataIndex: 'purchase-date',
+                width: 150,
+                render: (value: string) => (value ? dayjs(value).format('YYYY-MM-DD') : '-'),
+              },
+            ]}
+          />
+        </Space>
       </Drawer>
     </Card>
   );
