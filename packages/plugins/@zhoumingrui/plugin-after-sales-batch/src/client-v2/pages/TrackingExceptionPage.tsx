@@ -1,12 +1,16 @@
 import {
   Alert,
   App,
-  Badge,
   Button,
   Card,
   Descriptions,
+  DatePicker,
+  Col,
   Drawer,
+  Form,
   Input,
+  Modal,
+  Row,
   Select,
   Space,
   Statistic,
@@ -35,6 +39,16 @@ const COLLECTION = '7D4';
 const ACTIONLOG_COLLECTION = '7D4_ActionLog';
 const ROUTE = '/tracking-exception/workbench';
 const PAGE_SIZE = 500;
+const GREETINGS = [
+  'Hi',
+  'Hello',
+  'Dear Buyer',
+  'Dear Customer',
+  'Hi Customer',
+  'Hi Buyer',
+  'Hello Customer',
+  'Hello Buyer',
+];
 
 const FIELDS = [
   'id',
@@ -56,7 +70,10 @@ const FIELDS = [
   'exception_reason',
   'note',
   'handle_status',
+  'handler_id',
   'handler_name',
+  'owner_id',
+  'owner_account',
   'handle_note',
   'handle_updated_at',
   'owner_name',
@@ -69,6 +86,20 @@ const FIELDS = [
   'manual_action',
   'manual_action_at',
   'manual_action_by',
+  'exception_state',
+  'exception_active',
+  'exception_recovered_at',
+  'is_delivered',
+  'is_technical_error',
+  'action_plan',
+  'handle_result',
+  'result_at',
+  'customer_contacted',
+  'work_order_serial',
+  'resend_tracking_number',
+  'refund_info',
+  'claim_record_no',
+  'close_reason',
 ];
 
 type Row = Record<string, any>;
@@ -88,6 +119,8 @@ type EnrichedRow = Row & {
   _isRecovered: boolean;
   _isInvalid: boolean;
   _needsManual: boolean;
+  _isActive: boolean;
+  _isTechnical: boolean;
   _suggestion: string;
   _statusLabel: string;
 };
@@ -216,6 +249,8 @@ function enrich(row: Row): EnrichedRow {
     _isRecovered: isRecovered,
     _isInvalid: isInvalid,
     _needsManual: needsManual,
+    _isActive: row.exception_active === 1 || row.exception_active === true || (!isRecovered && !isInvalid),
+    _isTechnical: isTechnical,
     _suggestion: suggestion,
     _statusLabel: normalizeStatus(row.Status),
   };
@@ -248,7 +283,12 @@ type FilterKey =
   | 'recent-30'
   | 'recovered'
   | 'manual'
-  | 'invalid';
+  | 'invalid'
+  | 'unassigned'
+  | 'mine'
+  | 'active'
+  | 'technical'
+  | 'substantive';
 
 const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'all', label: '全部' },
@@ -262,13 +302,43 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'recovered', label: '已恢复' },
   { key: 'manual', label: '待人工核实' },
   { key: 'invalid', label: '已作废' },
+  { key: 'unassigned', label: '待指派' },
+  { key: 'mine', label: '我的待办' },
+  { key: 'active', label: '异常中' },
+  { key: 'technical', label: '技术异常' },
+  { key: 'substantive', label: '待实质处理' },
 ];
 
-function matchFilter(row: EnrichedRow, key: FilterKey) {
+const FILTER_COLORS: Record<FilterKey, string> = {
+  all: '#595959',
+  'initial-3': '#d46b08',
+  'initial-3-7': '#d46b08',
+  'initial-7': '#ad4e00',
+  'transit-3': '#1677ff',
+  'transit-3-7': '#1677ff',
+  'transit-7': '#0958d9',
+  'recent-30': '#722ed1',
+  recovered: '#389e0d',
+  manual: '#d48806',
+  invalid: '#8c8c8c',
+  unassigned: '#cf1322',
+  mine: '#08979c',
+  active: '#cf1322',
+  technical: '#d46b08',
+  substantive: '#722ed1',
+};
+
+function matchFilter(row: EnrichedRow, key: FilterKey, currentUserId?: number | string) {
   if (key === 'all') return true;
   if (key === 'recovered') return row._isRecovered;
   if (key === 'manual') return row._needsManual;
   if (key === 'invalid') return row._isInvalid;
+  if (key === 'unassigned') return !row.handler_id && row._isActive && !row._isTechnical;
+  if (key === 'mine')
+    return Boolean(row.handler_id) && Number(row.handler_id) === Number(currentUserId) && row._isActive;
+  if (key === 'active') return row._isActive;
+  if (key === 'technical') return row._isTechnical;
+  if (key === 'substantive') return row._isActive && !row._isTechnical && (row._ageDays ?? 0) >= 7;
   if (key === 'recent-30') {
     if (!row._startedAt) return false;
     return dayjs(row._startedAt).isAfter(dayjs().startOf('day').subtract(30, 'day'));
@@ -298,13 +368,45 @@ export default function TrackingExceptionPage() {
   const [actionLogsLoading, setActionLogsLoading] = useState(false);
   const [actionType, setActionType] = useState('contacted_warehouse');
   const [actionNote, setActionNote] = useState('');
+  const [contactTarget, setContactTarget] = useState('');
+  const [followUpAt, setFollowUpAt] = useState<string>('');
+  const [resendTrackingNumber, setResendTrackingNumber] = useState('');
+  const [refundAmount, setRefundAmount] = useState<string>('');
+  const [refundCurrency, setRefundCurrency] = useState('USD');
+  const [claimRecordNo, setClaimRecordNo] = useState('');
+  const [closeReason, setCloseReason] = useState('');
+  const [customerContacted, setCustomerContacted] = useState<string>('0');
+  const [workOrderSerial, setWorkOrderSerial] = useState('');
   const [saving, setSaving] = useState(false);
+  const [users, setUsers] = useState<Row[]>([]);
+  const [assignUserId, setAssignUserId] = useState<string>('');
+  const [assigning, setAssigning] = useState(false);
+  const [workOrderOpen, setWorkOrderOpen] = useState(false);
+  const [workOrderMode, setWorkOrderMode] = useState<'link' | 'create'>('link');
+  const [workOrderRow, setWorkOrderRow] = useState<EnrichedRow | null>(null);
+  const [linkSerial, setLinkSerial] = useState('');
+  const [linking, setLinking] = useState(false);
+  const [createGreeting, setCreateGreeting] = useState('Hi');
+  const [createIssueType, setCreateIssueType] = useState('');
+  const [createContext, setCreateContext] = useState('');
+  const [createTone, setCreateTone] = useState('');
+  const [createPreference, setCreatePreference] = useState('');
+  const [createLength, setCreateLength] = useState('');
+  const [createTemplate, setCreateTemplate] = useState('');
+  const [creating, setCreating] = useState(false);
   // 平台订单快递信息（按平台订单号聚合全部子订单）
   const [expressOpen, setExpressOpen] = useState(false);
   const [expressOrderId, setExpressOrderId] = useState('');
   const [expressRows, setExpressRows] = useState<Row[]>([]);
   const [expressMail, setExpressMail] = useState<Row | null>(null);
   const [expressLoading, setExpressLoading] = useState(false);
+  const [trendRows, setTrendRows] = useState<Row[]>([]);
+  const [canAssign, setCanAssign] = useState<boolean | null>(null);
+  const [isAgent, setIsAgent] = useState(false);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [batchAssignOpen, setBatchAssignOpen] = useState(false);
+  const [batchAssignUserId, setBatchAssignUserId] = useState('');
+  const [batchAssigning, setBatchAssigning] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -314,18 +416,20 @@ export default function TrackingExceptionPage() {
       let total = 0;
       do {
         const response = await ctx.api.request({
-          url: `${COLLECTION}:list`,
-          method: 'get',
-          headers: { 'x-data-source': DATA_SOURCE_KEY },
-          params: {
+          url: 'dailyAfterSales:trackingExceptionList',
+          method: 'post',
+          data: {
             page,
             pageSize: PAGE_SIZE,
-            sort: '-id',
+            sort: ['-id'],
             fields: FIELDS.join(','),
           },
         });
-        const data = response?.data?.data ?? [];
-        total = Number(response?.data?.meta?.count ?? total ?? 0);
+        // NocoBase 对自定义 action 的 body 会再包一层 data；
+        // 同时兼容普通资源 {data:[...], meta} 的形状。
+        const body = response?.data?.data ?? {};
+        const data = Array.isArray(body) ? body : body?.data ?? [];
+        total = Number(body?.meta?.count ?? response?.data?.meta?.count ?? total ?? 0);
         all.push(...(Array.isArray(data) ? data : []));
         if (!Array.isArray(data) || data.length < PAGE_SIZE) break;
         page += 1;
@@ -337,6 +441,264 @@ export default function TrackingExceptionPage() {
       setLoading(false);
     }
   }, [ctx, message]);
+
+  const loadUsers = useCallback(async () => {
+    try {
+      const response = await ctx.api.request({ url: 'users:list', method: 'get', params: { pageSize: 200 } });
+      const data = response?.data?.data ?? response?.data ?? [];
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (error) {
+      setUsers([]);
+    }
+  }, [ctx]);
+
+  const assignOwner = useCallback(async () => {
+    if (!selected || !assignUserId) return;
+    const user = users.find((item) => String(item.id) === String(assignUserId));
+    if (!user) return;
+    setAssigning(true);
+    try {
+      const name = user.nickname || user.username || user.name || String(user.id);
+      await ctx.api.request({
+        url: `${COLLECTION}:update?filterByTk=${selected.id}`,
+        method: 'post',
+        headers: { 'x-data-source': DATA_SOURCE_KEY },
+        data: { handler_name: name, handler_id: user.id, owner_id: user.id },
+      });
+      message.success(`已指派给 ${name}`);
+      setSelected(null);
+      setAssignUserId('');
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAssigning(false);
+    }
+  }, [assignUserId, ctx, load, message, selected, users]);
+
+  const acceptCase = useCallback(async () => {
+    if (!selected || !ctx.currentUser?.id) return;
+    setAssigning(true);
+    try {
+      const name = ctx.currentUser.nickname || ctx.currentUser.username || String(ctx.currentUser.id);
+      await ctx.api.request({
+        url: `${COLLECTION}:update?filterByTk=${selected.id}`,
+        method: 'post',
+        headers: { 'x-data-source': DATA_SOURCE_KEY },
+        data: {
+          handler_id: ctx.currentUser.id,
+          handler_name: name,
+          handle_status: '跟踪中',
+          handle_updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+        },
+      });
+      message.success('已接手');
+      setSelected(null);
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAssigning(false);
+    }
+  }, [ctx, load, message, selected]);
+
+  const openWorkOrder = useCallback(
+    async (row: EnrichedRow) => {
+      setWorkOrderRow(row);
+      setWorkOrderMode(row.work_order_serial ? 'link' : 'create');
+      setLinkSerial(String(row.work_order_serial || ''));
+      setCreateGreeting(String(ctx.currentUser?.replyGreeting || ctx.currentUser?.reply_greeting || 'Hi'));
+      setCreateIssueType(String(row.exception_reason || ''));
+      setCreateContext('');
+      setCreateTone('');
+      setCreatePreference('');
+      setCreateLength('');
+      setCreateTemplate('');
+      setWorkOrderOpen(true);
+      // 邮件抬头默认取当前登录人的个人配置；读取失败时保留 Hi 兜底。
+      if (ctx.currentUser?.id) {
+        try {
+          const response = await ctx.api.request({
+            url: `users:get?filterByTk=${ctx.currentUser.id}`,
+            method: 'get',
+          });
+          const user = response?.data?.data ?? response?.data ?? {};
+          const greeting = user.replyGreeting || user.reply_greeting;
+          if (greeting) setCreateGreeting(String(greeting));
+        } catch {
+          // 用户没有配置时保留兜底值
+        }
+      }
+    },
+    [ctx],
+  );
+
+  const saveLinkWorkOrder = useCallback(async () => {
+    if (!workOrderRow || !linkSerial.trim()) {
+      message.warning('请填写工单号');
+      return;
+    }
+    setLinking(true);
+    try {
+      const serial = linkSerial.trim();
+      await ctx.api.request({
+        url: `${COLLECTION}:update?filterByTk=${workOrderRow.id}`,
+        method: 'post',
+        headers: { 'x-data-source': DATA_SOURCE_KEY },
+        data: { work_order_serial: serial },
+      });
+      await ctx.api.request({
+        url: `${ACTIONLOG_COLLECTION}:create`,
+        method: 'post',
+        headers: { 'x-data-source': DATA_SOURCE_KEY },
+        data: {
+          exception_id: workOrderRow.id,
+          orderItem_orderItemId: workOrderRow.orderItem_orderItemId,
+          'tracking-number': workOrderRow['tracking-number'],
+          action_type: 'other',
+          action_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+          action_status: 'done',
+          action_note: `关联售后工单：${serial}`,
+          operator_name: ctx.currentUser?.nickname || ctx.currentUser?.username || '人工',
+        },
+      });
+      message.success('已关联工单');
+      setWorkOrderOpen(false);
+      setWorkOrderRow(null);
+      setLinkSerial('');
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLinking(false);
+    }
+  }, [ctx, linkSerial, load, message, workOrderRow]);
+
+  const saveCreateWorkOrder = useCallback(async () => {
+    if (!workOrderRow) return;
+    setCreating(true);
+    try {
+      const response = await ctx.api.request({
+        url: 'dailyAfterSales:createTrackingExceptionWorkOrder',
+        method: 'post',
+        data: {
+          exception_id: workOrderRow.id,
+          reply_greeting: createGreeting,
+          buyer_issue_type: createIssueType.trim() || null,
+          additional_context: createContext.trim() || null,
+          tone_and_language: createTone.trim() || null,
+          reply_preference: createPreference.trim() || null,
+          email_length: createLength.trim() || null,
+          case_template_path: createTemplate.trim() || null,
+        },
+      });
+      const serial = response?.data?.data?.work_order_serial || response?.data?.work_order_serial;
+      message.success(serial ? `工单已创建：${serial}` : '工单已创建');
+      setWorkOrderOpen(false);
+      setWorkOrderRow(null);
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCreating(false);
+    }
+  }, [
+    createContext,
+    createGreeting,
+    createIssueType,
+    createLength,
+    createPreference,
+    createTemplate,
+    createTone,
+    ctx,
+    load,
+    message,
+    workOrderRow,
+  ]);
+
+  const loadPermissions = useCallback(async () => {
+    try {
+      const response = await ctx.api.request({
+        url: 'dailyAfterSales:trackingExceptionPermissions',
+        method: 'post',
+        data: {},
+      });
+      const data = response?.data?.data ?? response?.data ?? {};
+      setCanAssign(Boolean(data.is_assigner));
+      setIsAgent(Boolean(data.is_agent));
+      if (data.is_agent) setFilterKey('mine');
+    } catch {
+      setCanAssign(false);
+      setIsAgent(false);
+    }
+  }, [ctx]);
+
+  const batchAssign = useCallback(async () => {
+    if (!batchAssignUserId || !selectedRowKeys.length) return;
+    setBatchAssigning(true);
+    try {
+      await ctx.api.request({
+        url: 'dailyAfterSales:batchAssignTrackingExceptions',
+        method: 'post',
+        data: { rowIds: selectedRowKeys.map(Number), owner_id: Number(batchAssignUserId) },
+      });
+      message.success(`已指派 ${selectedRowKeys.length} 行`);
+      setBatchAssignOpen(false);
+      setBatchAssignUserId('');
+      setSelectedRowKeys([]);
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBatchAssigning(false);
+    }
+  }, [batchAssignUserId, ctx, load, message, selectedRowKeys]);
+
+  const batchClose = useCallback(() => {
+    if (!canAssign || !selectedRowKeys.length) return;
+    Modal.confirm({
+      title: '批量关闭快递异常',
+      content: `确认关闭选中的 ${selectedRowKeys.length} 行？关闭后仍保留记录。`,
+      okText: '确认关闭',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+          for (const id of selectedRowKeys) {
+            await ctx.api.request({
+              url: `${COLLECTION}:update?filterByTk=${id}`,
+              method: 'post',
+              headers: { 'x-data-source': DATA_SOURCE_KEY },
+              data: { handle_status: 'closed', closed_at: now, close_reason: '批量关闭' },
+            });
+          }
+          message.success(`已关闭 ${selectedRowKeys.length} 行`);
+          setSelectedRowKeys([]);
+          await load();
+        } catch (error) {
+          message.error(error instanceof Error ? error.message : String(error));
+        }
+      },
+    });
+  }, [canAssign, ctx, load, message, selectedRowKeys]);
+
+  const loadTrend = useCallback(async () => {
+    try {
+      const response = await ctx.api.request({
+        url: 'TrackingExceptionStatsDaily:list',
+        method: 'get',
+        headers: { 'x-data-source': DATA_SOURCE_KEY },
+        params: {
+          pageSize: 7,
+          sort: ['-stat_date'],
+          filter: JSON.stringify({ store_name: { $eq: '' } }),
+        },
+      });
+      setTrendRows(response?.data?.data ?? []);
+    } catch {
+      setTrendRows([]);
+    }
+  }, [ctx]);
 
   const loadActionLogs = useCallback(
     async (exceptionId: number) => {
@@ -421,6 +783,21 @@ export default function TrackingExceptionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    void loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    void loadTrend();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    void loadPermissions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const scopedRows = useMemo(() => (showSuspect ? rows : rows.filter((row) => row._isClean)), [rows, showSuspect]);
 
   const counts = useMemo(() => {
@@ -436,11 +813,16 @@ export default function TrackingExceptionPage() {
       recovered: 0,
       manual: 0,
       invalid: 0,
+      unassigned: 0,
+      mine: 0,
+      active: 0,
+      technical: 0,
+      substantive: 0,
     };
     for (const row of scopedRows) {
       for (const filter of FILTERS) {
         if (filter.key === 'manual') continue;
-        if (matchFilter(row, filter.key)) result[filter.key] += 1;
+        if (matchFilter(row, filter.key, ctx.currentUser?.id)) result[filter.key] += 1;
       }
     }
     // 待人工核实始终按全量数据计数；否则默认“只看可用数据”时按钮永远显示 0。
@@ -451,7 +833,7 @@ export default function TrackingExceptionPage() {
   const filteredRows = useMemo(() => {
     const lower = keyword.trim().toLowerCase();
     const filtered = scopedRows.filter((row) => {
-      if (!matchFilter(row, filterKey)) return false;
+      if (!matchFilter(row, filterKey, ctx.currentUser?.id)) return false;
       if (qualityFilter !== 'all' && row._quality !== qualityFilter) return false;
       if (!lower) return true;
       return [
@@ -475,16 +857,129 @@ export default function TrackingExceptionPage() {
     });
   }, [scopedRows, filterKey, qualityFilter, keyword]);
 
+  const exportRows = useCallback(() => {
+    const source = selectedRowKeys.length ? rows.filter((row) => selectedRowKeys.includes(row.id)) : filteredRows;
+    if (!source.length) {
+      message.warning('没有可导出的数据');
+      return;
+    }
+    const headers = [
+      '店铺',
+      '平台订单编号',
+      '子订单编号',
+      '运单号',
+      '仓库',
+      '异常类型',
+      '异常开始',
+      '已持续',
+      '状态',
+      '数据质量',
+      '处理结果',
+      '处理人',
+      '处理状态',
+      '关联工单',
+    ];
+    const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const lines = [headers.map(escape).join(',')];
+    for (const row of source) {
+      lines.push(
+        [
+          row['store-name'],
+          row['order-id'],
+          row['order-id-in-warehouse'],
+          row['tracking-number'],
+          row['warehouse-name'],
+          TYPE_LABEL[row._type],
+          row._startedAt,
+          row._ageDays === null ? '' : `${row._ageDays} 天`,
+          row._state,
+          row._quality,
+          row.handle_result,
+          row.handler_name,
+          row.handle_status,
+          row.work_order_serial,
+        ]
+          .map(escape)
+          .join(','),
+      );
+    }
+    const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `快递异常_${dayjs().format('YYYYMMDD_HHmm')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [filteredRows, message, rows, selectedRowKeys]);
+
   const stats = useMemo(() => {
     const clean = rows.filter((row) => row._isClean);
+    const activeRows = rows.filter((row) => row._isActive);
+    const substantive = rows.filter((row) => {
+      if (!row._isActive || row._isTechnical || row.is_delivered === 1) return false;
+      const lastEvent = row.source_updated_at || row.exception_started_at;
+      return lastEvent ? dayjs().diff(dayjs(lastEvent), 'day') >= 7 : (row._ageDays ?? 0) >= 7;
+    });
+    const cutoff = dayjs().subtract(30, 'day');
+    const resultRows = rows.filter(
+      (row) =>
+        ['已补寄', '已退款', '已补寄+退款'].includes(String(row.handle_result || '')) &&
+        row.result_at &&
+        dayjs(row.result_at).isAfter(cutoff),
+    );
+    const premature = resultRows.filter(
+      (row) => row.delivered_at && dayjs(row.delivered_at).isAfter(dayjs(row.result_at)),
+    );
+    const recoveredWithCycle = rows.filter(
+      (row) =>
+        row._isRecovered &&
+        row.exception_started_at &&
+        (row.exception_recovered_at || row.exception_resolved_at) &&
+        dayjs(row.exception_recovered_at || row.exception_resolved_at).isAfter(cutoff),
+    );
+    const recoveryAvg = recoveredWithCycle.length
+      ? recoveredWithCycle.reduce(
+          (total, row) =>
+            total +
+            Math.max(
+              0,
+              dayjs(row.exception_recovered_at || row.exception_resolved_at).diff(
+                dayjs(row.exception_started_at),
+                'day',
+              ),
+            ),
+          0,
+        ) / recoveredWithCycle.length
+      : null;
     return {
       total: rows.length,
       clean: clean.length,
       active: clean.filter((row) => row._state === '异常中').length,
       recovered: clean.filter((row) => row._isRecovered).length,
       suspect: rows.length - clean.length,
+      substantive: substantive.length,
+      technical: rows.filter((row) => row._isTechnical).length,
+      unassigned: activeRows.filter((row) => !row.handler_id && !row._isTechnical).length,
+      prematureRate: resultRows.length ? (premature.length * 100) / resultRows.length : 0,
+      recoveryAvg,
     };
   }, [rows]);
+
+  const trendSeries = useMemo(() => {
+    const byDate = new Map(
+      trendRows.map((row) => [String(row.stat_date || '').slice(0, 10), Number(row.substantive_total || 0)]),
+    );
+    const today = dayjs().startOf('day');
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = today.subtract(6 - index, 'day');
+      const key = date.format('YYYY-MM-DD');
+      return {
+        date: key,
+        value: byDate.has(key) ? byDate.get(key) : null,
+        isToday: index === 6,
+      };
+    });
+  }, [trendRows]);
 
   async function saveManualCheck(action: 'recovered' | 'abnormal' | 'note') {
     if (!selected) return;
@@ -539,11 +1034,50 @@ export default function TrackingExceptionPage() {
           action_at: now.format('YYYY-MM-DD HH:mm:ss'),
           action_status: 'done',
           action_note: actionNote.trim() || null,
+          contact_target: contactTarget.trim() || null,
+          follow_up_at: followUpAt || null,
+          resend_tracking_number: resendTrackingNumber.trim() || null,
+          refund_amount: refundAmount ? Number(refundAmount) : null,
+          refund_currency: refundCurrency || null,
+          claim_record_no: claimRecordNo.trim() || null,
+          close_reason: actionType === 'close' ? closeReason.trim() || actionNote.trim() || null : null,
           operator_name: ctx.currentUser?.nickname || ctx.currentUser?.username || '人工',
         },
       });
+      const resultPatch: Row = {};
+      if (actionType === 'reship') {
+        resultPatch.handle_result = '已补寄';
+        resultPatch.result_at = now.format('YYYY-MM-DD HH:mm:ss');
+        resultPatch.resend_tracking_number = resendTrackingNumber.trim() || null;
+        resultPatch.resend_info = actionNote.trim() || null;
+      } else if (actionType === 'refund') {
+        resultPatch.handle_result = '已退款';
+        resultPatch.result_at = now.format('YYYY-MM-DD HH:mm:ss');
+        resultPatch.refund_info = actionNote.trim() || null;
+      } else if (actionType === 'close') {
+        resultPatch.handle_status = 'closed';
+        resultPatch.close_reason = closeReason.trim() || actionNote.trim() || null;
+        resultPatch.closed_at = now.format('YYYY-MM-DD HH:mm:ss');
+      }
+      if (customerContacted === '1') resultPatch.customer_contacted = 1;
+      if (workOrderSerial.trim()) resultPatch.work_order_serial = workOrderSerial.trim();
+      if (Object.keys(resultPatch).length) {
+        await ctx.api.request({
+          url: `${COLLECTION}:update?filterByTk=${selected.id}`,
+          method: 'post',
+          headers: { 'x-data-source': DATA_SOURCE_KEY },
+          data: resultPatch,
+        });
+      }
       message.success('行动记录已新增');
       setActionNote('');
+      setContactTarget('');
+      setFollowUpAt('');
+      setResendTrackingNumber('');
+      setRefundAmount('');
+      setClaimRecordNo('');
+      setCloseReason('');
+      setWorkOrderSerial('');
       await loadActionLogs(selected.id);
       await load();
     } catch (error) {
@@ -557,33 +1091,34 @@ export default function TrackingExceptionPage() {
     {
       title: '店铺',
       dataIndex: 'store-name',
-      width: 120,
+      width: 110,
       render: (value: string) => value || '-',
     },
     {
-      title: '平台订单',
+      title: '平台订单编号',
       dataIndex: 'order-id',
-      width: 170,
+      width: 190,
       ellipsis: true,
       render: (value: string) => value || '-',
     },
     {
-      title: '子订单',
+      title: '子订单编号',
       dataIndex: 'order-id-in-warehouse',
-      width: 170,
+      width: 220,
       ellipsis: true,
       render: (value: string) => value || '-',
     },
     {
       title: '运单号',
       dataIndex: 'tracking-number',
-      width: 150,
+      width: 145,
+      ellipsis: true,
       render: (value: string) => <Typography.Text copyable>{value || '-'}</Typography.Text>,
     },
     {
       title: '仓库',
       dataIndex: 'warehouse-name',
-      width: 170,
+      width: 180,
       ellipsis: true,
       render: (value: string) => value || '-',
     },
@@ -631,21 +1166,28 @@ export default function TrackingExceptionPage() {
       render: (value: string) => value,
     },
     {
-      title: '处理人',
-      dataIndex: 'handler_name',
-      width: 100,
+      title: '处理结果',
+      dataIndex: 'handle_result',
+      width: 110,
       render: (value: string) => value || '-',
     },
     {
-      title: '当前处理',
-      dataIndex: 'manual_action',
-      width: 110,
+      title: '关联工单',
+      dataIndex: 'work_order_serial',
+      width: 140,
+      ellipsis: true,
+      render: (value: string) => value || '-',
+    },
+    {
+      title: '处理人',
+      dataIndex: 'handler_name',
+      width: 95,
       render: (value: string) => value || '-',
     },
     {
       title: '处理状态',
       dataIndex: 'handle_status',
-      width: 110,
+      width: 100,
       render: (value: string) => value || '-',
     },
     {
@@ -662,19 +1204,24 @@ export default function TrackingExceptionPage() {
     {
       title: '操作',
       key: 'action',
-      width: 90,
+      width: 220,
       fixed: 'right' as const,
       render: (_: unknown, row: EnrichedRow) => (
-        <Button
-          type="link"
-          size="small"
-          onClick={() => {
-            setSelected(row);
-            setManualNote('');
-          }}
-        >
-          查看/核实
-        </Button>
+        <Space size={0}>
+          <Button
+            type="link"
+            size="small"
+            onClick={() => {
+              setSelected(row);
+              setManualNote('');
+            }}
+          >
+            查看 / 处理
+          </Button>
+          <Button type="link" size="small" onClick={() => openWorkOrder(row)}>
+            创建或关联工单
+          </Button>
+        </Space>
       ),
     },
   ];
@@ -690,7 +1237,7 @@ export default function TrackingExceptionPage() {
       variant="borderless"
     >
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        <style>{`.tracking-exception-recovered-row > td { background: #f6ffed !important; }`}</style>
+        <style>{`.tracking-exception-table td { white-space: nowrap; vertical-align: middle; height: 40px; padding-top: 6px !important; padding-bottom: 6px !important; } .tracking-exception-table .ant-table-thead > tr > th { height: 38px; white-space: nowrap; } .tracking-exception-table .ant-table-measure-row td, .tracking-exception-table .ant-table-measure-row { height: 0 !important; padding: 0 !important; border: 0 !important; line-height: 0 !important; }`}</style>
         <Alert
           type="warning"
           showIcon
@@ -698,77 +1245,135 @@ export default function TrackingExceptionPage() {
           description="异常状态来自 7D4 的 exception_status/data_status；行动记录写入 7D4_ActionLog。默认只显示数据质量=可用的 12 位 FedEx 行，可疑数据需手动打开。"
         />
 
-        <Space size="large" wrap>
-          <Statistic title="总行数" value={stats.total} />
-          <Statistic title="可用 FedEx" value={stats.clean} valueStyle={{ color: '#3f8600' }} />
-          <Statistic title="异常中" value={stats.active} valueStyle={{ color: '#cf1322' }} />
-          <Statistic title="已恢复" value={stats.recovered} valueStyle={{ color: '#1677ff' }} />
-          <Statistic title="可疑/非FedEx" value={stats.suspect} valueStyle={{ color: '#d46b08' }} />
-        </Space>
+        <Row gutter={[16, 16]} align="stretch">
+          <Col xs={24} xl={16}>
+            <Space size="large" wrap>
+              <Statistic title="总行数" value={stats.total} />
+              <Statistic title="可用 FedEx" value={stats.clean} valueStyle={{ color: '#3f8600' }} />
+              <Statistic title="异常中" value={stats.active} valueStyle={{ color: '#cf1322' }} />
+              <Statistic title="已恢复" value={stats.recovered} valueStyle={{ color: '#1677ff' }} />
+              <Statistic title="可疑/非FedEx" value={stats.suspect} valueStyle={{ color: '#d46b08' }} />
+              <Statistic title="实质异常" value={stats.substantive} valueStyle={{ color: '#cf1322' }} />
+              <Statistic title="技术异常" value={stats.technical} valueStyle={{ color: '#d46b08' }} />
+              <Statistic title="待指派" value={stats.unassigned} valueStyle={{ color: '#d46b08' }} />
+              <Statistic
+                title="过早处理率（近30天）"
+                value={Number(stats.prematureRate.toFixed(2))}
+                suffix="%"
+                valueStyle={{ color: stats.prematureRate ? '#cf1322' : '#3f8600' }}
+              />
+              <Statistic
+                title="平均恢复周期（近30天）"
+                value={stats.recoveryAvg === null ? '-' : Number(stats.recoveryAvg.toFixed(1))}
+                suffix={stats.recoveryAvg === null ? undefined : '天'}
+              />
+            </Space>
+          </Col>
+          <Col xs={24} xl={8}>
+            <Card size="small" title="近 7 日实质异常" style={{ height: '100%' }}>
+              <div style={{ display: 'flex', gap: 4, justifyContent: 'space-between' }}>
+                {trendSeries.map((item) => (
+                  <div key={item.date} style={{ flex: 1, minWidth: 0, textAlign: 'center' }}>
+                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                      {dayjs(item.date).format('MM-DD')}
+                    </Typography.Text>
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: 17,
+                        fontWeight: 600,
+                        color: item.value === null ? '#bfbfbf' : item.isToday ? '#cf1322' : '#262626',
+                      }}
+                    >
+                      {item.value === null ? '—' : item.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </Col>
+        </Row>
 
-        <Space wrap>
-          <Switch
-            checked={showSuspect}
-            onChange={(checked) => {
-              setShowSuspect(checked);
-              if (!checked && filterKey === 'manual') setFilterKey('all');
-            }}
-            checkedChildren="显示可疑数据"
-            unCheckedChildren="只看可用数据"
-          />
-          <Select
-            value={qualityFilter}
-            style={{ width: 150 }}
-            onChange={setQualityFilter}
-            options={[
-              { label: '全部质量', value: 'all' },
-              { label: '可用', value: '可用' },
-              { label: '查询异常', value: '查询异常' },
-              { label: '虚拟单号', value: '虚拟单号' },
-              { label: '非FedEx', value: '非FedEx' },
-              { label: '数据不完整', value: '数据不完整' },
-              { label: '天数异常', value: '天数异常' },
-              { label: '数据过旧', value: '数据过旧' },
-            ]}
-          />
-          <Input
-            allowClear
-            prefix={<SearchOutlined />}
-            placeholder="订单号 / 子订单 / 运单号 / 店铺 / 仓库 / MSKU"
-            style={{ width: 360 }}
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-          />
-          <Typography.Text type="secondary">
-            {`路由：${ROUTE} ｜ 数据源：${DATA_SOURCE_KEY} ｜ 集合：${COLLECTION}`}
-          </Typography.Text>
-        </Space>
-
-        <Space wrap>
-          {FILTERS.map((filter) => (
-            <Badge key={filter.key} count={counts[filter.key]} size="small" overflowCount={9999}>
-              <Button
-                type={filterKey === filter.key ? 'primary' : 'default'}
-                size="small"
-                onClick={() => {
-                  setFilterKey(filter.key);
-                  if (filter.key === 'manual') setShowSuspect(true);
+        <Card size="small" bodyStyle={{ padding: 10 }}>
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Space wrap size="middle">
+              <Switch
+                checked={showSuspect}
+                onChange={(checked) => {
+                  setShowSuspect(checked);
+                  if (!checked && filterKey === 'manual') setFilterKey('all');
                 }}
-              >
-                {filter.label}
+                checkedChildren="显示可疑数据"
+                unCheckedChildren="只看可用数据"
+              />
+              <Select
+                value={qualityFilter}
+                style={{ width: 150 }}
+                onChange={setQualityFilter}
+                options={[
+                  { label: '全部质量', value: 'all' },
+                  { label: '可用', value: '可用' },
+                  { label: '查询异常', value: '查询异常' },
+                  { label: '虚拟单号', value: '虚拟单号' },
+                  { label: '非FedEx', value: '非FedEx' },
+                  { label: '数据不完整', value: '数据不完整' },
+                  { label: '天数异常', value: '天数异常' },
+                  { label: '数据过旧', value: '数据过旧' },
+                ]}
+              />
+              <Input
+                allowClear
+                prefix={<SearchOutlined />}
+                placeholder="订单号 / 子订单 / 运单号 / 店铺 / 仓库 / MSKU"
+                style={{ width: 360 }}
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+              />
+              <Typography.Text type="secondary">{`路由：${ROUTE} ｜ 数据源：${DATA_SOURCE_KEY} ｜ 集合：${COLLECTION}`}</Typography.Text>
+              {canAssign ? (
+                <Button type="primary" disabled={!selectedRowKeys.length} onClick={() => setBatchAssignOpen(true)}>
+                  批量指派{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
+                </Button>
+              ) : null}
+              {canAssign ? (
+                <Button danger disabled={!selectedRowKeys.length} onClick={() => batchClose()}>
+                  批量关闭{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
+                </Button>
+              ) : null}
+              <Button onClick={exportRows}>
+                导出{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '当前筛选'}
               </Button>
-            </Badge>
-          ))}
-        </Space>
+            </Space>
+            <Space wrap size={[8, 8]}>
+              {FILTERS.filter((filter) => !isAgent || filter.key !== 'unassigned').map((filter) => (
+                <Button
+                  key={filter.key}
+                  type={filterKey === filter.key ? 'primary' : 'default'}
+                  onClick={() => {
+                    setFilterKey(filter.key);
+                    if (filter.key === 'manual') setShowSuspect(true);
+                  }}
+                >
+                  {filter.label}
+                  <span style={{ marginLeft: 6, color: FILTER_COLORS[filter.key], fontWeight: 600 }}>
+                    {counts[filter.key]}
+                  </span>
+                </Button>
+              ))}
+            </Space>
+          </Space>
+        </Card>
 
         <Table<EnrichedRow>
+          className="tracking-exception-table"
           rowKey="id"
-          size="small"
+          rowSelection={canAssign ? { selectedRowKeys, onChange: setSelectedRowKeys } : undefined}
+          size="middle"
           loading={loading}
           dataSource={filteredRows}
           columns={columns as any}
-          scroll={{ x: 1800 }}
-          rowClassName={(row) => (row._isRecovered ? 'tracking-exception-recovered-row' : '')}
+          scroll={{ x: 2300 }}
+          tableLayout="fixed"
           pagination={{
             pageSize: 50,
             showSizeChanger: true,
@@ -778,14 +1383,14 @@ export default function TrackingExceptionPage() {
         />
       </Space>
 
-      <Drawer open={Boolean(selected)} width={720} title="快递异常详情 / 人工核实" onClose={() => setSelected(null)}>
+      <Drawer open={Boolean(selected)} width={720} title="快递异常详情 / 处理" onClose={() => setSelected(null)}>
         {selected ? (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <Descriptions bordered size="small" column={2}>
               <Descriptions.Item label="店铺">{selected['store-name'] || '-'}</Descriptions.Item>
               <Descriptions.Item label="仓库">{selected['warehouse-name'] || '-'}</Descriptions.Item>
-              <Descriptions.Item label="平台订单">{selected['order-id'] || '-'}</Descriptions.Item>
-              <Descriptions.Item label="子订单">{selected['order-id-in-warehouse'] || '-'}</Descriptions.Item>
+              <Descriptions.Item label="平台订单编号">{selected['order-id'] || '-'}</Descriptions.Item>
+              <Descriptions.Item label="子订单编号">{selected['order-id-in-warehouse'] || '-'}</Descriptions.Item>
               <Descriptions.Item label="运单号">{selected['tracking-number'] || '-'}</Descriptions.Item>
               <Descriptions.Item label="MSKU">{selected.msku || '-'}</Descriptions.Item>
               <Descriptions.Item label="快递状态">{selected.Status || '-'}</Descriptions.Item>
@@ -810,6 +1415,34 @@ export default function TrackingExceptionPage() {
                 </Typography.Paragraph>
               </Descriptions.Item>
             </Descriptions>
+
+            <Card size="small" title="处理人 / 接手">
+              <Space wrap>
+                {canAssign !== false ? (
+                  <>
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      placeholder="选择售后负责人"
+                      style={{ width: 260 }}
+                      value={assignUserId || undefined}
+                      onChange={(value) => setAssignUserId(value)}
+                      options={users.map((user) => ({
+                        value: String(user.id),
+                        label: String(user.nickname || user.username || user.name || user.id),
+                      }))}
+                    />
+                    <Button type="primary" loading={assigning} onClick={() => void assignOwner()}>
+                      确认指派
+                    </Button>
+                  </>
+                ) : null}
+                <Button loading={assigning} onClick={() => void acceptCase()}>
+                  我接手
+                </Button>
+                <Typography.Text type="secondary">当前：{selected.handler_name || '未指派'}</Typography.Text>
+              </Space>
+            </Card>
 
             <Card size="small" title="行动时间线" loading={actionLogsLoading}>
               {actionLogs.length ? (
@@ -854,6 +1487,70 @@ export default function TrackingExceptionPage() {
                   onChange={(event) => setActionNote(event.target.value)}
                   placeholder="行动说明"
                 />
+                {actionType === 'contacted_warehouse' ? (
+                  <Input
+                    value={contactTarget}
+                    onChange={(event) => setContactTarget(event.target.value)}
+                    placeholder="联系对象 / 仓库"
+                  />
+                ) : null}
+                {actionType === 'reship' ? (
+                  <Input
+                    value={resendTrackingNumber}
+                    onChange={(event) => setResendTrackingNumber(event.target.value)}
+                    placeholder="补寄运单号"
+                  />
+                ) : null}
+                {actionType === 'refund' ? (
+                  <Space>
+                    <Input
+                      value={refundAmount}
+                      onChange={(event) => setRefundAmount(event.target.value)}
+                      placeholder="退款金额"
+                      style={{ width: 140 }}
+                    />
+                    <Select
+                      value={refundCurrency}
+                      onChange={setRefundCurrency}
+                      style={{ width: 100 }}
+                      options={[{ value: 'USD' }, { value: 'CNY' }, { value: 'EUR' }]}
+                    />
+                  </Space>
+                ) : null}
+                {actionType === 'close' ? (
+                  <Input
+                    value={closeReason}
+                    onChange={(event) => setCloseReason(event.target.value)}
+                    placeholder="关闭原因（必填）"
+                  />
+                ) : null}
+                <Space wrap>
+                  <Input
+                    value={claimRecordNo}
+                    onChange={(event) => setClaimRecordNo(event.target.value)}
+                    placeholder="索赔记录号（可选）"
+                  />
+                  <Input
+                    value={workOrderSerial}
+                    onChange={(event) => setWorkOrderSerial(event.target.value)}
+                    placeholder="关联工单号（可选）"
+                  />
+                  <Select
+                    value={customerContacted}
+                    onChange={setCustomerContacted}
+                    style={{ width: 150 }}
+                    options={[
+                      { label: '客户未沟通', value: '0' },
+                      { label: '客户已沟通', value: '1' },
+                    ]}
+                  />
+                  <DatePicker
+                    showTime
+                    value={followUpAt ? dayjs(followUpAt) : null}
+                    onChange={(value) => setFollowUpAt(value ? value.format('YYYY-MM-DD HH:mm:ss') : '')}
+                    placeholder="下次跟进时间"
+                  />
+                </Space>
                 <Button type="primary" loading={saving} onClick={() => void saveActionLog()}>
                   记录行动
                 </Button>
@@ -967,6 +1664,120 @@ export default function TrackingExceptionPage() {
           />
         </Space>
       </Drawer>
+
+      <Modal
+        open={batchAssignOpen}
+        title="批量指派"
+        okText="确认指派"
+        cancelText="取消"
+        confirmLoading={batchAssigning}
+        onOk={() => void batchAssign()}
+        onCancel={() => setBatchAssignOpen(false)}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Typography.Text type="secondary">已选 {selectedRowKeys.length} 行</Typography.Text>
+          <Select
+            showSearch
+            optionFilterProp="label"
+            placeholder="选择售后负责人"
+            value={batchAssignUserId || undefined}
+            onChange={setBatchAssignUserId}
+            options={users.map((user) => ({
+              value: String(user.id),
+              label: String(user.nickname || user.username || user.name || user.id),
+            }))}
+          />
+        </Space>
+      </Modal>
+
+      <Modal
+        open={workOrderOpen}
+        title="创建或关联工单"
+        footer={null}
+        width={700}
+        onCancel={() => {
+          setWorkOrderOpen(false);
+          setWorkOrderRow(null);
+        }}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Typography.Text type="secondary">
+            平台订单编号：{workOrderRow?.['order-id'] || '-'} ｜ 子订单编号：
+            {workOrderRow?.['order-id-in-warehouse'] || '-'}
+          </Typography.Text>
+          <Space>
+            <Button type={workOrderMode === 'link' ? 'primary' : 'default'} onClick={() => setWorkOrderMode('link')}>
+              关联工单
+            </Button>
+            <Button
+              type={workOrderMode === 'create' ? 'primary' : 'default'}
+              onClick={() => setWorkOrderMode('create')}
+            >
+              创建工单
+            </Button>
+          </Space>
+
+          {workOrderMode === 'link' ? (
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <Typography.Text type="secondary">
+                填入「售后批处理工作台」已有的工单号，只绑定，不新建工单。
+              </Typography.Text>
+              <Input
+                value={linkSerial}
+                onChange={(event) => setLinkSerial(event.target.value)}
+                placeholder="请输入 AfterSalesWorkOrderV2 工单号"
+              />
+              <Button type="primary" loading={linking} onClick={() => void saveLinkWorkOrder()}>
+                保存关联
+              </Button>
+            </Space>
+          ) : (
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Typography.Text type="secondary">
+                当前登录人：{ctx.currentUser?.nickname || ctx.currentUser?.username || '-'}
+                ；邮件抬头默认取个人配置，可手动修改。
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                创建新工单，类型写入 creation_source=tracking（快递异常推送）。
+              </Typography.Text>
+              <Form layout="vertical">
+                <Form.Item label="邮件抬头">
+                  <Select
+                    value={createGreeting}
+                    onChange={setCreateGreeting}
+                    options={[...new Set([createGreeting, ...GREETINGS])].map((value) => ({ label: value, value }))}
+                  />
+                </Form.Item>
+                <Form.Item label="买家问题类型">
+                  <Input value={createIssueType} onChange={(event) => setCreateIssueType(event.target.value)} />
+                </Form.Item>
+                <Form.Item label="相关信息补充">
+                  <Input.TextArea
+                    rows={3}
+                    value={createContext}
+                    onChange={(event) => setCreateContext(event.target.value)}
+                  />
+                </Form.Item>
+                <Form.Item label="语气和语言要求">
+                  <Input value={createTone} onChange={(event) => setCreateTone(event.target.value)} />
+                </Form.Item>
+                <Form.Item label="回复倾向">
+                  <Input value={createPreference} onChange={(event) => setCreatePreference(event.target.value)} />
+                </Form.Item>
+                <Form.Item label="邮件篇幅">
+                  <Input value={createLength} onChange={(event) => setCreateLength(event.target.value)} />
+                </Form.Item>
+                <Form.Item label="标准参考案例模板路径">
+                  <Input value={createTemplate} onChange={(event) => setCreateTemplate(event.target.value)} />
+                </Form.Item>
+              </Form>
+              <Button type="primary" block loading={creating} onClick={() => void saveCreateWorkOrder()}>
+                创建工单
+              </Button>
+            </Space>
+          )}
+        </Space>
+      </Modal>
     </Card>
   );
 }

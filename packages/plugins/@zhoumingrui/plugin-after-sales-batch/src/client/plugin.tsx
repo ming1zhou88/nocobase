@@ -12,6 +12,9 @@ import { DailyMarkProcessedActionModel } from '../client-v2/models/DailyMarkProc
 import { DailyTypeLabelFilterActionModel } from '../client-v2/models/DailyTypeLabelFilterActionModel';
 import { SecondReplyGenerateActionModel } from '../client-v2/models/SecondReplyGenerateActionModel';
 import { SecondReplySendActionModel } from '../client-v2/models/SecondReplySendActionModel';
+import { OverseasAfterSalesActionModel } from '../client-v2/models/OverseasAfterSalesActionModel';
+import { RecordDetailActionModel } from '../client-v2/models/RecordDetailActionModel';
+import { FeedbackMarkActionModel } from '../client-v2/models/FeedbackMarkActionModel';
 
 /**
  * 售后处理指南：两个页面并行存在。
@@ -59,6 +62,9 @@ export class PluginAfterSalesBatchClient extends Plugin {
         DailyTypeLabelFilterActionModel,
         SecondReplyGenerateActionModel,
         SecondReplySendActionModel,
+        OverseasAfterSalesActionModel,
+        FeedbackMarkActionModel,
+        RecordDetailActionModel,
       });
     }
 

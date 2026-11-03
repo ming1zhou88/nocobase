@@ -9,7 +9,7 @@
  */
 import type { Context, Next } from '@nocobase/actions';
 import { connectorClient } from './services/connector-client';
-import { isAssigner } from './after-sales-roles';
+import { currentRoleNames, isAssigner } from './after-sales-roles';
 
 /**
  * 把 Date 格式化成**本地时区**的 `YYYY-MM-DD HH:mm:ss`（外部 MySQL DATETIME 用）。
@@ -265,9 +265,158 @@ export async function listDailyDraftStates(ctx: Context, next: Next) {
   await next();
 }
 
+/**
+ * 从 7D4 快递异常行创建售后工单。
+ * 7D4 是外部数据源，先取行，再走连接器创建工单，最后回写 work_order_serial。
+ */
+export async function createTrackingExceptionWorkOrder(ctx: Context, next: Next) {
+  const values = (ctx.action.params?.values || ctx.request.body || {}) as Record<string, unknown>;
+  const exceptionId = Number(values.exception_id ?? values.exceptionId);
+  if (!Number.isInteger(exceptionId) || exceptionId <= 0) {
+    ctx.throw(400, 'exception_id is required');
+  }
+  const dataSource = (ctx.app.dataSourceManager as any).get('d_99cwsyi7q4k');
+  const repository = dataSource?.collectionManager?.getRepository('7D4');
+  if (!repository) ctx.throw(500, '7D4 repository unavailable');
+  const row = await repository.findOne({ filter: { id: exceptionId } });
+  if (!row) ctx.throw(404, '7D4 row not found');
+
+  const read = (key: string) => String(row[key] ?? row.get?.(key) ?? '').trim();
+  const currentUser = ctx.state?.currentUser;
+  let ownerId = Number(values.owner_id ?? read('handler_id') ?? currentUser?.id);
+  if (!Number.isInteger(ownerId) || ownerId <= 0) ownerId = Number(currentUser?.id) || null;
+  let ownerName = String(
+    values.owner_name ?? read('handler_name') ?? currentUser?.nickname ?? currentUser?.username ?? '',
+  ).trim();
+  let replyGreeting = String(values.reply_greeting ?? '').trim();
+  if (ownerId) {
+    try {
+      const owner = await ctx.app.db.getRepository('users').findOne({ filter: { id: ownerId } });
+      if (owner) {
+        ownerName = ownerName || String(owner.get('nickname') || owner.get('username') || '');
+        replyGreeting = replyGreeting || String(owner.get('replyGreeting') || owner.get('reply_greeting') || '');
+      }
+    } catch {
+      // 负责人信息读不到时保留页面传入值
+    }
+  }
+  if (!replyGreeting) ctx.throw(400, 'reply_greeting is required（负责人未配置邮件抬头时请手填）');
+
+  const created = await connectorClient.createWorkOrders([
+    {
+      order_id: read('order-id'),
+      buyer_email: read('email-address'),
+      owner_id: ownerId,
+      owner_name: ownerName,
+      creation_source: 'tracking',
+      buyer_issue_type: String(values.buyer_issue_type ?? read('exception_reason') ?? '').trim() || null,
+      additional_context: String(values.additional_context ?? '').trim() || null,
+      tone_and_language: String(values.tone_and_language ?? '').trim() || null,
+      reply_preference: String(values.reply_preference ?? '').trim() || null,
+      email_length: String(values.email_length ?? '').trim() || null,
+      reply_greeting: replyGreeting,
+      table_a_depth: Number(values.table_a_depth) || 3,
+      table_b_depth: Number(values.table_b_depth) || 1,
+    },
+  ]);
+  const workOrder = (created.records || [])[0] || {};
+  const serial = String(workOrder.work_order_serial || '').trim();
+  if (serial) {
+    await repository.update({ filterByTk: exceptionId, values: { work_order_serial: serial } });
+  }
+  ctx.body = { success: true, work_order_serial: serial, workOrder };
+  await next();
+}
+
+/**
+ * 7D4 列表的受控读取入口。
+ *
+ * 主管/管理员看全部；其他角色只返回 handler_id=当前用户 的行。
+ * 页面必须走这个 action，不能直接 7D4:list，否则前端过滤不能形成安全边界。
+ */
+export async function listTrackingExceptions(ctx: Context, next: Next) {
+  const values = (ctx.action.params?.values || ctx.request.body || {}) as Record<string, unknown>;
+  const user = ctx.state?.currentUser;
+  if (!user?.id) ctx.throw(401, 'login required');
+  const roles = await currentRoleNames(ctx);
+  const isAgent =
+    roles.includes('after_sales_agent') &&
+    !roles.some((role) => ['after_sales_manager', 'admin', 'root'].includes(role));
+  const page = Math.max(Number(values.page) || 1, 1);
+  const pageSize = Math.min(Math.max(Number(values.pageSize) || 50, 1), 500);
+  const dataSource = (ctx.app.dataSourceManager as any).get('d_99cwsyi7q4k');
+  const repository = dataSource?.collectionManager?.getRepository('7D4');
+  if (!repository) ctx.throw(500, '7D4 repository unavailable');
+  const filter = isAgent ? { handler_id: { $eq: Number(user.id) } } : {};
+  const fields = String(values.fields || '')
+    .split(',')
+    .map((field) => field.trim())
+    .filter(Boolean);
+  const sort = Array.isArray(values.sort) ? values.sort : ['-id'];
+  const rows = await repository.find({
+    filter,
+    ...(fields.length ? { fields } : {}),
+    sort,
+    limit: pageSize,
+    offset: (page - 1) * pageSize,
+  });
+  const total = await repository.count({ filter });
+  ctx.body = {
+    data: (rows || []).map((row: any) => (row?.toJSON ? row.toJSON() : row)),
+    meta: { count: total, page, pageSize, totalPage: Math.ceil(total / pageSize) },
+  };
+  await next();
+}
+
+export async function getTrackingExceptionPermissions(ctx: Context, next: Next) {
+  const roles = await currentRoleNames(ctx);
+  const isAgent =
+    roles.includes('after_sales_agent') &&
+    !roles.some((role) => ['after_sales_manager', 'admin', 'root'].includes(role));
+  ctx.body = {
+    is_assigner: await isAssigner(ctx),
+    is_agent: isAgent,
+    user_id: ctx.state?.currentUser?.id ? Number(ctx.state.currentUser.id) : null,
+  };
+  await next();
+}
+
+/** 7D4 批量指派：只有售后主管/管理员可以调用。 */
+export async function batchAssignTrackingExceptions(ctx: Context, next: Next) {
+  if (!(await isAssigner(ctx))) ctx.throw(403, '只有售后主管可以批量指派');
+  const values = (ctx.action.params?.values || ctx.request.body || {}) as Record<string, unknown>;
+  const rowIds = (Array.isArray(values.rowIds) ? values.rowIds : [])
+    .map(Number)
+    .filter((id) => Number.isInteger(id) && id > 0);
+  const ownerId = Number(values.owner_id ?? values.ownerId);
+  if (!rowIds.length) ctx.throw(400, 'rowIds is required');
+  if (!Number.isInteger(ownerId) || ownerId <= 0) ctx.throw(400, 'owner_id is required');
+  const owner = await ctx.app.db.getRepository('users').findOne({ filter: { id: ownerId } });
+  if (!owner) ctx.throw(400, 'owner not found');
+  const operator = ctx.state?.currentUser
+    ? { id: Number(ctx.state.currentUser.id), name: ctx.state.currentUser.nickname || ctx.state.currentUser.username }
+    : undefined;
+  const result = await connectorClient.assignTrackingException({
+    rowIds,
+    owner: {
+      id: ownerId,
+      name: String(owner.get('nickname') || owner.get('username') || ownerId),
+      account: owner.get('username'),
+    },
+    operator,
+    source: 'manual',
+  });
+  ctx.body = { success: true, ...result };
+  await next();
+}
+
 export const DAILY_AFTER_SALES_RESOURCE = 'dailyAfterSales';
 export const DAILY_AFTER_SALES_ACTIONS = {
   createWorkOrder: createDailyAfterSalesWorkOrder,
+  createTrackingExceptionWorkOrder,
+  trackingExceptionPermissions: getTrackingExceptionPermissions,
+  trackingExceptionList: listTrackingExceptions,
+  batchAssignTrackingExceptions,
   batchAssign: batchAssignDailyAfterSales,
   saveDraft: saveDailyAfterSalesDraft,
   getDraft: getDailyAfterSalesDraft,

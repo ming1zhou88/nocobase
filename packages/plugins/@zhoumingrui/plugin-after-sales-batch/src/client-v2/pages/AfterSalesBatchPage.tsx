@@ -845,12 +845,15 @@ export default function AfterSalesBatchPage() {
           </Space>
         }
       >
+        <style>{`.after-sales-batch-table .ant-table-thead > tr > th { white-space: nowrap; }`}</style>
         <Table
+          className="after-sales-batch-table"
           rowKey="work_order_serial"
           loading={loading}
           dataSource={records}
           rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-          scroll={{ x: 1400 }}
+          scroll={{ x: 2000 }}
+          tableLayout="fixed"
           pagination={{
             current: page,
             pageSize,
@@ -862,20 +865,20 @@ export default function AfterSalesBatchPage() {
             },
           }}
           columns={[
-            { title: t('Work order serial'), dataIndex: 'work_order_serial', key: 'work_order_serial', width: 200 },
+            { title: t('Work order serial'), dataIndex: 'work_order_serial', key: 'work_order_serial', width: 190 },
             {
               title: t('Creation source'),
               dataIndex: 'creation_source',
               key: 'creation_source',
-              width: 150,
+              width: 130,
               render: (value: string) => (value === 'daily' ? t('Daily order push') : t('Local creation')),
             },
             {
               title: t('Owner'),
               dataIndex: 'owner_name',
               key: 'owner_name',
-              width: 100,
-              render: (value: string | null) => value || '-',
+              width: 150,
+              render: (value: string | null) => <span style={{ whiteSpace: 'nowrap' }}>{value || '-'}</span>,
             },
             {
               title: t('Order ID'),
@@ -884,7 +887,13 @@ export default function AfterSalesBatchPage() {
               width: 210,
               render: (value: string | null) => (value ? <span style={{ whiteSpace: 'nowrap' }}>{value}</span> : '-'),
             },
-            { title: t('Issue type'), dataIndex: 'buyer_issue_type', key: 'buyer_issue_type', width: 140 },
+            {
+              title: t('Issue type'),
+              dataIndex: 'buyer_issue_type',
+              key: 'buyer_issue_type',
+              width: 160,
+              ellipsis: true,
+            },
             {
               // 表 A / 表 B 获取深度合并为一列，和旧版工作台一致（如 3/1）
               title: t('Fetch depth (A/B)'),
@@ -897,35 +906,35 @@ export default function AfterSalesBatchPage() {
               title: t('Has AI guide'),
               dataIndex: 'has_guide',
               key: 'has_guide',
-              width: 120,
+              width: 180,
               render: (value: string) => <Tag color={value === '是' ? 'success' : 'default'}>{value}</Tag>,
             },
             {
               title: t('Guide serial'),
               dataIndex: 'guide_serial',
               key: 'guide_serial',
-              width: 200,
+              width: 180,
               render: (value: string | null) => value || '-',
             },
             {
               title: t('Generated at'),
               dataIndex: 'guide_generated_at',
               key: 'guide_generated_at',
-              width: 180,
+              width: 165,
               render: (value: string | null) => formatCnDateTime(value),
             },
             {
               title: t('Created at'),
               dataIndex: 'created_at',
               key: 'created_at',
-              width: 180,
+              width: 165,
               render: (value: string | null) => formatCnDateTime(value),
             },
             {
               title: t('Actions'),
               key: 'actions',
               fixed: 'right' as const,
-              width: 260,
+              width: 280,
               render: (_value: unknown, record: Record<string, any>) => (
                 <Space>
                   <Button size="small" type="link" onClick={() => setDetailRecord(record)}>

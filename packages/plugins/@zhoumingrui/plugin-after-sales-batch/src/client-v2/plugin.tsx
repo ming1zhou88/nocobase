@@ -11,6 +11,9 @@ import { DailyMarkProcessedActionModel } from './models/DailyMarkProcessedAction
 import { DailyTypeLabelFilterActionModel } from './models/DailyTypeLabelFilterActionModel';
 import { SecondReplyGenerateActionModel } from './models/SecondReplyGenerateActionModel';
 import { SecondReplySendActionModel } from './models/SecondReplySendActionModel';
+import { RecordDetailActionModel } from './models/RecordDetailActionModel';
+import { FeedbackMarkActionModel } from './models/FeedbackMarkActionModel';
+import { OverseasAfterSalesActionModel } from './models/OverseasAfterSalesActionModel';
 
 type AsyncTaskManagerClientV2Plugin = {
   taskOrigins: {
@@ -40,6 +43,9 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
       DailyTypeLabelFilterActionModel,
       SecondReplyGenerateActionModel,
       SecondReplySendActionModel,
+      FeedbackMarkActionModel,
+      RecordDetailActionModel,
+      OverseasAfterSalesActionModel,
     });
 
     // B 页：Dify 生成，复用 A 页组件（组件内部根据路由参数区分行为）
@@ -48,18 +54,18 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
       componentLoader: () => import('./pages/AfterSalesBatchPage'),
     });
 
-    this.router.add('express-mail-notify', {
+    this.router.add('admin.express-mail-notify', {
       path: '/admin/express-mail/notify',
       componentLoader: () => import('./pages/EmailNotifyPage'),
     });
 
-    this.router.add('mabang-order-full', {
+    this.router.add('admin.mabang-order-full', {
       path: '/admin/mabang-order/full',
       componentLoader: () => import('./pages/MabangOrderFullPage'),
     });
 
     // 快递异常工作台（预览）：只读 7D4，前端计算数据质量/异常状态；不改 7D4 查询逻辑。
-    this.router.add('tracking-exception-workbench', {
+    this.router.add('admin.tracking-exception-workbench', {
       path: '/admin/tracking-exception/workbench',
       componentLoader: () => import('./pages/TrackingExceptionPage'),
     });
