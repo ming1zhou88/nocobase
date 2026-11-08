@@ -55,6 +55,9 @@ export function createSqlDatabaseOptions(dialect: SqlDialect, options: SqlConnec
     password: options.password,
     schema: dialect === 'postgres' ? options.schema || 'public' : undefined,
     tablePrefix: options.tablePrefix || '',
+    // 外部 MySQL 的 DATETIME 是按业务当地墙上时间存的（北京/美西各自本地值），
+    // 默认 +08:00 让 NocoBase 的 datetimeNoTz 读写都保持字面值，不做 UTC 偏移。
+    timezone: options.timezone || '+08:00',
     pool: {
       min: 0,
       max: poolMax,

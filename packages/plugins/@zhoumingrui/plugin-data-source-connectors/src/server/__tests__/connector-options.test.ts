@@ -30,6 +30,19 @@ describe('connector option normalization', () => {
     });
   });
 
+  it('uses +08:00 as the default wall-clock timezone and allows override', () => {
+    const base = {
+      host: '127.0.0.1',
+      database: 'business',
+      username: 'reader',
+      password: 'secret',
+    };
+    expect(createSqlDatabaseOptions('mysql', base)).toMatchObject({ timezone: '+08:00' });
+    expect(createSqlDatabaseOptions('mysql', { ...base, timezone: '+00:00' })).toMatchObject({
+      timezone: '+00:00',
+    });
+  });
+
   it('maps PostgreSQL SSL verification settings', () => {
     const options = createSqlDatabaseOptions('postgres', {
       host: 'db.example.com',

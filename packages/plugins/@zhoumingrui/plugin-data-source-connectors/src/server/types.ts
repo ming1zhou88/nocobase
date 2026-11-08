@@ -34,6 +34,12 @@ export interface SqlConnectorOptions extends ConnectorOptions {
   schema?: string;
   connectionTimeoutMs?: number;
   poolMax?: number;
+  /**
+   * 外部 MySQL 的 DATETIME 语义。
+   * 本系统统一存"墙上时间"（北京/美西各自当地值），
+   * 因此默认 +08:00，让 NocoBase 的 datetimeNoTz 原样读写。
+   */
+  timezone?: string;
   ssl?: {
     sslMode?: 'disable' | 'prefer' | 'require' | 'verify-ca' | 'verify-full';
     rejectUnauthorized?: boolean;
