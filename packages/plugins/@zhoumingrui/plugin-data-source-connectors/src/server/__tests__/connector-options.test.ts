@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { createSqlDatabaseOptions } from '../sql-data-source';
+import { applyWallClockMode, createSqlDatabaseOptions } from '../sql-data-source';
 import { normalizePositiveInteger, saveSelectedCollections } from '../utils';
 
 describe('connector option normalization', () => {
@@ -41,6 +41,21 @@ describe('connector option normalization', () => {
     expect(createSqlDatabaseOptions('mysql', { ...base, timezone: '+00:00' })).toMatchObject({
       timezone: '+00:00',
     });
+  });
+
+  it('normalizes DATETIME/TIMESTAMP fields to datetimeNoTz in wallclock mode', () => {
+    const collection = {
+      name: 'demo',
+      fields: [
+        { name: 'created_at', type: 'datetime', rawType: 'DATETIME(3)' },
+        { name: 'synced_at', type: 'datetimeTz', rawType: 'TIMESTAMP' },
+        { name: 'stat_date', type: 'dateOnly', rawType: 'DATE' },
+      ],
+    };
+    applyWallClockMode(collection as any);
+    expect(collection.fields[0]).toMatchObject({ type: 'datetimeNoTz', interface: 'datetimeNoTz' });
+    expect(collection.fields[1]).toMatchObject({ type: 'datetimeNoTz', interface: 'datetimeNoTz' });
+    expect(collection.fields[2]).toMatchObject({ type: 'dateOnly', rawType: 'DATE' });
   });
 
   it('maps PostgreSQL SSL verification settings', () => {

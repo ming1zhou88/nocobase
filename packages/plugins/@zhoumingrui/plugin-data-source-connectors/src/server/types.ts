@@ -40,6 +40,12 @@ export interface SqlConnectorOptions extends ConnectorOptions {
    * 因此默认 +08:00，让 NocoBase 的 datetimeNoTz 原样读写。
    */
   timezone?: string;
+  /**
+   * 外部库时间字段语义：
+   * native    保留 NocoBase/数据库默认时区行为
+   * wallclock 将所有 DATETIME/TIMESTAMP 视为墙上时间（datetimeNoTz）
+   */
+  datetimeMode?: 'native' | 'wallclock';
   ssl?: {
     sslMode?: 'disable' | 'prefer' | 'require' | 'verify-ca' | 'verify-full';
     rejectUnauthorized?: boolean;

@@ -72,6 +72,32 @@ export function createSqlDatabaseOptions(dialect: SqlDialect, options: SqlConnec
   } as DatabaseOptions;
 }
 
+/** 按数据库原始类型统一处理“墙上时间”字段，不依赖具体字段名。 */
+export function applyWallClockMode(collection: CollectionOptions): void {
+  for (const field of collection.fields || []) {
+    const rawType = String((field as any).rawType || '')
+      .trim()
+      .toLowerCase();
+    if (!/^(datetime|timestamp)(\s*\(|$)/.test(rawType)) {
+      continue;
+    }
+    const fieldOptions = (field as any).options || {};
+    (field as any).type = 'datetimeNoTz';
+    (field as any).interface = 'datetimeNoTz';
+    (field as any).options = { ...fieldOptions, type: 'datetimeNoTz' };
+    (field as any).uiSchema = {
+      ...((field as any).uiSchema || {}),
+      type: 'string',
+      'x-component': 'DatePicker',
+      'x-component-props': {
+        ...(((field as any).uiSchema || {})['x-component-props'] || {}),
+        showTime: true,
+        utc: false,
+      },
+    };
+  }
+}
+
 function normalizeTableInfo(value: unknown, defaultSchema?: string): tableInfo {
   if (typeof value === 'string') {
     return { tableName: value, schema: defaultSchema };
@@ -198,6 +224,9 @@ export abstract class SqlDataSource extends DatabaseDataSource {
 
     const mergedCollections = this.mergeWithLoadedCollections(collections, loadOptions.localData || {});
     for (const collection of mergedCollections) {
+      if (this.options.datetimeMode === 'wallclock') {
+        applyWallClockMode(collection);
+      }
       this.collectionManager.defineCollection(collection);
     }
   }
