@@ -3,6 +3,7 @@ import { useFlowContext } from '@nocobase/flow-engine';
 import { App, Button, Form, Modal, Select, Space, Typography } from 'antd';
 import type { ButtonProps } from 'antd';
 import React, { useRef, useState } from 'react';
+import { refreshSiblingDataBlocks } from './refreshSiblingDataBlocks';
 
 /** 有售后身份的角色（批量指派只对这些人有意义） */
 const ASSIGNEE_ROLES = ['after_sales_agent', 'after_sales_manager'];
@@ -115,6 +116,7 @@ function DailyBatchAssignButton({ model }: { model: DailyBatchAssignActionModel 
       form.resetFields();
       const blockModel = getBlockModel();
       await blockModel?.resource?.refresh?.();
+      await refreshSiblingDataBlocks(blockModel);
     } catch (error: any) {
       const detail = error?.response?.data?.errors?.[0]?.message || error?.response?.data?.message || error?.message;
       message.error(detail || '批量指派失败');

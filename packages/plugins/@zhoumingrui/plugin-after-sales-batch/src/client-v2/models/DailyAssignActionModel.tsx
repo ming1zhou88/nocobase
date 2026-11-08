@@ -3,6 +3,7 @@ import { useFlowContext } from '@nocobase/flow-engine';
 import { App, Button, Form, Modal, Select, Space, Typography } from 'antd';
 import type { ButtonProps } from 'antd';
 import React, { useState } from 'react';
+import { refreshSiblingDataBlocks } from './refreshSiblingDataBlocks';
 
 const ASSIGNEE_ROLES = ['after_sales_agent', 'after_sales_manager'];
 
@@ -112,7 +113,9 @@ function DailyAssignButton({ model }: { model: DailyAssignActionModel }) {
       message.success(`已将 ${rowIds.length} 行指派给「${values.owner_name}」`);
       setOpen(false);
       form.resetFields();
-      await getBlockModel()?.resource?.refresh?.();
+      const blockModel = getBlockModel();
+      await blockModel?.resource?.refresh?.();
+      await refreshSiblingDataBlocks(blockModel);
     } catch (error: any) {
       const detail = error?.response?.data?.errors?.[0]?.message || error?.response?.data?.message || error?.message;
       message.error(detail || '指派失败');
