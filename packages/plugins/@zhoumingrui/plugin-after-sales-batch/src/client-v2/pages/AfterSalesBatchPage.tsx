@@ -964,7 +964,7 @@ export default function AfterSalesBatchPage() {
             loading={loading}
             dataSource={records}
             rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-            scroll={{ x: 1920, y: tableScrollY }}
+            scroll={{ x: 1930, y: tableScrollY }}
             tableLayout="fixed"
             pagination={{
               current: page,
@@ -1036,18 +1036,18 @@ export default function AfterSalesBatchPage() {
                 title: t('Generated at'),
                 dataIndex: 'guide_generated_at',
                 key: 'guide_generated_at',
-                width: 155,
+                width: 160,
                 render: (value: string | null) => (
-                  <span style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{formatCnDateTime(value)}</span>
+                  <span style={{ whiteSpace: 'nowrap' }}>{formatCnDateTime(value)}</span>
                 ),
               },
               {
                 title: t('Created at'),
                 dataIndex: 'created_at',
                 key: 'created_at',
-                width: 155,
+                width: 160,
                 render: (value: string | null) => (
-                  <span style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{formatCnDateTime(value)}</span>
+                  <span style={{ whiteSpace: 'nowrap' }}>{formatCnDateTime(value)}</span>
                 ),
               },
               {
