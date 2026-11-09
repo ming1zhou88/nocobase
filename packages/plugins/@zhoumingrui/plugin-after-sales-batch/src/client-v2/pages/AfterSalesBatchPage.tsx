@@ -4,6 +4,7 @@ import {
   DownloadOutlined,
   EditOutlined,
   EyeOutlined,
+  FileTextOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   RedoOutlined,
@@ -233,10 +234,14 @@ export default function AfterSalesBatchPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [greetingOptions, setGreetingOptions] = useState(DEFAULT_GREETING_OPTIONS);
   const [createVisible, setCreateVisible] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<Record<string, any> | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
   // 生成方式：dify = Dify 工作流（默认）；local = NocoBase 内置 AI 员工（本地驱动兜底）
   const [provider, setProvider] = useState<'dify' | 'local'>('dify');
   const [detailRecord, setDetailRecord] = useState<Record<string, any> | null>(null);
   const [form] = Form.useForm();
+  const [editForm] = Form.useForm();
 
   const [batchSerial, setBatchSerial] = useState<string | null>(null);
   const [batchRecord, setBatchRecord] = useState<Record<string, any> | null>(null);
@@ -565,6 +570,57 @@ export default function AfterSalesBatchPage() {
     }
   }
 
+  function openEditModal(record: Record<string, any>) {
+    setEditingRecord(record);
+    editForm.resetFields();
+    editForm.setFieldsValue({
+      order_id: record.order_id || '',
+      buyer_email: record.buyer_email || '',
+      reply_greeting: record.reply_greeting || '',
+      buyer_issue_type: record.buyer_issue_type || '',
+      additional_context: record.additional_context || '',
+      tone_and_language: record.tone_and_language || '',
+      reply_preference: record.reply_preference || '',
+      email_length: record.email_length || '',
+      case_template_path: record.case_template_path || '',
+      table_a_depth: record.table_a_depth ?? 3,
+      table_b_depth: record.table_b_depth ?? 1,
+    });
+    setEditVisible(true);
+  }
+
+  async function handleEdit(values: Record<string, unknown>) {
+    const serial = String(editingRecord?.work_order_serial || '').trim();
+    if (!serial) return;
+    const orderId = String(values.order_id || '').trim();
+    const buyerEmail = String(values.buyer_email || '').trim();
+    if (!orderId && !buyerEmail) {
+      const hint = t('Order id or buyer email required');
+      editForm.setFields([
+        { name: 'order_id', errors: [hint] },
+        { name: 'buyer_email', errors: [hint] },
+      ]);
+      message.warning(hint);
+      return;
+    }
+    setEditSaving(true);
+    try {
+      await request('updateWorkOrders', { work_order_serials: [serial], values });
+      const updated = { ...editingRecord, ...values };
+      if (detailRecord?.work_order_serial === serial) {
+        setDetailRecord(updated);
+      }
+      setEditVisible(false);
+      setEditingRecord(null);
+      await loadWorkOrders(page, pageSize, keyword);
+      message.success(t('Saved'));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   const uploadProps: UploadProps = {
     accept: '.csv,.xlsx,.xls',
     showUploadList: false,
@@ -845,14 +901,18 @@ export default function AfterSalesBatchPage() {
           </Space>
         }
       >
-        <style>{`.after-sales-batch-table .ant-table-thead > tr > th { white-space: nowrap; }`}</style>
+        <style>{`
+          .after-sales-batch-table .ant-table-thead > tr > th { white-space: nowrap; }
+          .after-sales-batch-table .ant-table-tbody > tr > td { vertical-align: middle; }
+          .after-sales-batch-table .ant-btn { white-space: nowrap; }
+        `}</style>
         <Table
           className="after-sales-batch-table"
           rowKey="work_order_serial"
           loading={loading}
           dataSource={records}
           rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-          scroll={{ x: 2000 }}
+          scroll={{ x: 2300 }}
           tableLayout="fixed"
           pagination={{
             current: page,
@@ -870,8 +930,12 @@ export default function AfterSalesBatchPage() {
               title: t('Creation source'),
               dataIndex: 'creation_source',
               key: 'creation_source',
-              width: 130,
-              render: (value: string) => (value === 'daily' ? t('Daily order push') : t('Local creation')),
+              width: 170,
+              render: (value: string) => (
+                <span style={{ whiteSpace: 'nowrap' }}>
+                  {value === 'daily' ? t('Daily order push') : t('Local creation')}
+                </span>
+              ),
             },
             {
               title: t('Owner'),
@@ -891,7 +955,7 @@ export default function AfterSalesBatchPage() {
               title: t('Issue type'),
               dataIndex: 'buyer_issue_type',
               key: 'buyer_issue_type',
-              width: 160,
+              width: 220,
               ellipsis: true,
             },
             {
@@ -934,44 +998,63 @@ export default function AfterSalesBatchPage() {
               title: t('Actions'),
               key: 'actions',
               fixed: 'right' as const,
-              width: 280,
-              render: (_value: unknown, record: Record<string, any>) => (
-                <Space>
-                  <Button size="small" type="link" onClick={() => setDetailRecord(record)}>
-                    {t('View details')}
-                  </Button>
-                  <Button
-                    size="small"
-                    icon={<EyeOutlined />}
-                    disabled={!record.guide_serial}
-                    onClick={() => void handleViewGuide(record)}
-                  >
-                    {t('View guide')}
-                  </Button>
-                  {(() => {
-                    const hasGuide = Boolean(record.guide_serial);
-                    const disabled =
-                      hasGuide && (record.guide_review_status === '已审核' || record.guide_has_actual_reply);
-                    return (
-                      <Button
-                        size="small"
-                        icon={<RedoOutlined />}
-                        disabled={disabled}
-                        title={
-                          record.guide_review_status === '已审核'
-                            ? t('Regenerate blocked reviewed')
-                            : record.guide_has_actual_reply
-                              ? t('Regenerate blocked replied')
-                              : undefined
-                        }
-                        onClick={() => void (hasGuide ? handleRegenerate(record) : handleGenerate(record))}
-                      >
-                        {hasGuide ? t('Regenerate') : t('Generate guide')}
-                      </Button>
-                    );
-                  })()}
-                </Space>
-              ),
+              width: 430,
+              render: (_value: unknown, record: Record<string, any>) => {
+                const hasGuide = Boolean(record.guide_serial);
+                const blockedReason =
+                  record.guide_review_status === '已审核'
+                    ? t('Regenerate blocked reviewed')
+                    : record.guide_has_actual_reply
+                      ? t('Regenerate blocked replied')
+                      : undefined;
+                const regenerateDisabled = hasGuide && Boolean(blockedReason);
+                return (
+                  <Space size={8} wrap={false}>
+                    <Button
+                      size="middle"
+                      icon={<EditOutlined />}
+                      style={{ height: 34, color: 'rgba(0,0,0,0.88)' }}
+                      onClick={() => openEditModal(record)}
+                    >
+                      {t('Edit work order')}
+                    </Button>
+                    <Button
+                      size="middle"
+                      icon={<FileTextOutlined />}
+                      style={{ height: 34, color: 'rgba(0,0,0,0.88)' }}
+                      onClick={() => setDetailRecord(record)}
+                    >
+                      {t('View details')}
+                    </Button>
+                    <Tooltip title={!record.guide_serial ? t('Guide unavailable') : undefined}>
+                      <span style={{ display: 'inline-block' }}>
+                        <Button
+                          size="middle"
+                          icon={<EyeOutlined />}
+                          disabled={!record.guide_serial}
+                          style={{ height: 34, color: record.guide_serial ? 'rgba(0,0,0,0.88)' : undefined }}
+                          onClick={() => void handleViewGuide(record)}
+                        >
+                          {t('View guide')}
+                        </Button>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title={blockedReason}>
+                      <span style={{ display: 'inline-block' }}>
+                        <Button
+                          size="middle"
+                          icon={<RedoOutlined />}
+                          disabled={regenerateDisabled}
+                          style={{ height: 34, color: regenerateDisabled ? undefined : 'rgba(0,0,0,0.88)' }}
+                          onClick={() => void (hasGuide ? handleRegenerate(record) : handleGenerate(record))}
+                        >
+                          {hasGuide ? t('Regenerate') : t('Generate guide')}
+                        </Button>
+                      </span>
+                    </Tooltip>
+                  </Space>
+                );
+              },
             },
           ]}
         />
@@ -983,6 +1066,13 @@ export default function AfterSalesBatchPage() {
         onClose={() => setDetailRecord(null)}
         width={620}
         destroyOnClose
+        extra={
+          detailRecord ? (
+            <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(detailRecord)}>
+              {t('Edit work order')}
+            </Button>
+          ) : null
+        }
       >
         {detailRecord ? (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -1062,6 +1152,60 @@ export default function AfterSalesBatchPage() {
           onFinish={(values) => void handleCreate(values)}
         >
           <Alert style={{ marginBottom: 12 }} type="info" message={t('Order id or buyer email required')} showIcon />
+          <Form.Item name="order_id" label={t('Order ID')}>
+            <Input placeholder="113-9233930-0206620" />
+          </Form.Item>
+          <Form.Item name="buyer_email" label={t('Buyer email')}>
+            <Input placeholder="buyer@example.com" />
+          </Form.Item>
+          <Form.Item name="reply_greeting" label={t('Reply greeting')} rules={[{ required: true }]}>
+            <Select options={greetingOptions} />
+          </Form.Item>
+          <Form.Item name="buyer_issue_type" label={t('Issue type')}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="additional_context" label={t('Additional context')}>
+            <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="tone_and_language" label={t('Tone and language')}>
+            <Input.TextArea rows={2} />
+          </Form.Item>
+          <Form.Item name="reply_preference" label={t('Reply preference')}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="email_length" label={t('Email length')}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="case_template_path" label={t('Template path')}>
+            <Input />
+          </Form.Item>
+          <Space style={{ width: '100%' }}>
+            <Form.Item name="table_a_depth" label={t('Table A depth')} style={{ flex: 1 }}>
+              <InputNumber min={1} max={100} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="table_b_depth" label={t('Table B depth')} style={{ flex: 1 }}>
+              <InputNumber min={1} max={100} style={{ width: '100%' }} />
+            </Form.Item>
+          </Space>
+        </Form>
+      </Modal>
+
+      <Modal
+        open={editVisible}
+        title={t('Edit work order')}
+        onCancel={() => {
+          setEditVisible(false);
+          setEditingRecord(null);
+        }}
+        onOk={() => editForm.submit()}
+        confirmLoading={editSaving}
+        destroyOnClose
+      >
+        <Form form={editForm} layout="vertical" onFinish={(values) => void handleEdit(values)}>
+          <Alert style={{ marginBottom: 12 }} type="info" message={t('Order id or buyer email required')} showIcon />
+          {editingRecord?.guide_serial ? (
+            <Alert style={{ marginBottom: 12 }} type="warning" showIcon message={t('Edit guide impact')} />
+          ) : null}
           <Form.Item name="order_id" label={t('Order ID')}>
             <Input placeholder="113-9233930-0206620" />
           </Form.Item>
