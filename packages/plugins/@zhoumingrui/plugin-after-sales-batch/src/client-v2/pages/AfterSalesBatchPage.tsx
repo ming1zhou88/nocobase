@@ -964,7 +964,7 @@ export default function AfterSalesBatchPage() {
             loading={loading}
             dataSource={records}
             rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-            scroll={{ x: 1930, y: tableScrollY }}
+            scroll={{ x: 1900, y: tableScrollY }}
             tableLayout="fixed"
             pagination={{
               current: page,
@@ -1021,7 +1021,7 @@ export default function AfterSalesBatchPage() {
                 title: t('Issue type'),
                 dataIndex: 'buyer_issue_type',
                 key: 'buyer_issue_type',
-                width: 285,
+                width: 255,
                 ellipsis: true,
               },
               {
