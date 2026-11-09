@@ -960,12 +960,11 @@ export default function AfterSalesBatchPage() {
         <div ref={tableWrapRef} style={{ flex: 1, minHeight: 0 }}>
           <Table
             className="after-sales-batch-table"
-            style={{ height: '100%' }}
             rowKey="work_order_serial"
             loading={loading}
             dataSource={records}
             rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-            scroll={{ x: 2100, y: tableScrollY }}
+            scroll={{ x: 1920, y: tableScrollY }}
             tableLayout="fixed"
             pagination={{
               current: page,
@@ -983,7 +982,7 @@ export default function AfterSalesBatchPage() {
                 title: t('Creation source'),
                 dataIndex: 'creation_source',
                 key: 'creation_source',
-                width: 150,
+                width: 145,
                 render: (value: string) => (
                   <span style={{ whiteSpace: 'nowrap' }}>
                     {value === 'daily' ? t('Daily order push') : t('Local creation')}
@@ -994,42 +993,42 @@ export default function AfterSalesBatchPage() {
                 title: t('Owner'),
                 dataIndex: 'owner_name',
                 key: 'owner_name',
-                width: 110,
+                width: 105,
                 render: (value: string | null) => <span style={{ whiteSpace: 'nowrap' }}>{value || '-'}</span>,
               },
               {
                 title: t('Order ID'),
                 dataIndex: 'order_id',
                 key: 'order_id',
-                width: 185,
+                width: 175,
                 render: (value: string | null) => (value ? <span style={{ whiteSpace: 'nowrap' }}>{value}</span> : '-'),
               },
               {
                 title: t('Has AI guide'),
                 dataIndex: 'has_guide',
                 key: 'has_guide',
-                width: 120,
+                width: 110,
                 render: (value: string) => <Tag color={value === '是' ? 'success' : 'default'}>{value}</Tag>,
               },
               {
                 title: t('Guide serial'),
                 dataIndex: 'guide_serial',
                 key: 'guide_serial',
-                width: 150,
+                width: 120,
                 render: (value: string | null) => value || '-',
               },
               {
                 title: t('Issue type'),
                 dataIndex: 'buyer_issue_type',
                 key: 'buyer_issue_type',
-                width: 200,
+                width: 285,
                 ellipsis: true,
               },
               {
                 // 表 A / 表 B 获取深度合并为一列，和旧版工作台一致（如 3/1）
                 title: t('Fetch depth (A/B)'),
                 key: 'fetch_depth',
-                width: 110,
+                width: 100,
                 render: (_value: unknown, record: Record<string, any>) =>
                   `${record.table_a_depth ?? '-'} / ${record.table_b_depth ?? '-'}`,
               },
@@ -1037,15 +1036,19 @@ export default function AfterSalesBatchPage() {
                 title: t('Generated at'),
                 dataIndex: 'guide_generated_at',
                 key: 'guide_generated_at',
-                width: 150,
-                render: (value: string | null) => formatCnDateTime(value),
+                width: 155,
+                render: (value: string | null) => (
+                  <span style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{formatCnDateTime(value)}</span>
+                ),
               },
               {
                 title: t('Created at'),
                 dataIndex: 'created_at',
                 key: 'created_at',
-                width: 150,
-                render: (value: string | null) => formatCnDateTime(value),
+                width: 155,
+                render: (value: string | null) => (
+                  <span style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{formatCnDateTime(value)}</span>
+                ),
               },
               {
                 title: t('Actions'),
@@ -1065,7 +1068,7 @@ export default function AfterSalesBatchPage() {
                     height: 30,
                     paddingInline: 4,
                     fontSize: 13,
-                    ...(disabled ? {} : { color: '#1677ff', borderColor: '#91caff', background: '#f6fbff' }),
+                    ...(disabled ? {} : { color: '#1677ff' }),
                   });
                   return (
                     <Space size={6} wrap={false}>
