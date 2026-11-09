@@ -230,6 +230,7 @@ export default function AfterSalesBatchPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(30);
   const [keyword, setKeyword] = useState('');
+  const [keywordInput, setKeywordInput] = useState('');
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [greetingOptions, setGreetingOptions] = useState(DEFAULT_GREETING_OPTIONS);
   const [createVisible, setCreateVisible] = useState(false);
@@ -904,12 +905,30 @@ export default function AfterSalesBatchPage() {
             style={{ width: 240 }}
             placeholder={t('Keyword')}
             allowClear
+            value={keywordInput}
+            onChange={(event) => {
+              const value = event.target.value;
+              setKeywordInput(value);
+              // 清空输入框（含 allowClear 的 ×）时同步解除筛选
+              if (!value && keyword) {
+                setKeyword('');
+                void loadWorkOrders(1, pageSize, '');
+              }
+            }}
             onSearch={(value) => {
+              setKeywordInput(value);
               setKeyword(value);
               void loadWorkOrders(1, pageSize, value);
             }}
           />
-          <Button icon={<ReloadOutlined />} onClick={() => void loadWorkOrders(page, pageSize, keyword)}>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => {
+              setKeywordInput('');
+              setKeyword('');
+              void loadWorkOrders(1, pageSize, '');
+            }}
+          >
             {t('Refresh')}
           </Button>
           <Upload {...uploadProps}>
