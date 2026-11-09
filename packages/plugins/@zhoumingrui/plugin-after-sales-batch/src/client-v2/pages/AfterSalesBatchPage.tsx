@@ -942,7 +942,15 @@ export default function AfterSalesBatchPage() {
         </Space>
         <style>{`
           .after-sales-batch-table .ant-table-thead > tr > th { white-space: nowrap; }
-          .after-sales-batch-table .ant-table-tbody > tr > td {
+          .after-sales-batch-table .ant-table-measure-row,
+          .after-sales-batch-table .ant-table-measure-row > td {
+            height: 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            line-height: 0 !important;
+            font-size: 0 !important;
+          }
+          .after-sales-batch-table .ant-table-tbody > tr:not(.ant-table-measure-row) > td {
             vertical-align: middle;
             padding-top: 4px !important;
             padding-bottom: 4px !important;
@@ -957,7 +965,7 @@ export default function AfterSalesBatchPage() {
             loading={loading}
             dataSource={records}
             rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-            scroll={{ x: 2250, y: tableScrollY }}
+            scroll={{ x: 2100, y: tableScrollY }}
             tableLayout="fixed"
             pagination={{
               current: page,
@@ -970,12 +978,12 @@ export default function AfterSalesBatchPage() {
               },
             }}
             columns={[
-              { title: t('Work order serial'), dataIndex: 'work_order_serial', key: 'work_order_serial', width: 190 },
+              { title: t('Work order serial'), dataIndex: 'work_order_serial', key: 'work_order_serial', width: 150 },
               {
                 title: t('Creation source'),
                 dataIndex: 'creation_source',
                 key: 'creation_source',
-                width: 170,
+                width: 150,
                 render: (value: string) => (
                   <span style={{ whiteSpace: 'nowrap' }}>
                     {value === 'daily' ? t('Daily order push') : t('Local creation')}
@@ -986,42 +994,42 @@ export default function AfterSalesBatchPage() {
                 title: t('Owner'),
                 dataIndex: 'owner_name',
                 key: 'owner_name',
-                width: 150,
+                width: 110,
                 render: (value: string | null) => <span style={{ whiteSpace: 'nowrap' }}>{value || '-'}</span>,
               },
               {
                 title: t('Order ID'),
                 dataIndex: 'order_id',
                 key: 'order_id',
-                width: 210,
+                width: 185,
                 render: (value: string | null) => (value ? <span style={{ whiteSpace: 'nowrap' }}>{value}</span> : '-'),
               },
               {
                 title: t('Has AI guide'),
                 dataIndex: 'has_guide',
                 key: 'has_guide',
-                width: 180,
+                width: 120,
                 render: (value: string) => <Tag color={value === '是' ? 'success' : 'default'}>{value}</Tag>,
               },
               {
                 title: t('Guide serial'),
                 dataIndex: 'guide_serial',
                 key: 'guide_serial',
-                width: 180,
+                width: 150,
                 render: (value: string | null) => value || '-',
               },
               {
                 title: t('Issue type'),
                 dataIndex: 'buyer_issue_type',
                 key: 'buyer_issue_type',
-                width: 220,
+                width: 200,
                 ellipsis: true,
               },
               {
                 // 表 A / 表 B 获取深度合并为一列，和旧版工作台一致（如 3/1）
                 title: t('Fetch depth (A/B)'),
                 key: 'fetch_depth',
-                width: 130,
+                width: 110,
                 render: (_value: unknown, record: Record<string, any>) =>
                   `${record.table_a_depth ?? '-'} / ${record.table_b_depth ?? '-'}`,
               },
@@ -1029,14 +1037,14 @@ export default function AfterSalesBatchPage() {
                 title: t('Generated at'),
                 dataIndex: 'guide_generated_at',
                 key: 'guide_generated_at',
-                width: 165,
+                width: 150,
                 render: (value: string | null) => formatCnDateTime(value),
               },
               {
                 title: t('Created at'),
                 dataIndex: 'created_at',
                 key: 'created_at',
-                width: 165,
+                width: 150,
                 render: (value: string | null) => formatCnDateTime(value),
               },
               {
@@ -1053,12 +1061,18 @@ export default function AfterSalesBatchPage() {
                         ? t('Regenerate blocked replied')
                         : undefined;
                   const regenerateDisabled = hasGuide && Boolean(blockedReason);
+                  const actionStyle = (disabled = false) => ({
+                    height: 30,
+                    paddingInline: 4,
+                    fontSize: 13,
+                    ...(disabled ? {} : { color: '#1677ff', borderColor: '#91caff', background: '#f6fbff' }),
+                  });
                   return (
                     <Space size={6} wrap={false}>
                       <Button
                         size="middle"
                         icon={<EditOutlined />}
-                        style={{ height: 30, paddingInline: 4, fontSize: 13, color: 'rgba(0,0,0,0.88)' }}
+                        style={actionStyle()}
                         onClick={() => openEditModal(record)}
                       >
                         {t('Edit work order')}
@@ -1066,7 +1080,7 @@ export default function AfterSalesBatchPage() {
                       <Button
                         size="middle"
                         icon={<FileTextOutlined />}
-                        style={{ height: 30, paddingInline: 4, fontSize: 13, color: 'rgba(0,0,0,0.88)' }}
+                        style={actionStyle()}
                         onClick={() => setDetailRecord(record)}
                       >
                         {t('View details')}
@@ -1077,12 +1091,7 @@ export default function AfterSalesBatchPage() {
                             size="middle"
                             icon={<EyeOutlined />}
                             disabled={!record.guide_serial}
-                            style={{
-                              height: 30,
-                              paddingInline: 4,
-                              fontSize: 13,
-                              color: record.guide_serial ? 'rgba(0,0,0,0.88)' : undefined,
-                            }}
+                            style={actionStyle(!record.guide_serial)}
                             onClick={() => void handleViewGuide(record)}
                           >
                             {t('View guide')}
@@ -1095,12 +1104,7 @@ export default function AfterSalesBatchPage() {
                             size="middle"
                             icon={<RedoOutlined />}
                             disabled={regenerateDisabled}
-                            style={{
-                              height: 30,
-                              paddingInline: 4,
-                              fontSize: 13,
-                              color: regenerateDisabled ? undefined : 'rgba(0,0,0,0.88)',
-                            }}
+                            style={actionStyle(regenerateDisabled)}
                             onClick={() => void (hasGuide ? handleRegenerate(record) : handleGenerate(record))}
                           >
                             {hasGuide ? t('Regenerate') : t('Generate guide')}
