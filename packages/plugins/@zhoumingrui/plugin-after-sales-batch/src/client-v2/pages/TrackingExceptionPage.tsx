@@ -1720,7 +1720,7 @@ export default function TrackingExceptionPage() {
           {workOrderMode === 'link' ? (
             <Space direction="vertical" style={{ width: '100%' }}>
               <Typography.Text type="secondary">
-                填入「售后批处理工作台」已有的工单号，只绑定，不新建工单。
+                填入「售后工单工作台」已有的工单号，只绑定，不新建工单。
               </Typography.Text>
               <Input
                 value={linkSerial}

@@ -26,7 +26,6 @@ import {
   Radio,
   Select,
   Space,
-  Statistic,
   Table,
   Tag,
   Tooltip,
@@ -242,6 +241,22 @@ export default function AfterSalesBatchPage() {
   const [detailRecord, setDetailRecord] = useState<Record<string, any> | null>(null);
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
+  const tableWrapRef = useRef<HTMLDivElement>(null);
+  const [tableScrollY, setTableScrollY] = useState(420);
+
+  useEffect(() => {
+    const element = tableWrapRef.current;
+    if (!element) return undefined;
+    const updateHeight = () => {
+      const headerHeight = element.querySelector('.ant-table-thead')?.clientHeight || 46;
+      const paginationHeight = element.querySelector('.ant-pagination')?.clientHeight || 56;
+      setTableScrollY(Math.max(160, element.clientHeight - headerHeight - paginationHeight - 2));
+    };
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element);
+    updateHeight();
+    return () => observer.disconnect();
+  }, []);
 
   const [batchSerial, setBatchSerial] = useState<string | null>(null);
   const [batchRecord, setBatchRecord] = useState<Record<string, any> | null>(null);
@@ -788,7 +803,17 @@ export default function AfterSalesBatchPage() {
   const failures = Array.isArray(batchRecord?.failure_detail) ? batchRecord.failure_detail : [];
 
   return (
-    <Space direction="vertical" size={16} style={{ display: 'flex', padding: 24 }}>
+    <div
+      style={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        padding: 24,
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+      }}
+    >
       <Space align="center">
         <Typography.Title level={3} style={{ marginBottom: 0 }}>
           {t('After-sales batch workbench')}
@@ -810,7 +835,10 @@ export default function AfterSalesBatchPage() {
       </Typography.Paragraph>
 
       <Card
+        size="small"
         title={t('Batch progress')}
+        style={{ flexShrink: 0 }}
+        styles={{ body: { padding: '12px 16px' } }}
         extra={
           <Space>
             {batchStatus ? <Tag color={batchStatus.color}>{t(batchStatus.label)}</Tag> : null}
@@ -829,18 +857,29 @@ export default function AfterSalesBatchPage() {
           </Space>
         }
       >
-        <Space size={48} wrap>
-          <Statistic title={t('Total')} value={batchProgress.totalCount} />
-          <Statistic title={t('Completed')} value={batchProgress.done} valueStyle={{ color: '#3f8600' }} />
-          <Statistic title={t('Remaining')} value={batchProgress.pending} />
-          <Statistic title={t('Failed')} value={batchProgress.failed} valueStyle={{ color: '#cf1322' }} />
-          <Statistic title={t('Skipped')} value={batchProgress.skipped} />
-        </Space>
-        <Progress percent={batchProgress.percent} style={{ marginTop: 16 }} />
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 24, flexWrap: 'wrap' }}>
+          {[
+            { label: 'Total', value: batchProgress.totalCount, color: undefined },
+            { label: 'Completed', value: batchProgress.done, color: '#3f8600' },
+            { label: 'Remaining', value: batchProgress.pending, color: undefined },
+            { label: 'Failed', value: batchProgress.failed, color: '#cf1322' },
+            { label: 'Skipped', value: batchProgress.skipped, color: undefined },
+          ].map((item) => (
+            <span key={item.label}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {t(item.label)}
+              </Typography.Text>
+              <Typography.Text strong style={{ fontSize: 18, marginLeft: 6, color: item.color }}>
+                {item.value}
+              </Typography.Text>
+            </span>
+          ))}
+        </div>
+        <Progress percent={batchProgress.percent} size="small" strokeWidth={6} style={{ marginTop: 8 }} />
         {failures.length ? (
           <Alert
             type="error"
-            style={{ marginTop: 12 }}
+            style={{ marginTop: 8 }}
             message={t('Failure detail')}
             description={
               <Space direction="vertical" size={2}>
@@ -857,207 +896,224 @@ export default function AfterSalesBatchPage() {
 
       <Card
         title={t('Work orders')}
-        extra={
-          <Space wrap>
-            <Input.Search
-              style={{ width: 240 }}
-              placeholder={t('Keyword')}
-              allowClear
-              onSearch={(value) => {
-                setKeyword(value);
-                void loadWorkOrders(1, pageSize, value);
-              }}
-            />
-            <Button icon={<ReloadOutlined />} onClick={() => void loadWorkOrders(page, pageSize, keyword)}>
-              {t('Refresh')}
-            </Button>
-            <Upload {...uploadProps}>
-              <Button icon={<UploadOutlined />}>{t('Import file')}</Button>
-            </Upload>
-            <Button icon={<DownloadOutlined />} onClick={downloadImportTemplate}>
-              {t('Download template')}
-            </Button>
-            <Button icon={<PlusOutlined />} type="primary" onClick={() => void openCreateModal()}>
-              {t('Create work order')}
-            </Button>
-            <Select
-              style={{ width: 150 }}
-              value={provider}
-              onChange={(value) => setProvider(value)}
-              options={[
-                { value: 'dify', label: t('Dify workflow') },
-                { value: 'local', label: t('Local AI employee') },
-              ]}
-            />
-            <Button icon={<PlayCircleOutlined />} loading={starting} onClick={() => void handleStartBatch()}>
-              {t('Start batch')}
-            </Button>
-            <Button danger icon={<DeleteOutlined />} onClick={() => void handleDelete()}>
-              {t('Delete selected')}
-            </Button>
-            <Typography.Text type="secondary">
-              {t('Batch size hint')}（{selectedRowKeys.length}/{MAX_BATCH_SIZE}）
-            </Typography.Text>
-          </Space>
-        }
+        style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}
+        styles={{ body: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: 12 } }}
       >
+        <Space wrap style={{ marginBottom: 8, flexShrink: 0 }}>
+          <Input.Search
+            style={{ width: 240 }}
+            placeholder={t('Keyword')}
+            allowClear
+            onSearch={(value) => {
+              setKeyword(value);
+              void loadWorkOrders(1, pageSize, value);
+            }}
+          />
+          <Button icon={<ReloadOutlined />} onClick={() => void loadWorkOrders(page, pageSize, keyword)}>
+            {t('Refresh')}
+          </Button>
+          <Upload {...uploadProps}>
+            <Button icon={<UploadOutlined />}>{t('Import file')}</Button>
+          </Upload>
+          <Button icon={<DownloadOutlined />} onClick={downloadImportTemplate}>
+            {t('Download template')}
+          </Button>
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => void openCreateModal()}>
+            {t('Create work order')}
+          </Button>
+          <Select
+            style={{ width: 150 }}
+            value={provider}
+            onChange={(value) => setProvider(value)}
+            options={[
+              { value: 'dify', label: t('Dify workflow') },
+              { value: 'local', label: t('Local AI employee') },
+            ]}
+          />
+          <Button icon={<PlayCircleOutlined />} loading={starting} onClick={() => void handleStartBatch()}>
+            {t('Start batch')}
+          </Button>
+          <Button danger icon={<DeleteOutlined />} onClick={() => void handleDelete()}>
+            {t('Delete selected')}
+          </Button>
+          <Typography.Text type="secondary">
+            {t('Batch size hint')}（{selectedRowKeys.length}/{MAX_BATCH_SIZE}）
+          </Typography.Text>
+        </Space>
         <style>{`
           .after-sales-batch-table .ant-table-thead > tr > th { white-space: nowrap; }
-          .after-sales-batch-table .ant-table-tbody > tr > td { vertical-align: middle; }
+          .after-sales-batch-table .ant-table-tbody > tr > td {
+            vertical-align: middle;
+            padding-top: 4px !important;
+            padding-bottom: 4px !important;
+          }
           .after-sales-batch-table .ant-btn { white-space: nowrap; }
         `}</style>
-        <Table
-          className="after-sales-batch-table"
-          rowKey="work_order_serial"
-          loading={loading}
-          dataSource={records}
-          rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-          scroll={{ x: 2300 }}
-          tableLayout="fixed"
-          pagination={{
-            current: page,
-            pageSize,
-            total,
-            showSizeChanger: true,
-            pageSizeOptions: ['10', '20', '30', '50', '100'],
-            onChange: (nextPage, nextPageSize) => {
-              void loadWorkOrders(nextPage, nextPageSize, keyword);
-            },
-          }}
-          columns={[
-            { title: t('Work order serial'), dataIndex: 'work_order_serial', key: 'work_order_serial', width: 190 },
-            {
-              title: t('Creation source'),
-              dataIndex: 'creation_source',
-              key: 'creation_source',
-              width: 170,
-              render: (value: string) => (
-                <span style={{ whiteSpace: 'nowrap' }}>
-                  {value === 'daily' ? t('Daily order push') : t('Local creation')}
-                </span>
-              ),
-            },
-            {
-              title: t('Owner'),
-              dataIndex: 'owner_name',
-              key: 'owner_name',
-              width: 150,
-              render: (value: string | null) => <span style={{ whiteSpace: 'nowrap' }}>{value || '-'}</span>,
-            },
-            {
-              title: t('Order ID'),
-              dataIndex: 'order_id',
-              key: 'order_id',
-              width: 210,
-              render: (value: string | null) => (value ? <span style={{ whiteSpace: 'nowrap' }}>{value}</span> : '-'),
-            },
-            {
-              title: t('Issue type'),
-              dataIndex: 'buyer_issue_type',
-              key: 'buyer_issue_type',
-              width: 220,
-              ellipsis: true,
-            },
-            {
-              // 表 A / 表 B 获取深度合并为一列，和旧版工作台一致（如 3/1）
-              title: t('Fetch depth (A/B)'),
-              key: 'fetch_depth',
-              width: 130,
-              render: (_value: unknown, record: Record<string, any>) =>
-                `${record.table_a_depth ?? '-'} / ${record.table_b_depth ?? '-'}`,
-            },
-            {
-              title: t('Has AI guide'),
-              dataIndex: 'has_guide',
-              key: 'has_guide',
-              width: 180,
-              render: (value: string) => <Tag color={value === '是' ? 'success' : 'default'}>{value}</Tag>,
-            },
-            {
-              title: t('Guide serial'),
-              dataIndex: 'guide_serial',
-              key: 'guide_serial',
-              width: 180,
-              render: (value: string | null) => value || '-',
-            },
-            {
-              title: t('Generated at'),
-              dataIndex: 'guide_generated_at',
-              key: 'guide_generated_at',
-              width: 165,
-              render: (value: string | null) => formatCnDateTime(value),
-            },
-            {
-              title: t('Created at'),
-              dataIndex: 'created_at',
-              key: 'created_at',
-              width: 165,
-              render: (value: string | null) => formatCnDateTime(value),
-            },
-            {
-              title: t('Actions'),
-              key: 'actions',
-              fixed: 'right' as const,
-              width: 430,
-              render: (_value: unknown, record: Record<string, any>) => {
-                const hasGuide = Boolean(record.guide_serial);
-                const blockedReason =
-                  record.guide_review_status === '已审核'
-                    ? t('Regenerate blocked reviewed')
-                    : record.guide_has_actual_reply
-                      ? t('Regenerate blocked replied')
-                      : undefined;
-                const regenerateDisabled = hasGuide && Boolean(blockedReason);
-                return (
-                  <Space size={8} wrap={false}>
-                    <Button
-                      size="middle"
-                      icon={<EditOutlined />}
-                      style={{ height: 34, color: 'rgba(0,0,0,0.88)' }}
-                      onClick={() => openEditModal(record)}
-                    >
-                      {t('Edit work order')}
-                    </Button>
-                    <Button
-                      size="middle"
-                      icon={<FileTextOutlined />}
-                      style={{ height: 34, color: 'rgba(0,0,0,0.88)' }}
-                      onClick={() => setDetailRecord(record)}
-                    >
-                      {t('View details')}
-                    </Button>
-                    <Tooltip title={!record.guide_serial ? t('Guide unavailable') : undefined}>
-                      <span style={{ display: 'inline-block' }}>
-                        <Button
-                          size="middle"
-                          icon={<EyeOutlined />}
-                          disabled={!record.guide_serial}
-                          style={{ height: 34, color: record.guide_serial ? 'rgba(0,0,0,0.88)' : undefined }}
-                          onClick={() => void handleViewGuide(record)}
-                        >
-                          {t('View guide')}
-                        </Button>
-                      </span>
-                    </Tooltip>
-                    <Tooltip title={blockedReason}>
-                      <span style={{ display: 'inline-block' }}>
-                        <Button
-                          size="middle"
-                          icon={<RedoOutlined />}
-                          disabled={regenerateDisabled}
-                          style={{ height: 34, color: regenerateDisabled ? undefined : 'rgba(0,0,0,0.88)' }}
-                          onClick={() => void (hasGuide ? handleRegenerate(record) : handleGenerate(record))}
-                        >
-                          {hasGuide ? t('Regenerate') : t('Generate guide')}
-                        </Button>
-                      </span>
-                    </Tooltip>
-                  </Space>
-                );
+        <div ref={tableWrapRef} style={{ flex: 1, minHeight: 0 }}>
+          <Table
+            className="after-sales-batch-table"
+            style={{ height: '100%' }}
+            rowKey="work_order_serial"
+            loading={loading}
+            dataSource={records}
+            rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+            scroll={{ x: 2250, y: tableScrollY }}
+            tableLayout="fixed"
+            pagination={{
+              current: page,
+              pageSize,
+              total,
+              showSizeChanger: true,
+              pageSizeOptions: ['10', '20', '30', '50', '100'],
+              onChange: (nextPage, nextPageSize) => {
+                void loadWorkOrders(nextPage, nextPageSize, keyword);
               },
-            },
-          ]}
-        />
+            }}
+            columns={[
+              { title: t('Work order serial'), dataIndex: 'work_order_serial', key: 'work_order_serial', width: 190 },
+              {
+                title: t('Creation source'),
+                dataIndex: 'creation_source',
+                key: 'creation_source',
+                width: 170,
+                render: (value: string) => (
+                  <span style={{ whiteSpace: 'nowrap' }}>
+                    {value === 'daily' ? t('Daily order push') : t('Local creation')}
+                  </span>
+                ),
+              },
+              {
+                title: t('Owner'),
+                dataIndex: 'owner_name',
+                key: 'owner_name',
+                width: 150,
+                render: (value: string | null) => <span style={{ whiteSpace: 'nowrap' }}>{value || '-'}</span>,
+              },
+              {
+                title: t('Order ID'),
+                dataIndex: 'order_id',
+                key: 'order_id',
+                width: 210,
+                render: (value: string | null) => (value ? <span style={{ whiteSpace: 'nowrap' }}>{value}</span> : '-'),
+              },
+              {
+                title: t('Has AI guide'),
+                dataIndex: 'has_guide',
+                key: 'has_guide',
+                width: 180,
+                render: (value: string) => <Tag color={value === '是' ? 'success' : 'default'}>{value}</Tag>,
+              },
+              {
+                title: t('Guide serial'),
+                dataIndex: 'guide_serial',
+                key: 'guide_serial',
+                width: 180,
+                render: (value: string | null) => value || '-',
+              },
+              {
+                title: t('Issue type'),
+                dataIndex: 'buyer_issue_type',
+                key: 'buyer_issue_type',
+                width: 220,
+                ellipsis: true,
+              },
+              {
+                // 表 A / 表 B 获取深度合并为一列，和旧版工作台一致（如 3/1）
+                title: t('Fetch depth (A/B)'),
+                key: 'fetch_depth',
+                width: 130,
+                render: (_value: unknown, record: Record<string, any>) =>
+                  `${record.table_a_depth ?? '-'} / ${record.table_b_depth ?? '-'}`,
+              },
+              {
+                title: t('Generated at'),
+                dataIndex: 'guide_generated_at',
+                key: 'guide_generated_at',
+                width: 165,
+                render: (value: string | null) => formatCnDateTime(value),
+              },
+              {
+                title: t('Created at'),
+                dataIndex: 'created_at',
+                key: 'created_at',
+                width: 165,
+                render: (value: string | null) => formatCnDateTime(value),
+              },
+              {
+                title: t('Actions'),
+                key: 'actions',
+                fixed: 'right' as const,
+                width: 370,
+                render: (_value: unknown, record: Record<string, any>) => {
+                  const hasGuide = Boolean(record.guide_serial);
+                  const blockedReason =
+                    record.guide_review_status === '已审核'
+                      ? t('Regenerate blocked reviewed')
+                      : record.guide_has_actual_reply
+                        ? t('Regenerate blocked replied')
+                        : undefined;
+                  const regenerateDisabled = hasGuide && Boolean(blockedReason);
+                  return (
+                    <Space size={6} wrap={false}>
+                      <Button
+                        size="middle"
+                        icon={<EditOutlined />}
+                        style={{ height: 30, paddingInline: 4, fontSize: 13, color: 'rgba(0,0,0,0.88)' }}
+                        onClick={() => openEditModal(record)}
+                      >
+                        {t('Edit work order')}
+                      </Button>
+                      <Button
+                        size="middle"
+                        icon={<FileTextOutlined />}
+                        style={{ height: 30, paddingInline: 4, fontSize: 13, color: 'rgba(0,0,0,0.88)' }}
+                        onClick={() => setDetailRecord(record)}
+                      >
+                        {t('View details')}
+                      </Button>
+                      <Tooltip title={!record.guide_serial ? t('Guide unavailable') : undefined}>
+                        <span style={{ display: 'inline-block' }}>
+                          <Button
+                            size="middle"
+                            icon={<EyeOutlined />}
+                            disabled={!record.guide_serial}
+                            style={{
+                              height: 30,
+                              paddingInline: 4,
+                              fontSize: 13,
+                              color: record.guide_serial ? 'rgba(0,0,0,0.88)' : undefined,
+                            }}
+                            onClick={() => void handleViewGuide(record)}
+                          >
+                            {t('View guide')}
+                          </Button>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title={blockedReason}>
+                        <span style={{ display: 'inline-block' }}>
+                          <Button
+                            size="middle"
+                            icon={<RedoOutlined />}
+                            disabled={regenerateDisabled}
+                            style={{
+                              height: 30,
+                              paddingInline: 4,
+                              fontSize: 13,
+                              color: regenerateDisabled ? undefined : 'rgba(0,0,0,0.88)',
+                            }}
+                            onClick={() => void (hasGuide ? handleRegenerate(record) : handleGenerate(record))}
+                          >
+                            {hasGuide ? t('Regenerate') : t('Generate guide')}
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    </Space>
+                  );
+                },
+              },
+            ]}
+          />
+        </div>
       </Card>
 
       <Drawer
@@ -1427,6 +1483,6 @@ export default function AfterSalesBatchPage() {
           <Typography.Text type="secondary">{t('No guide generated yet')}</Typography.Text>
         )}
       </Drawer>
-    </Space>
+    </div>
   );
 }
