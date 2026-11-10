@@ -48,8 +48,8 @@ function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
         }
         if (Object.keys(filter).length) {
           resource.addFilterGroup?.('daily-scope', filter);
-        } else if (resource.request?.params) {
-          delete resource.request.params.filter;
+        } else {
+          resource.setFilter?.({});
         }
       }
       await resource.refresh?.();
