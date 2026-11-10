@@ -5,6 +5,7 @@ import {
   EditOutlined,
   EyeOutlined,
   FileTextOutlined,
+  InfoCircleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   RedoOutlined,
@@ -1019,11 +1020,32 @@ export default function AfterSalesBatchPage() {
         style={{ flexShrink: 0 }}
         styles={{ body: { padding: '12px 16px' } }}
         extra={
-          <Space>
+          <Space wrap>
             {batchStatus ? <Tag color={batchStatus.color}>{t(batchStatus.label)}</Tag> : null}
             <Typography.Text type="secondary">
               {batchSerial ? `${t('Batch serial')}: ${batchSerial}` : t('No batch yet')}
             </Typography.Text>
+            <Select
+              size="small"
+              style={{ width: 130 }}
+              value={provider}
+              onChange={(value) => setProvider(value)}
+              options={[
+                { value: 'dify', label: t('Dify workflow') },
+                { value: 'local', label: t('Local AI employee') },
+              ]}
+            />
+            <Tooltip title={t('Batch size detail')}>
+              <Button
+                size="small"
+                type="primary"
+                icon={<PlayCircleOutlined />}
+                loading={starting}
+                onClick={() => void handleStartBatch()}
+              >
+                {t('Start batch')}（{selectedRowKeys.length}/{MAX_BATCH_SIZE}）
+              </Button>
+            </Tooltip>
             <Tooltip title={canRetryBatch ? undefined : t('Retry owner only')}>
               <span style={{ display: 'inline-block' }}>
                 <Button
@@ -1057,6 +1079,9 @@ export default function AfterSalesBatchPage() {
               </Typography.Text>
             </span>
           ))}
+          <Typography.Text type="secondary" style={{ marginLeft: 'auto', fontSize: 12 }}>
+            {t('Batch size hint')}
+          </Typography.Text>
         </div>
         <Progress percent={batchProgress.percent} size="small" strokeWidth={6} style={{ marginTop: 8 }} />
         {failures.length ? (
@@ -1093,7 +1118,7 @@ export default function AfterSalesBatchPage() {
             display: 'flex',
             flexWrap: 'wrap',
             alignItems: 'center',
-            gap: 8,
+            gap: 6,
             marginBottom: 8,
             flexShrink: 0,
           }}
@@ -1113,7 +1138,7 @@ export default function AfterSalesBatchPage() {
           </Button>
           <Input.Search
             allowClear
-            style={{ width: 360 }}
+            style={{ width: 340 }}
             placeholder={t('Keyword hint')}
             value={keywordInput}
             onChange={(event) => {
@@ -1131,9 +1156,15 @@ export default function AfterSalesBatchPage() {
               void loadWorkOrders(1, pageSize, value);
             }}
           />
+          <Tooltip title={t('Created at filter hint')}>
+            <Space size={4} style={{ whiteSpace: 'nowrap', cursor: 'help' }}>
+              <Typography.Text type="secondary">{t('Created at')}</Typography.Text>
+              <InfoCircleOutlined style={{ color: 'rgba(0, 0, 0, 0.45)' }} />
+            </Space>
+          </Tooltip>
           <DatePicker.RangePicker
             allowClear
-            style={{ width: 250 }}
+            style={{ width: 230 }}
             value={
               filters.createdFrom && filters.createdTo ? [dayjs(filters.createdFrom), dayjs(filters.createdTo)] : null
             }
@@ -1155,8 +1186,7 @@ export default function AfterSalesBatchPage() {
             }}
           />
           <Button onClick={resetFilters}>{t('Reset filters')}</Button>
-        </div>
-        <Space wrap style={{ marginBottom: 8, flexShrink: 0 }}>
+          <Divider type="vertical" style={{ margin: 0 }} />
           <Button
             icon={<ReloadOutlined />}
             onClick={() => {
@@ -1174,28 +1204,12 @@ export default function AfterSalesBatchPage() {
           <Button icon={<PlusOutlined />} type="primary" onClick={() => void openCreateModal()}>
             {t('Create work order')}
           </Button>
-          <Divider type="vertical" style={{ margin: 0 }} />
-          <Select
-            style={{ width: 150 }}
-            value={provider}
-            onChange={(value) => setProvider(value)}
-            options={[
-              { value: 'dify', label: t('Dify workflow') },
-              { value: 'local', label: t('Local AI employee') },
-            ]}
-          />
-          <Button icon={<PlayCircleOutlined />} loading={starting} onClick={() => void handleStartBatch()}>
-            {t('Start batch')}
-          </Button>
-          <Button danger icon={<DeleteOutlined />} onClick={() => void handleDelete()}>
-            {t('Delete selected')}
-          </Button>
-          <Tooltip title={t('Batch size detail')}>
-            <Typography.Text type="secondary" style={{ whiteSpace: 'nowrap' }}>
-              {t('Batch size hint')}（{selectedRowKeys.length}/{MAX_BATCH_SIZE}）
-            </Typography.Text>
-          </Tooltip>
-        </Space>
+          {selectedRowKeys.length ? (
+            <Button danger icon={<DeleteOutlined />} onClick={() => void handleDelete()}>
+              {t('Delete selected')}（{selectedRowKeys.length}）
+            </Button>
+          ) : null}
+        </div>
         <style>{`
           .after-sales-batch-table .ant-table-thead > tr > th { white-space: nowrap; }
           .after-sales-batch-table .ant-table-measure-row,
@@ -1225,7 +1239,7 @@ export default function AfterSalesBatchPage() {
               // 非本人负责的行不允许勾选，避免批量生成/删除越过行级权限
               getCheckboxProps: (record: Record<string, any>) => ({ disabled: !canOperateRow(record) }),
             }}
-            scroll={{ x: 1900, y: tableScrollY }}
+            scroll={{ x: 1650, y: tableScrollY }}
             tableLayout="fixed"
             pagination={{
               current: page,
@@ -1243,7 +1257,7 @@ export default function AfterSalesBatchPage() {
                 title: t('Creation source'),
                 dataIndex: 'creation_source',
                 key: 'creation_source',
-                width: 145,
+                width: 130,
                 render: (value: string) => (
                   <span style={{ whiteSpace: 'nowrap' }}>
                     {value === 'daily' ? t('Daily order push') : t('Local creation')}
@@ -1261,7 +1275,7 @@ export default function AfterSalesBatchPage() {
                 title: t('Order ID'),
                 dataIndex: 'order_id',
                 key: 'order_id',
-                width: 175,
+                width: 165,
                 render: (value: string | null) => (value ? <span style={{ whiteSpace: 'nowrap' }}>{value}</span> : '-'),
               },
               {
@@ -1282,7 +1296,7 @@ export default function AfterSalesBatchPage() {
                 title: t('Issue type'),
                 dataIndex: 'buyer_issue_type',
                 key: 'buyer_issue_type',
-                width: 255,
+                width: 210,
                 ellipsis: true,
               },
               {
@@ -1292,15 +1306,6 @@ export default function AfterSalesBatchPage() {
                 width: 100,
                 render: (_value: unknown, record: Record<string, any>) =>
                   `${record.table_a_depth ?? '-'} / ${record.table_b_depth ?? '-'}`,
-              },
-              {
-                title: t('Generated at'),
-                dataIndex: 'guide_generated_at',
-                key: 'guide_generated_at',
-                width: 160,
-                render: (value: string | null) => (
-                  <span style={{ whiteSpace: 'nowrap' }}>{formatCnDateTime(value)}</span>
-                ),
               },
               {
                 title: t('Created at'),

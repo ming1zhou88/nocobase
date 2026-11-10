@@ -249,6 +249,7 @@
   "My data": "My data",
   "Retry owner only": "Only the batch trigger, after-sales manager or duty agent can retry failed items",
   "Express notification": "Express notification",
-  "Keyword hint": "Work order / order ID / email / owner / guide no.",
-  "Batch size detail": "Split larger selections into batches; failed items can be retried separately."
+  "Keyword hint": "Work order/order ID/email/owner/guide no.",
+  "Batch size detail": "Split larger selections into batches; failed items can be retried separately.",
+  "Created at filter hint": "Filters by the work order created time (the Created at column). The guide generated time is shown only in the details drawer and is not used here."
 }
