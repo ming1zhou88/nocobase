@@ -1239,7 +1239,7 @@ export default function AfterSalesBatchPage() {
               // 非本人负责的行不允许勾选，避免批量生成/删除越过行级权限
               getCheckboxProps: (record: Record<string, any>) => ({ disabled: !canOperateRow(record) }),
             }}
-            scroll={{ x: 1650, y: tableScrollY }}
+            scroll={{ x: 1800, y: tableScrollY }}
             tableLayout="fixed"
             pagination={{
               current: page,
@@ -1306,6 +1306,15 @@ export default function AfterSalesBatchPage() {
                 width: 100,
                 render: (_value: unknown, record: Record<string, any>) =>
                   `${record.table_a_depth ?? '-'} / ${record.table_b_depth ?? '-'}`,
+              },
+              {
+                title: t('Generated at'),
+                dataIndex: 'guide_generated_at',
+                key: 'guide_generated_at',
+                width: 160,
+                render: (value: string | null) => (
+                  <span style={{ whiteSpace: 'nowrap' }}>{formatCnDateTime(value)}</span>
+                ),
               },
               {
                 title: t('Created at'),

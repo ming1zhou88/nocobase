@@ -65,7 +65,14 @@ async function listReplyGreetingsLocal(ctx: Context, next: Next) {
 
 async function createWorkOrdersLocal(ctx: Context, next: Next) {
   const records = Array.isArray(ctx.action.params.values?.records) ? ctx.action.params.values.records : [];
-  ctx.body = await connectorClientLocal.createWorkOrders(records);
+  // 旧版工单表原来没有负责人字段：新建/导入时写入当前登录人，供 V1 页面做行级权限。
+  const currentUser = ctx.state?.currentUser || ctx.auth?.user;
+  const withOwner = records.map((record: Record<string, unknown>) => ({
+    ...record,
+    owner_id: record.owner_id ?? (currentUser?.id ? Number(currentUser.id) : null),
+    owner_name: record.owner_name ?? currentUser?.nickname ?? currentUser?.username ?? null,
+  }));
+  ctx.body = await connectorClientLocal.createWorkOrders(withOwner);
   await next();
 }
 

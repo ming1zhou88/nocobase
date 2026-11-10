@@ -11,7 +11,7 @@ import {
   StopOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
-import { useAPIClient } from '@nocobase/client';
+import { useAPIClient, useCurrentUserContext } from '@nocobase/client';
 import { AFTER_SALES_BATCH_ROUTE_PATH } from '../plugin';
 import {
   App,
@@ -39,6 +39,8 @@ import { useT } from '../locale';
 
 const WORK_ORDER_ROUTE = '/admin/after-sales/batch-workbench';
 const FALLBACK_ANSWER_TIMEOUT_SECONDS = 180;
+// 与 V2 页一致：负责人本人可写，主管/值班/管理员可写全部；查看类操作不受限。
+const OWNER_BYPASS_ROLES = ['root', 'admin', 'after_sales_manager', 'after_sales_duty'];
 
 const STATUS_COLOR_MAP: Record<string, string> = {
   pending: 'default',
@@ -141,6 +143,18 @@ export function AfterSalesBatchPage() {
   const api = useAPIClient();
   const t = useT();
   const { message } = App.useApp();
+  const currentUserContext = useCurrentUserContext();
+  const viewer = currentUserContext?.data?.data ?? {};
+  const viewerId = Number(viewer?.id) || null;
+  const viewerRoles: string[] = Array.isArray(viewer?.roles)
+    ? viewer.roles.map((role: any) => (typeof role === 'string' ? role : role?.name)).filter(Boolean)
+    : [];
+  const canOperateAll = viewerRoles.some((role) => OWNER_BYPASS_ROLES.includes(role));
+  const canOperateRow = (record: Record<string, any> | null | undefined) => {
+    if (canOperateAll) return true;
+    const ownerId = Number(record?.owner_id);
+    return Boolean(viewerId && Number.isInteger(ownerId) && ownerId === viewerId);
+  };
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState<Record<string, any>[]>([]);
   const [total, setTotal] = useState(0);
@@ -344,8 +358,21 @@ export function AfterSalesBatchPage() {
     await loadWorkOrders(1, pageSize, keyword);
   }
 
+  /** 勾选行里若混入非本人负责的工单，直接拦下（防止选中后权限数据变化/跨页残留） */
+  function operableSelectedKeys(): React.Key[] | null {
+    const byId = new Map(records.map((record) => [String(record.id), record]));
+    const allowed = selectedRowKeys.filter((key) => canOperateRow(byId.get(String(key))));
+    if (allowed.length !== selectedRowKeys.length) {
+      message.warning(t('Owner only'));
+      return null;
+    }
+    return allowed;
+  }
+
   async function handleDelete() {
-    const ids = selectedRowKeys.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0);
+    const allowedKeys = operableSelectedKeys();
+    if (!allowedKeys) return;
+    const ids = allowedKeys.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0);
     if (!ids.length) {
       return;
     }
@@ -363,8 +390,10 @@ export function AfterSalesBatchPage() {
       message.warning(t('Please select an AI employee'));
       return;
     }
+    const allowedKeys = operableSelectedKeys();
+    if (!allowedKeys) return;
     const response = await request('startBatch', {
-      ids: selectedRowKeys,
+      ids: allowedKeys,
       employeeUsername,
       answerTimeoutSeconds,
     });
@@ -383,6 +412,10 @@ export function AfterSalesBatchPage() {
   }
 
   async function handleRetryWorkOrder(record: Record<string, any>) {
+    if (!canOperateRow(record)) {
+      message.warning(t('Owner only'));
+      return;
+    }
     if (!employeeUsername) {
       message.warning(t('Please select an AI employee'));
       return;
@@ -563,6 +596,10 @@ export function AfterSalesBatchPage() {
           </Space>
         }
       >
+        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+          {t('Signed in as')}: {viewer?.nickname || viewer?.username || '-'} ·{' '}
+          {canOperateAll ? t('Can operate all rows') : t('Can only operate own rows')}
+        </Typography.Text>
         <Table
           rowKey="id"
           loading={loading}
@@ -570,6 +607,8 @@ export function AfterSalesBatchPage() {
           rowSelection={{
             selectedRowKeys,
             onChange: setSelectedRowKeys,
+            // 非本人负责的行不允许勾选，避免批量生成/删除越过行级权限
+            getCheckboxProps: (record: Record<string, any>) => ({ disabled: !canOperateRow(record) }),
           }}
           pagination={{
             current: page,
@@ -583,6 +622,13 @@ export function AfterSalesBatchPage() {
           }}
           columns={[
             { title: t('Order ID'), dataIndex: 'order_id', key: 'order_id' },
+            {
+              title: t('Owner'),
+              dataIndex: 'owner_name',
+              key: 'owner_name',
+              width: 100,
+              render: (value: string | null) => value || '-',
+            },
             {
               title: t('Buyer email'),
               dataIndex: 'buyer_email',
@@ -617,28 +663,38 @@ export function AfterSalesBatchPage() {
               title: t('Actions'),
               key: 'actions',
               width: 200,
-              render: (_value: unknown, record: Record<string, any>) => (
-                <Space>
-                  <Button
-                    size="small"
-                    icon={<EyeOutlined />}
-                    disabled={!record.ai_guide_id}
-                    onClick={() => void handleViewGuide(record)}
-                  >
-                    {t('View guide')}
-                  </Button>
-                  <Tooltip title={!employeeUsername ? t('Please select an AI employee') : undefined}>
+              render: (_value: unknown, record: Record<string, any>) => {
+                const ownerAllowed = canOperateRow(record);
+                const retryHint = !employeeUsername
+                  ? t('Please select an AI employee')
+                  : ownerAllowed
+                    ? undefined
+                    : t('Owner only');
+                return (
+                  <Space>
                     <Button
                       size="small"
-                      icon={<RedoOutlined />}
-                      disabled={record.processing_status === 'processing' || !employeeUsername}
-                      onClick={() => void handleRetryWorkOrder(record)}
+                      icon={<EyeOutlined />}
+                      disabled={!record.ai_guide_id}
+                      onClick={() => void handleViewGuide(record)}
                     >
-                      {t('Retry')}
+                      {t('View guide')}
                     </Button>
-                  </Tooltip>
-                </Space>
-              ),
+                    <Tooltip title={retryHint}>
+                      <span style={{ display: 'inline-block' }}>
+                        <Button
+                          size="small"
+                          icon={<RedoOutlined />}
+                          disabled={!ownerAllowed || record.processing_status === 'processing' || !employeeUsername}
+                          onClick={() => void handleRetryWorkOrder(record)}
+                        >
+                          {t('Retry')}
+                        </Button>
+                      </span>
+                    </Tooltip>
+                  </Space>
+                );
+              },
             },
           ]}
         />
