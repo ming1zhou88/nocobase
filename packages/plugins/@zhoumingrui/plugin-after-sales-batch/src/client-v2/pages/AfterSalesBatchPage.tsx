@@ -324,8 +324,19 @@ export default function AfterSalesBatchPage() {
         keyword: nextKeyword,
       });
       const baseRecords = response.records || [];
-      // 列表接口的 guide_has_actual_reply 可能滞后；再用 inspect 接口取一次权威状态，
-      // 保证“重新生成”按钮在回填实际回信后能及时置灰。
+      // 列表接口的 guide_has_actual_reply 可能滞后；先让连接器把本页未回填的指南补一次，
+      // 再用 inspect 接口取权威状态，保证“重新生成”按钮及时置灰。
+      const guideSerialsToBackfill = baseRecords
+        .filter((row: Record<string, any>) => row.guide_serial && !row.guide_has_actual_reply)
+        .map((row: Record<string, any>) => String(row.guide_serial))
+        .filter(Boolean);
+      if (guideSerialsToBackfill.length) {
+        try {
+          await request('backfillSellerReplies', { guide_serials: guideSerialsToBackfill });
+        } catch (error) {
+          // 回填失败不影响列表展示，保留原按钮状态
+        }
+      }
       const serialsWithGuide = baseRecords
         .filter((row: Record<string, any>) => row.guide_serial)
         .map((row: Record<string, any>) => String(row.work_order_serial || ''))

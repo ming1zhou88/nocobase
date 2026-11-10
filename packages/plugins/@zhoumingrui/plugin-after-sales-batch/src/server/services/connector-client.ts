@@ -249,6 +249,14 @@ export class ConnectorClient {
     );
   }
 
+  /** 回填指南的卖家实际回信（来自 Email4Final 卖家邮件） */
+  backfillSellerReplies(body: { guide_serials?: string[]; limit?: number; force?: boolean } = {}) {
+    return this.request<{ success: true; scanned?: number; updated?: number; [key: string]: unknown }>(
+      '/after-sales/guides/backfill-seller-replies',
+      { method: 'POST', body },
+    );
+  }
+
   /** 触发前检查：哪些工单已有指南（页面据此提示"去除 / 重新生成"） */
   inspectWorkOrders(workOrderSerials: string[], viewer?: { viewer_id: number | null; viewer_is_assigner: boolean }) {
     return this.request<{
@@ -260,6 +268,7 @@ export class ConnectorClient {
         has_guide: boolean;
         guide_serial: string | null;
         review_status: string | null;
+        has_actual_reply?: boolean;
         suggested_action: 'generate' | 'skip_or_regenerate';
         work_order: WorkOrderRecord | null;
       }[];

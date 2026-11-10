@@ -155,6 +155,121 @@ async function inspectWorkOrders(ctx: Context, next: Next) {
   await next();
 }
 
+/**
+ * 回填指南的卖家实际回信。
+ *
+ * 关键：Email4Final.id 是超过 JS safe integer 的 BIGINT（如 101994072876792480），
+ * 连接器旧实现把 id 转成 Number 后再做 id > anchor 比较，精度丢失后会把锚点自己当成
+ * 下一封买家来信，导致永远找不到卖家回信。这里全部按字符串精确比较。
+ */
+async function backfillSellerReplies(ctx: Context, next: Next) {
+  const values = readValues(ctx);
+  const serials = Array.isArray(values.guide_serials)
+    ? values.guide_serials.map((value: unknown) => String(value || '').trim()).filter(Boolean)
+    : [];
+  if (!serials.length) {
+    ctx.body = { success: true, scanned: 0, updated: 0, skipped: 0, details: [] };
+    await next();
+    return;
+  }
+  const dataSource = (ctx.app.dataSourceManager as any).get('d_99cwsyi7q4k');
+  const guideRepo = dataSource?.collectionManager?.getRepository('AIAfterSalesGuideV2');
+  const emailRepo = dataSource?.collectionManager?.getRepository('Email4Final');
+  if (!guideRepo || !emailRepo) ctx.throw(500, 'guide/email repository unavailable');
+
+  const read = (row: any, key: string) => (row?.get ? row.get(key) : row?.[key]);
+  const guides = await guideRepo.find({ filter: { guide_serial: { $in: serials } } });
+  const details: Record<string, unknown>[] = [];
+  let updated = 0;
+  let skipped = 0;
+
+  for (const guide of guides || []) {
+    const guideSerial = String(read(guide, 'guide_serial') || '');
+    const existingBody = String(read(guide, 'actual_seller_reply_body') || '').trim();
+    if (existingBody || read(guide, 'seller_reply_time')) {
+      skipped += 1;
+      details.push({ guide_serial: guideSerial, action: 'skip', reason: 'already_backfilled' });
+      continue;
+    }
+    const anchorId = String(read(guide, 'mail_record_id') || '').trim();
+    const orderId = String(read(guide, 'order_id') || '').trim();
+    if (!anchorId || !orderId) {
+      skipped += 1;
+      details.push({ guide_serial: guideSerial, action: 'skip', reason: 'missing_anchor_or_order' });
+      continue;
+    }
+    let anchor = await emailRepo.findOne({ filter: { id: anchorId, order_id: orderId, email_source: '买家' } });
+    if (!anchor) {
+      // 指南的 mail_record_id 可能已被 JS Number 精度截断（BIGINT 超 safe integer），
+      // 此时按指南自带的 buyer_email_time 在该订单内找回锚点。
+      const buyerTime = String(read(guide, 'buyer_email_time') || '');
+      if (buyerTime) {
+        anchor = await emailRepo.findOne({
+          filter: { order_id: orderId, email_source: '买家', received_time: buyerTime },
+        });
+      }
+    }
+    if (!anchor) {
+      skipped += 1;
+      details.push({ guide_serial: guideSerial, action: 'skip', reason: 'anchor_not_found' });
+      continue;
+    }
+    const anchorTime = String(read(anchor, 'received_time') || '');
+    if (!anchorTime) {
+      skipped += 1;
+      details.push({ guide_serial: guideSerial, action: 'skip', reason: 'anchor_time_missing' });
+      continue;
+    }
+    // 注意：Email4Final 存在同一时刻的重复/乱序 id（BIGINT 且并发写入顺序不等于时间顺序），
+    // 边界必须用 received_time，不能用 id 大小。
+    const nextBuyers = await emailRepo.find({
+      filter: { order_id: orderId, email_source: '买家', received_time: { $gt: anchorTime } },
+      sort: ['received_time'],
+      limit: 1,
+    });
+    const nextBuyerTime = nextBuyers?.[0] ? String(read(nextBuyers[0], 'received_time') || '') : '';
+    const sellerFilter: Record<string, any> = {
+      order_id: orderId,
+      email_source: '卖家',
+      received_time: { $gt: anchorTime },
+    };
+    if (nextBuyerTime) sellerFilter.received_time.$lt = nextBuyerTime;
+    const sellers = await emailRepo.find({ filter: sellerFilter, sort: ['received_time'], limit: 100 });
+    const candidates = (sellers || [])
+      .map((row: any) => ({
+        id: String(read(row, 'id') || ''),
+        body: String(read(row, 'email_embedded_body') || '').trim(),
+        time: String(read(row, 'received_time') || ''),
+      }))
+      .filter((row) => row.body && row.time);
+    const createdTime = String(read(guide, 'created_time') || '');
+    const createdMs = createdTime ? new Date(createdTime).getTime() : 0;
+    let seller = candidates.find((row) => createdMs && new Date(row.time).getTime() >= createdMs);
+    if (!seller) {
+      const before = candidates.filter((row) => !createdMs || new Date(row.time).getTime() < createdMs);
+      seller = before.length ? before[before.length - 1] : candidates[0];
+    }
+    if (!seller) {
+      skipped += 1;
+      details.push({ guide_serial: guideSerial, action: 'skip', reason: 'seller_reply_not_found' });
+      continue;
+    }
+    await guideRepo.update({
+      filter: { id: read(guide, 'id') },
+      values: {
+        actual_seller_reply_body: seller.body,
+        seller_reply_time: seller.time,
+        seller_reply_mail_id: seller.id,
+      },
+    });
+    updated += 1;
+    details.push({ guide_serial: guideSerial, action: 'updated', seller_mail_id: seller.id });
+  }
+
+  ctx.body = { success: true, scanned: guides?.length || 0, updated, skipped, details };
+  await next();
+}
+
 // ---------------------------------------------------------------------------
 // 批次（编排在连接器侧）
 // ---------------------------------------------------------------------------
@@ -365,6 +480,7 @@ const ACTIONS = {
   updateWorkOrders,
   deleteWorkOrders,
   inspectWorkOrders,
+  backfillSellerReplies,
   startGuideBatch,
   listGuideBatches,
   getGuideBatch,
