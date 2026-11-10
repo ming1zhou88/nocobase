@@ -17,6 +17,7 @@ import { OverseasAfterSalesActionModel } from './models/OverseasAfterSalesAction
 import { DailyScopeFilterActionModel } from './models/DailyScopeFilterActionModel';
 import { DailySetHandleStatusActionModel } from './models/DailySetHandleStatusActionModel';
 import { DailyBatchSetHandleStatusActionModel } from './models/DailyBatchSetHandleStatusActionModel';
+import { DailyRefreshActionModel } from './models/DailyRefreshActionModel';
 
 type AsyncTaskManagerClientV2Plugin = {
   taskOrigins: {
@@ -52,6 +53,7 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
       DailyScopeFilterActionModel,
       DailySetHandleStatusActionModel,
       DailyBatchSetHandleStatusActionModel,
+      DailyRefreshActionModel,
     });
 
     // B 页：Dify 生成，复用 A 页组件（组件内部根据路由参数区分行为）

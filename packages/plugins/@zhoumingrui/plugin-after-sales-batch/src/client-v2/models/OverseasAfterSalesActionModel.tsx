@@ -1,5 +1,6 @@
 import { ActionModel, ActionSceneEnum } from '@nocobase/client-v2';
 import { useFlowContext } from '@nocobase/flow-engine';
+import { LockOutlined } from '@ant-design/icons';
 import { Button, Empty, Modal, Space, Tooltip, Typography } from 'antd';
 import type { ButtonProps } from 'antd';
 import React, { useState } from 'react';
@@ -32,12 +33,24 @@ function OverseasAfterSalesButton({ model }: { model: OverseasAfterSalesActionMo
   const orderTs = toPositiveNumber(read('order_ts'));
   const deadlineTs = toPositiveNumber(read('order_deadline_ts'));
   const now = Date.now();
-  const eligible = Boolean(hasPhone && orderTs !== null && deadlineTs !== null && now >= orderTs && now < deadlineTs);
+  const ownerId = Number(read('owner_id'));
+  const userId = Number((ctx as any).user?.id);
+  const roles: string[] = ((ctx as any).user?.roles || []).map((role: any) => role?.name).filter(Boolean);
+  const canOperate =
+    ['root', 'admin', 'after_sales_manager', 'after_sales_duty'].some((role) => roles.includes(role)) ||
+    (Number.isInteger(ownerId) && ownerId === userId);
+  const eligible = Boolean(
+    canOperate && hasPhone && orderTs !== null && deadlineTs !== null && now >= orderTs && now < deadlineTs,
+  );
 
   const [open, setOpen] = useState(false);
 
   let reason = '';
-  if (!hasPhone) {
+  let reasonType: 'permission' | 'data' = 'data';
+  if (!canOperate) {
+    reason = '仅负责人可操作海外售后';
+    reasonType = 'permission';
+  } else if (!hasPhone) {
     reason = '该订单没有联系电话';
   } else if (orderTs === null || deadlineTs === null) {
     reason = '缺少下单时间';
@@ -48,14 +61,26 @@ function OverseasAfterSalesButton({ model }: { model: OverseasAfterSalesActionMo
   }
 
   const button = (
-    <Button type={(model.props?.type as any) || 'link'} size="small" disabled={!eligible} onClick={() => setOpen(true)}>
+    <Button
+      type={(model.props?.type as any) || 'link'}
+      size="small"
+      disabled={!eligible}
+      icon={reasonType === 'permission' ? <LockOutlined /> : undefined}
+      onClick={() => setOpen(true)}
+    >
       {model.props?.title || '海外售后 ☎️'}
     </Button>
   );
 
   return (
     <>
-      {reason ? <Tooltip title={reason}>{button}</Tooltip> : button}
+      {reason ? (
+        <Tooltip title={reason}>
+          <span style={{ cursor: 'not-allowed' }}>{button}</span>
+        </Tooltip>
+      ) : (
+        button
+      )}
       <Modal
         open={open}
         title="海外仓售后协同处理"

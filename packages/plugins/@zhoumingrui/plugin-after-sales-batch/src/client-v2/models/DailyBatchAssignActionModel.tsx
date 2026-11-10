@@ -22,6 +22,8 @@ function DailyBatchAssignButton({ model }: { model: DailyBatchAssignActionModel 
   const [options, setOptions] = useState<OwnerOption[]>([]);
   const [count, setCount] = useState(0);
   const rowsRef = useRef<Record<string, any>[]>([]);
+  const roles: string[] = ((ctx as any).user?.roles || []).map((role: any) => role?.name).filter(Boolean);
+  const canAssign = roles.some((name) => ['after_sales_manager', 'admin', 'root', 'after_sales_duty'].includes(name));
 
   function getBlockModel() {
     const context = (ctx.model?.context || {}) as any;
@@ -130,6 +132,8 @@ function DailyBatchAssignButton({ model }: { model: DailyBatchAssignActionModel 
       <Button
         type={(model.props?.type as any) || 'default'}
         icon={model.props?.icon ? undefined : undefined}
+        disabled={!canAssign}
+        title={canAssign ? undefined : '仅售后值班/售后主管可批量指派'}
         onClick={openModal}
       >
         {model.props?.title || '批量指派'}

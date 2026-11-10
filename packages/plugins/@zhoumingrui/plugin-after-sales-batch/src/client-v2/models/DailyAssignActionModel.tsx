@@ -68,6 +68,9 @@ function DailyAssignButton({ model }: { model: DailyAssignActionModel }) {
     if (!options.length) void loadOwners();
   }
 
+  const roles: string[] = ((ctx as any).user?.roles || []).map((role: any) => role?.name).filter(Boolean);
+  const canAssign = roles.some((name) => ['after_sales_manager', 'admin', 'root', 'after_sales_duty'].includes(name));
+
   async function handleAssign() {
     const roles: string[] = ((ctx as any).user?.roles || []).map((role: any) => role?.name).filter(Boolean);
     if (
@@ -129,7 +132,13 @@ function DailyAssignButton({ model }: { model: DailyAssignActionModel }) {
 
   return (
     <>
-      <Button type="link" size="small" onClick={handleAssign}>
+      <Button
+        type="link"
+        size="small"
+        disabled={!canAssign}
+        title={canAssign ? undefined : '仅售后值班/售后主管可指派'}
+        onClick={handleAssign}
+      >
         {model.props?.title || '指派'}
       </Button>
       <Modal
