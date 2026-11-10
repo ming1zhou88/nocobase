@@ -8,7 +8,7 @@ import { refreshSiblingDataBlocks } from './refreshSiblingDataBlocks';
 /** 有售后身份的角色（批量指派只对这些人有意义） */
 const ASSIGNEE_ROLES = ['after_sales_agent', 'after_sales_manager'];
 /** 有资格执行批量指派的角色 */
-const ASSIGNER_ROLES = ['after_sales_manager', 'admin', 'root'];
+const ASSIGNER_ROLES = ['after_sales_manager', 'admin', 'root', 'after_sales_duty'];
 
 type OwnerOption = { label: string; value: string };
 

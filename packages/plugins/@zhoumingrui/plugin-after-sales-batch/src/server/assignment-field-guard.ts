@@ -43,7 +43,7 @@ const GUARDED_FIELDS: Record<string, string[]> = {
 };
 
 /** 有资格改派负责人的角色 */
-const ASSIGNER_ROLES = ['after_sales_manager', 'admin', 'root'];
+const ASSIGNER_ROLES = ['after_sales_manager', 'admin', 'root', 'after_sales_duty'];
 
 const WRITE_ACTIONS = new Set(['update', 'updateMany', 'updateOrCreate', 'firstOrCreate', 'create', 'createMany']);
 

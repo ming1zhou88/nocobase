@@ -70,7 +70,10 @@ function DailyAssignButton({ model }: { model: DailyAssignActionModel }) {
 
   async function handleAssign() {
     const roles: string[] = ((ctx as any).user?.roles || []).map((role: any) => role?.name).filter(Boolean);
-    if (roles.length && !roles.some((name) => ['after_sales_manager', 'admin', 'root'].includes(name))) {
+    if (
+      roles.length &&
+      !roles.some((name) => ['after_sales_manager', 'admin', 'root', 'after_sales_duty'].includes(name))
+    ) {
       message.warning('只有售后主管可以指派负责人');
       return;
     }

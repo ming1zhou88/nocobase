@@ -80,7 +80,8 @@ async function viewerOf(ctx: Context) {
   const user = ctx.state?.currentUser;
   return {
     viewer_id: user?.id ? Number(user.id) : null,
-    viewer_is_assigner: await isAssigner(ctx),
+    // 所有登录用户都可查看全部数据；指派权限由 isAssigner 在写操作上单独控制
+    viewer_is_assigner: true,
   };
 }
 

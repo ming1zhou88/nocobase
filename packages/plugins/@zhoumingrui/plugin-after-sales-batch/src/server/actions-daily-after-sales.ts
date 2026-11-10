@@ -341,7 +341,7 @@ export async function listTrackingExceptions(ctx: Context, next: Next) {
   const roles = await currentRoleNames(ctx);
   const isAgent =
     roles.includes('after_sales_agent') &&
-    !roles.some((role) => ['after_sales_manager', 'admin', 'root'].includes(role));
+    !roles.some((role) => ['after_sales_manager', 'admin', 'root', 'after_sales_duty'].includes(role));
   const page = Math.max(Number(values.page) || 1, 1);
   const pageSize = Math.min(Math.max(Number(values.pageSize) || 50, 1), 500);
   const dataSource = (ctx.app.dataSourceManager as any).get('d_99cwsyi7q4k');
@@ -372,7 +372,7 @@ export async function getTrackingExceptionPermissions(ctx: Context, next: Next) 
   const roles = await currentRoleNames(ctx);
   const isAgent =
     roles.includes('after_sales_agent') &&
-    !roles.some((role) => ['after_sales_manager', 'admin', 'root'].includes(role));
+    !roles.some((role) => ['after_sales_manager', 'admin', 'root', 'after_sales_duty'].includes(role));
   ctx.body = {
     is_assigner: await isAssigner(ctx),
     is_agent: isAgent,

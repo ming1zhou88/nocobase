@@ -16,7 +16,7 @@
 import type { Context } from '@nocobase/actions';
 
 /** 有资格改派负责人的角色 */
-export const ASSIGNER_ROLES = ['after_sales_manager', 'admin', 'root'];
+export const ASSIGNER_ROLES = ['after_sales_manager', 'admin', 'root', 'after_sales_duty'];
 
 /** 取当前用户的角色名（沿用 ACL 插件自己的取法：users.roles 关联仓库） */
 export async function currentRoleNames(ctx: Context | any): Promise<string[]> {
