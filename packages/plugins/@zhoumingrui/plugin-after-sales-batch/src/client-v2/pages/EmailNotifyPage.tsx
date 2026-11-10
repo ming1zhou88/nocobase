@@ -1,5 +1,4 @@
 import {
-  CheckCircleOutlined,
   CopyOutlined,
   EyeOutlined,
   MailOutlined,
@@ -23,7 +22,6 @@ import {
   Select,
   Space,
   Spin,
-  Statistic,
   Switch,
   Table,
   Tag,
@@ -31,7 +29,7 @@ import {
   Typography,
 } from 'antd';
 import { useFlowContext } from '@nocobase/flow-engine';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { useT } from '../locale';
 
@@ -112,6 +110,10 @@ export default function EmailNotifyPage() {
   const [jobRecord, setJobRecord] = useState<Record<string, any> | null>(null);
   const [jobItems, setJobItems] = useState<Record<string, any>[]>([]);
   const [lastResult, setLastResult] = useState<Record<string, any> | null>(null);
+  const [jobDetailOpen, setJobDetailOpen] = useState(false);
+  // 页面固定高度：只有表体滚动，标题/进度/工具栏/表头保持不动（与售后工单工作台一致）
+  const tableWrapRef = useRef<HTMLDivElement>(null);
+  const [tableScrollY, setTableScrollY] = useState(360);
 
   const [detailVisible, setDetailVisible] = useState(false);
   const [detailRecord, setDetailRecord] = useState<Record<string, any> | null>(null);
@@ -220,6 +222,21 @@ export default function EmailNotifyPage() {
     void loadSendable('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 表体高度 = 容器高度 - 表头 - 分页；表体独立滚动，页面本身不滚（菜单栏保持吸顶）
+  useEffect(() => {
+    const element = tableWrapRef.current;
+    if (!element) return undefined;
+    const updateHeight = () => {
+      const headerHeight = element.querySelector('.ant-table-thead')?.clientHeight || 46;
+      const paginationHeight = element.querySelector('.ant-pagination')?.clientHeight || 56;
+      setTableScrollY(Math.max(160, element.clientHeight - headerHeight - paginationHeight - 2));
+    };
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element);
+    updateHeight();
+    return () => observer.disconnect();
+  }, [loading, activeTab]);
 
   useEffect(() => {
     if (!jobSerial) {
@@ -363,8 +380,18 @@ export default function EmailNotifyPage() {
   }
 
   return (
-    <Space direction="vertical" size={16} style={{ display: 'flex', padding: 24 }}>
-      <Space align="center">
+    <div
+      style={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        padding: 24,
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+      }}
+    >
+      <Space align="center" wrap>
         <Typography.Title level={3} style={{ marginBottom: 0 }}>
           {t('Express notification emails')}
         </Typography.Title>
@@ -378,253 +405,279 @@ export default function EmailNotifyPage() {
             }}
           />
         </Tooltip>
+        <Tooltip title={dryRun ? t('Dry run banner detail') : t('Dry run hint')}>
+          <Tag color={dryRun ? 'warning' : 'success'} style={{ marginInlineEnd: 0 }}>
+            {dryRun ? t('Dry run') : t('Live sending')}
+          </Tag>
+        </Tooltip>
       </Space>
-      <Typography.Paragraph type="secondary">
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
         {t('Filter 7E2 by US Pacific day, join 7E1 for the email body, then send one by one through Dify.')}{' '}
         {t('Route path')}: {NOTIFY_ROUTE}
       </Typography.Paragraph>
 
-      {dryRun ? (
-        <Alert type="warning" showIcon message={t('Dry run banner')} description={t('Dry run banner detail')} />
-      ) : null}
-
       <Card
-        title={t('Sendable today')}
+        size="small"
+        title={t('Sending progress')}
+        style={{ flexShrink: 0 }}
+        styles={{ body: { padding: '10px 16px' } }}
         extra={
-          <Space wrap>
-            <Select
-              value={quickDateKey || 'custom'}
-              style={{ width: 260 }}
-              options={[
-                { label: `${t('Today')} · ${laDateLabel(laDateString(0))}`, value: '0' },
-                { label: `${t('Yesterday')} · ${laDateLabel(laDateString(-1))}`, value: '-1' },
-                { label: `${t('Day before yesterday')} · ${laDateLabel(laDateString(-2))}`, value: '-2' },
-                { label: t('Other date...'), value: 'custom' },
-              ]}
-              onChange={(value) => {
-                if (value === 'custom') {
-                  setCustomDateDraft(date || laDateString(0));
-                  setCustomDateOpen(true);
-                  return;
-                }
-                const nextDate = laDateString(Number(value));
-                setDate(nextDate);
-                void loadSendable(nextDate);
-              }}
-            />
-            <Typography.Text type="secondary">
-              {t('US Pacific')} · {laDateLabel(date) || '-'}
+          <Space size={8} wrap>
+            {jobRecord ? (
+              <Tag color={JOB_STATUS_MAP[String(jobRecord.status)]?.color || 'default'}>
+                {t(JOB_STATUS_MAP[String(jobRecord.status)]?.label || String(jobRecord.status))}
+              </Tag>
+            ) : null}
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {jobSerial ? `${t('Job serial')}: ${jobSerial}` : t('No job yet')}
             </Typography.Text>
-            <Tooltip title={t('Refresh')}>
-              <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadSendable(date)} />
-            </Tooltip>
-            <Button type="text" icon={<MailOutlined />} onClick={() => void loadMailboxes()}>
-              {t('Sender mailboxes')}
-            </Button>
-            <Tag color={senderSummary.missing.length ? 'warning' : 'success'}>
-              {senderSummary.missing.length
-                ? t('Sender mailboxes incomplete', { count: senderSummary.missing.length })
-                : t('Sender mailboxes all configured')}
-            </Tag>
-            <Tooltip title={t('Dry run hint')}>
-              <Space size={4}>
-                <Typography.Text>{t('Dry run')}</Typography.Text>
-                <Switch
-                  size="small"
-                  checked={dryRun}
-                  onChange={(value) => {
-                    setDryRun(value);
-                    void loadSendable(date);
-                  }}
-                />
-              </Space>
-            </Tooltip>
-            <Button icon={<SearchOutlined />} onClick={() => setBatchOpen(true)}>
-              平台订单编号批量搜索
+            <Button size="small" disabled={!jobItems.length} onClick={() => setJobDetailOpen(true)}>
+              {t('Send job details')}
             </Button>
             <Button
-              icon={<CopyOutlined />}
-              disabled={!selectedRowKeys.length}
-              onClick={() => void copySelectedOrderIds()}
-            >
-              复制选中的平台订单编号
-            </Button>
-            <Button
-              icon={<SendOutlined />}
+              size="small"
+              icon={<RedoOutlined />}
               loading={sending}
-              disabled={!selectedRowKeys.length}
-              onClick={() => void handleSend()}
+              disabled={!jobSerial || jobProgress.failed === 0}
+              onClick={() => void handleRetryFailed()}
             >
-              {t('Trigger sending')}
+              {t('Retry failed')}
             </Button>
           </Space>
         }
       >
-        {windowInfo ? (
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message={`${t('Filter window')}: ${windowInfo.start} ~ ${windowInfo.end}（${windowInfo.basis}）`}
-            description={windowInfo.note}
-          />
-        ) : null}
-        <Card
-          size="small"
-          title={t('Sending progress')}
-          style={{ marginBottom: 12 }}
-          extra={
-            <Space>
-              {jobRecord ? (
-                <Tag color={JOB_STATUS_MAP[String(jobRecord.status)]?.color || 'default'}>
-                  {t(JOB_STATUS_MAP[String(jobRecord.status)]?.label || String(jobRecord.status))}
-                </Tag>
-              ) : null}
-              <Typography.Text type="secondary">
-                {jobSerial ? `${t('Job serial')}: ${jobSerial}` : t('No job yet')}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 28, flexWrap: 'wrap' }}>
+          {[
+            { label: 'Total', value: jobProgress.total, color: undefined },
+            { label: 'Sent', value: jobProgress.done, color: '#3f8600' },
+            { label: 'Remaining', value: jobProgress.pending, color: undefined },
+            { label: 'Failed', value: jobProgress.failed, color: '#cf1322' },
+          ].map((item) => (
+            <span key={item.label}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {t(item.label)}
               </Typography.Text>
-              <Button
-                size="small"
-                icon={<RedoOutlined />}
-                loading={sending}
-                disabled={!jobSerial || jobProgress.failed === 0}
-                onClick={() => void handleRetryFailed()}
-              >
-                {t('Retry failed')}
-              </Button>
-            </Space>
-          }
-        >
-          <Space size={32} wrap>
-            <Statistic title={t('Total')} value={jobProgress.total} />
-            <Statistic title={t('Sent')} value={jobProgress.done} valueStyle={{ color: '#3f8600' }} />
-            <Statistic title={t('Remaining')} value={jobProgress.pending} />
-            <Statistic title={t('Failed')} value={jobProgress.failed} valueStyle={{ color: '#cf1322' }} />
-          </Space>
-          <Progress percent={jobProgress.percent} style={{ marginTop: 8 }} />
-        </Card>
-        <Segmented
-          style={{ marginBottom: 12 }}
-          value={activeTab}
-          onChange={(value) => setActiveTab(String(value))}
-          options={[
-            { label: `${t('Today sendable')} (${records.length})`, value: 'all' },
-            { label: `${t('Today pending')} (${sendableRecords.length})`, value: 'pending' },
-            { label: `${t('Today sent')} (${sentRecords.length})`, value: 'sent' },
-            { label: `${t('Not sendable')} (${blockedRecords.length})`, value: 'blocked' },
-          ]}
-        />
-        <Table
-          rowKey="order_id"
-          loading={loading}
-          dataSource={displayRecords}
-          rowSelection={{
-            selectedRowKeys,
-            onChange: setSelectedRowKeys,
-            getCheckboxProps: (record) => ({ disabled: !record.sendable }),
-          }}
-          scroll={{ x: 1900 }}
-          pagination={{ pageSize: 20, showSizeChanger: true }}
-          columns={[
-            { title: t('Store name'), dataIndex: 'store_name', key: 'store_name', width: 140, fixed: 'left' as const },
-            {
-              title: t('Order ID'),
-              dataIndex: 'order_id',
-              key: 'order_id',
-              width: 200,
-              render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
-            },
-            {
-              title: t('Sender'),
-              dataIndex: 'sender_email',
-              key: 'sender_email',
-              width: 220,
-              ellipsis: { showTitle: true },
-            },
-            { title: t('Current delivery'), dataIndex: 'delivery_details', key: 'delivery_details', width: 120 },
-            {
-              title: t('Delivery at send'),
-              dataIndex: 'delivery_details_at_send',
-              key: 'delivery_details_at_send',
-              width: 180,
-            },
-            {
-              title: t('Created time (Beijing)'),
-              dataIndex: 'create_time',
-              key: 'create_time',
-              width: 190,
-              render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
-            },
-            {
-              title: t('Updated time (Beijing)'),
-              dataIndex: 'update_time',
-              key: 'update_time',
-              width: 190,
-              render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
-            },
-            {
-              title: t('Sendable at (Pacific)'),
-              dataIndex: 'platform_sendable_at',
-              key: 'platform_sendable_at',
-              width: 190,
-              render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
-            },
-            { title: t('Remark'), dataIndex: 'remark', key: 'remark', width: 160, ellipsis: { showTitle: true } },
-            {
-              title: t('Send express mail'),
-              key: 'send',
-              width: 150,
-              fixed: 'right' as const,
-              render: (_value: unknown, record: Record<string, any>) => {
-                if (Number(record.email_sent)) {
-                  return <Tag color="success">{t('Sent express mail')}</Tag>;
-                }
-                if (!record.sendable) {
-                  return (
-                    <Tooltip title={String(record.reason || '-')}>
-                      <Button size="small" disabled>
-                        {t('Send')}
-                      </Button>
-                    </Tooltip>
-                  );
-                }
-                return (
-                  <Button
-                    size="small"
-                    type="primary"
-                    loading={rowSending === String(record.order_id)}
-                    disabled={sending}
-                    onClick={() => void handleSendOne(record)}
-                  >
-                    {dryRun ? t('Dry run send') : t('Send')}
-                  </Button>
-                );
-              },
-            },
-            {
-              title: t('View details'),
-              key: 'actions',
-              fixed: 'right' as const,
-              width: 110,
-              render: (_value: unknown, record: Record<string, any>) => (
-                <Button
-                  size="small"
-                  icon={<EyeOutlined />}
-                  onClick={() => {
-                    void openDetail(record);
-                  }}
-                >
-                  {t('View details')}
-                </Button>
-              ),
-            },
-          ]}
-        />
+              <Typography.Text strong style={{ fontSize: 18, marginLeft: 6, color: item.color }}>
+                {item.value}
+              </Typography.Text>
+            </span>
+          ))}
+        </div>
+        <Progress percent={jobProgress.percent} size="small" strokeWidth={6} style={{ marginTop: 6 }} />
       </Card>
 
       <Card
-        title={t('Send job details')}
-        extra={
+        size="small"
+        title={`${t('Sendable today')}（${records.length}）`}
+        style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}
+        styles={{ body: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: 12 } }}
+      >
+        <Space wrap size={8} style={{ marginBottom: 8, flexShrink: 0 }}>
+          <Select
+            value={quickDateKey || 'custom'}
+            style={{ width: 240 }}
+            options={[
+              { label: `${t('Today')} · ${laDateLabel(laDateString(0))}`, value: '0' },
+              { label: `${t('Yesterday')} · ${laDateLabel(laDateString(-1))}`, value: '-1' },
+              { label: `${t('Day before yesterday')} · ${laDateLabel(laDateString(-2))}`, value: '-2' },
+              { label: t('Other date...'), value: 'custom' },
+            ]}
+            onChange={(value) => {
+              if (value === 'custom') {
+                setCustomDateDraft(date || laDateString(0));
+                setCustomDateOpen(true);
+                return;
+              }
+              const nextDate = laDateString(Number(value));
+              setDate(nextDate);
+              void loadSendable(nextDate);
+            }}
+          />
+          <Typography.Text type="secondary">
+            {t('US Pacific')} · {laDateLabel(date) || '-'}
+          </Typography.Text>
+          <Tooltip title={t('Refresh')}>
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadSendable(date)} />
+          </Tooltip>
+          <Button type="text" icon={<MailOutlined />} onClick={() => void loadMailboxes()}>
+            {t('Sender mailboxes')}
+          </Button>
+          <Tag color={senderSummary.missing.length ? 'warning' : 'success'}>
+            {senderSummary.missing.length
+              ? t('Sender mailboxes incomplete', { count: senderSummary.missing.length })
+              : t('Sender mailboxes all configured')}
+          </Tag>
+          <Tooltip title={t('Dry run hint')}>
+            <Space size={4}>
+              <Typography.Text>{t('Dry run')}</Typography.Text>
+              <Switch
+                size="small"
+                checked={dryRun}
+                onChange={(value) => {
+                  setDryRun(value);
+                  void loadSendable(date);
+                }}
+              />
+            </Space>
+          </Tooltip>
+          <Button icon={<SearchOutlined />} onClick={() => setBatchOpen(true)}>
+            平台订单编号批量搜索
+          </Button>
+          <Button
+            icon={<CopyOutlined />}
+            disabled={!selectedRowKeys.length}
+            onClick={() => void copySelectedOrderIds()}
+          >
+            复制选中的平台订单编号
+          </Button>
+          <Button
+            icon={<SendOutlined />}
+            loading={sending}
+            disabled={!selectedRowKeys.length}
+            onClick={() => void handleSend()}
+          >
+            {t('Trigger sending')}
+          </Button>
+        </Space>
+        <div
+          style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8, flexShrink: 0 }}
+        >
+          <Segmented
+            value={activeTab}
+            onChange={(value) => setActiveTab(String(value))}
+            options={[
+              { label: `${t('Today sendable')} (${records.length})`, value: 'all' },
+              { label: `${t('Today pending')} (${sendableRecords.length})`, value: 'pending' },
+              { label: `${t('Today sent')} (${sentRecords.length})`, value: 'sent' },
+              { label: `${t('Not sendable')} (${blockedRecords.length})`, value: 'blocked' },
+            ]}
+          />
+          {windowInfo ? (
+            <Tooltip title={windowInfo.note}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {t('Filter window')}：{windowInfo.start} ~ {windowInfo.end}（{t('US Pacific')}）
+              </Typography.Text>
+            </Tooltip>
+          ) : null}
+        </div>
+        <div ref={tableWrapRef} style={{ flex: 1, minHeight: 0 }}>
+          <Table
+            rowKey="order_id"
+            loading={loading}
+            dataSource={displayRecords}
+            rowSelection={{
+              selectedRowKeys,
+              onChange: setSelectedRowKeys,
+              getCheckboxProps: (record) => ({ disabled: !record.sendable }),
+            }}
+            scroll={{ x: 1900, y: tableScrollY }}
+            pagination={{ pageSize: 20, showSizeChanger: true }}
+            columns={[
+              {
+                title: t('Store name'),
+                dataIndex: 'store_name',
+                key: 'store_name',
+                width: 140,
+                fixed: 'left' as const,
+              },
+              {
+                title: t('Order ID'),
+                dataIndex: 'order_id',
+                key: 'order_id',
+                width: 200,
+                render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
+              },
+              {
+                title: t('Sender'),
+                dataIndex: 'sender_email',
+                key: 'sender_email',
+                width: 220,
+                ellipsis: { showTitle: true },
+              },
+              { title: t('Current delivery'), dataIndex: 'delivery_details', key: 'delivery_details', width: 120 },
+              {
+                title: t('Delivery at send'),
+                dataIndex: 'delivery_details_at_send',
+                key: 'delivery_details_at_send',
+                width: 180,
+              },
+              {
+                title: t('Created time (Beijing)'),
+                dataIndex: 'create_time',
+                key: 'create_time',
+                width: 190,
+                render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
+              },
+              {
+                title: t('Updated time (Beijing)'),
+                dataIndex: 'update_time',
+                key: 'update_time',
+                width: 190,
+                render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
+              },
+              {
+                title: t('Sendable at (Pacific)'),
+                dataIndex: 'platform_sendable_at',
+                key: 'platform_sendable_at',
+                width: 190,
+                render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
+              },
+              { title: t('Remark'), dataIndex: 'remark', key: 'remark', width: 160, ellipsis: { showTitle: true } },
+              {
+                title: t('Send express mail'),
+                key: 'send',
+                width: 150,
+                fixed: 'right' as const,
+                render: (_value: unknown, record: Record<string, any>) => {
+                  if (Number(record.email_sent)) {
+                    return <Tag color="success">{t('Sent express mail')}</Tag>;
+                  }
+                  if (!record.sendable) {
+                    return (
+                      <Tooltip title={String(record.reason || '-')}>
+                        <Button size="small" disabled>
+                          {t('Send')}
+                        </Button>
+                      </Tooltip>
+                    );
+                  }
+                  return (
+                    <Button
+                      size="small"
+                      type="primary"
+                      loading={rowSending === String(record.order_id)}
+                      disabled={sending}
+                      onClick={() => void handleSendOne(record)}
+                    >
+                      {dryRun ? t('Dry run send') : t('Send')}
+                    </Button>
+                  );
+                },
+              },
+              {
+                title: t('View details'),
+                key: 'actions',
+                fixed: 'right' as const,
+                width: 110,
+                render: (_value: unknown, record: Record<string, any>) => (
+                  <Button
+                    size="small"
+                    icon={<EyeOutlined />}
+                    onClick={() => {
+                      void openDetail(record);
+                    }}
+                  >
+                    {t('View details')}
+                  </Button>
+                ),
+              },
+            ]}
+          />
+        </div>
+      </Card>
+
+      <Drawer title={t('Send job details')} open={jobDetailOpen} onClose={() => setJobDetailOpen(false)} width={920}>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <Space>
             {jobRecord ? (
               <Tag color={JOB_STATUS_MAP[String(jobRecord.status)]?.color || 'default'}>
@@ -635,24 +688,19 @@ export default function EmailNotifyPage() {
               {jobSerial ? `${t('Job serial')}: ${jobSerial}` : t('No job yet')}
             </Typography.Text>
           </Space>
-        }
-      >
-        {lastResult ? (
-          <Alert
-            style={{ marginTop: 12 }}
-            type={Number(lastResult.failed) > 0 ? 'warning' : 'success'}
-            showIcon
-            message={`Dify ${t('Result')}: ${String(lastResult.summary || '')}`}
-            description={`${t('Elapsed')}: ${lastResult.elapsed_ms} ms`}
-          />
-        ) : null}
-        {jobItems.length ? (
+          {lastResult ? (
+            <Alert
+              type={Number(lastResult.failed) > 0 ? 'warning' : 'success'}
+              showIcon
+              message={`Dify ${t('Result')}: ${String(lastResult.summary || '')}`}
+              description={`${t('Elapsed')}: ${lastResult.elapsed_ms} ms`}
+            />
+          ) : null}
           <Table
-            style={{ marginTop: 12 }}
             rowKey="id"
             size="small"
             dataSource={jobItems}
-            pagination={{ pageSize: 10 }}
+            pagination={{ pageSize: 20 }}
             columns={[
               { title: t('Order ID'), dataIndex: 'order_id', key: 'order_id', width: 170 },
               {
@@ -688,8 +736,8 @@ export default function EmailNotifyPage() {
               { title: t('Failure reason'), dataIndex: 'error', key: 'error', ellipsis: { showTitle: true } },
             ]}
           />
-        ) : null}
-      </Card>
+        </Space>
+      </Drawer>
 
       <Modal
         title={t('Select date')}
@@ -836,6 +884,6 @@ export default function EmailNotifyPage() {
           description={<Typography.Text>{t('Mailbox hint detail')}</Typography.Text>}
         />
       </Modal>
-    </Space>
+    </div>
   );
 }

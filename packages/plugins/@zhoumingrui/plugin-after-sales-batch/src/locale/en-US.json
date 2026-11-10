@@ -236,5 +236,6 @@
   "Today sent": "Today sent",
   "Edit work order": "Edit work order",
   "Edit guide impact": "Changes affect the work order only and do not update an existing guide. Regenerate the guide after saving if the new information should apply (regeneration is blocked once reviewed or after the actual reply is backfilled).",
-  "Guide unavailable": "No guide has been generated yet"
+  "Guide unavailable": "No guide has been generated yet",
+  "Live sending": "Live sending"
 }

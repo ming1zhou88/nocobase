@@ -132,7 +132,7 @@
   "getEmailNotifyJob": "getEmailNotifyJob",
   "Recipient": "收件人",
   "Subject": "邮件主题",
-  "Filter window": "Filter window",
+  "Filter window": "筛选窗口",
   "Not sendable count": "不可发送",
   "Trigger sending": "触发发送",
   "Sendable today": "今日可发快递邮件",
@@ -236,5 +236,6 @@
   "Today sent": "今日已发",
   "Edit work order": "编辑工单",
   "Edit guide impact": "修改只影响工单字段，不会更新已生成的指南；如需让新信息生效，请在修改后重新生成指南（已审核或已回填实际回信时不可重新生成）。",
-  "Guide unavailable": "尚未生成指南，无法查看"
+  "Guide unavailable": "尚未生成指南，无法查看",
+  "Live sending": "真实发送"
 }
