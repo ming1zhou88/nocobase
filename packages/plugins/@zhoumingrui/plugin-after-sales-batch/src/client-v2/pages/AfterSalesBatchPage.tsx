@@ -1279,20 +1279,6 @@ export default function AfterSalesBatchPage() {
                 render: (value: string | null) => (value ? <span style={{ whiteSpace: 'nowrap' }}>{value}</span> : '-'),
               },
               {
-                title: t('Has AI guide'),
-                dataIndex: 'has_guide',
-                key: 'has_guide',
-                width: 110,
-                render: (value: string) => <Tag color={value === '是' ? 'success' : 'default'}>{value}</Tag>,
-              },
-              {
-                title: t('Guide serial'),
-                dataIndex: 'guide_serial',
-                key: 'guide_serial',
-                width: 120,
-                render: (value: string | null) => value || '-',
-              },
-              {
                 title: t('Issue type'),
                 dataIndex: 'buyer_issue_type',
                 key: 'buyer_issue_type',
@@ -1306,6 +1292,20 @@ export default function AfterSalesBatchPage() {
                 width: 100,
                 render: (_value: unknown, record: Record<string, any>) =>
                   `${record.table_a_depth ?? '-'} / ${record.table_b_depth ?? '-'}`,
+              },
+              {
+                title: t('Has AI guide'),
+                dataIndex: 'has_guide',
+                key: 'has_guide',
+                width: 110,
+                render: (value: string) => <Tag color={value === '是' ? 'success' : 'default'}>{value}</Tag>,
+              },
+              {
+                title: t('Guide serial'),
+                dataIndex: 'guide_serial',
+                key: 'guide_serial',
+                width: 120,
+                render: (value: string | null) => value || '-',
               },
               {
                 title: t('Generated at'),
