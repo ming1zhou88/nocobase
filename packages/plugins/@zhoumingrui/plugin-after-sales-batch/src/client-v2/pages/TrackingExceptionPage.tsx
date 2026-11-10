@@ -274,6 +274,7 @@ const QUALITY_COLOR: Record<Quality, string> = {
 
 type FilterKey =
   | 'all'
+  | 'usable'
   | 'suspect'
   | 'initial-3'
   | 'initial-3-7'
@@ -293,6 +294,7 @@ type FilterKey =
 
 const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'all', label: '全部' },
+  { key: 'usable', label: '可用 FedEx' },
   { key: 'suspect', label: '可疑/非FedEx' },
   { key: 'initial-3', label: '初始 3 天以上' },
   { key: 'initial-3-7', label: '初始 3–7 天' },
@@ -313,6 +315,7 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
 
 const FILTER_COLORS: Record<FilterKey, string> = {
   all: '#595959',
+  usable: '#389e0d',
   suspect: '#d46b08',
   'initial-3': '#d46b08',
   'initial-3-7': '#d46b08',
@@ -333,6 +336,7 @@ const FILTER_COLORS: Record<FilterKey, string> = {
 
 function matchFilter(row: EnrichedRow, key: FilterKey, currentUserId?: number | string) {
   if (key === 'all') return true;
+  if (key === 'usable') return row._isClean;
   if (key === 'suspect') return !row._isClean;
   if (key === 'recovered') return row._isRecovered;
   if (key === 'manual') return row._needsManual;
@@ -806,6 +810,7 @@ export default function TrackingExceptionPage() {
   const counts = useMemo(() => {
     const result: Record<FilterKey, number> = {
       all: 0,
+      usable: 0,
       suspect: 0,
       'initial-3': 0,
       'initial-3-7': 0,
