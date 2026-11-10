@@ -14,6 +14,9 @@ import { SecondReplySendActionModel } from './models/SecondReplySendActionModel'
 import { RecordDetailActionModel } from './models/RecordDetailActionModel';
 import { FeedbackMarkActionModel } from './models/FeedbackMarkActionModel';
 import { OverseasAfterSalesActionModel } from './models/OverseasAfterSalesActionModel';
+import { DailyScopeFilterActionModel } from './models/DailyScopeFilterActionModel';
+import { DailySetHandleStatusActionModel } from './models/DailySetHandleStatusActionModel';
+import { DailyBatchSetHandleStatusActionModel } from './models/DailyBatchSetHandleStatusActionModel';
 
 type AsyncTaskManagerClientV2Plugin = {
   taskOrigins: {
@@ -46,6 +49,9 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
       FeedbackMarkActionModel,
       RecordDetailActionModel,
       OverseasAfterSalesActionModel,
+      DailyScopeFilterActionModel,
+      DailySetHandleStatusActionModel,
+      DailyBatchSetHandleStatusActionModel,
     });
 
     // B 页：Dify 生成，复用 A 页组件（组件内部根据路由参数区分行为）

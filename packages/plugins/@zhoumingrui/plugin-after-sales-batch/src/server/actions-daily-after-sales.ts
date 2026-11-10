@@ -365,6 +365,110 @@ export async function listTrackingExceptions(ctx: Context, next: Next) {
   await next();
 }
 
+const HANDLE_STATUS_OPTIONS = ['待处理', '已处理', '持续跟踪'];
+
+function normalizeHandleStatus(value: unknown) {
+  const status = String(value ?? '').trim();
+  if (!HANDLE_STATUS_OPTIONS.includes(status)) {
+    throw new Error(`处理状态必须是：${HANDLE_STATUS_OPTIONS.join(' / ')}`);
+  }
+  return status;
+}
+
+async function canOverrideHandleStatus(ctx: Context) {
+  const roles = await currentRoleNames(ctx);
+  return roles.includes('root') || roles.includes('admin');
+}
+
+function getUserOwnerId(user: any) {
+  const id = Number(user?.id);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function getRowOwnerId(row: any) {
+  const raw = row?.get ? row.get('owner_id') : row?.owner_id;
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function getDailyRepository(ctx: Context) {
+  const dataSource = (ctx.app.dataSourceManager as any).get('d_99cwsyi7q4k');
+  const repository = dataSource?.collectionManager?.getRepository('DailyAfterSalesOrder');
+  if (!repository) ctx.throw(500, 'DailyAfterSalesOrder repository unavailable');
+  return repository;
+}
+
+export async function setDailyHandleStatus(ctx: Context, next: Next) {
+  const user = ctx.state?.currentUser;
+  if (!user?.id) ctx.throw(401, 'login required');
+  const values = (ctx.action.params?.values || ctx.request.body || {}) as Record<string, unknown>;
+  const rowId = Number(values.rowId ?? values.id ?? ctx.action.params?.filterByTk);
+  if (!Number.isInteger(rowId) || rowId <= 0) ctx.throw(400, 'rowId is required');
+  let status: string;
+  try {
+    status = normalizeHandleStatus(values.status);
+  } catch (error: any) {
+    ctx.throw(400, error.message);
+  }
+
+  const repository = getDailyRepository(ctx);
+  const row = await repository.findOne({ filterByTk: rowId });
+  if (!row) ctx.throw(404, '订单行不存在');
+
+  const override = await canOverrideHandleStatus(ctx);
+  if (!override && getRowOwnerId(row) !== getUserOwnerId(user)) {
+    ctx.throw(403, '只能更新指派给自己的订单处理状态');
+  }
+
+  await repository.update({ filterByTk: rowId, values: { handle_status: status } });
+  ctx.body = { success: true, rowId, status };
+  await next();
+}
+
+export async function batchSetDailyHandleStatus(ctx: Context, next: Next) {
+  const user = ctx.state?.currentUser;
+  if (!user?.id) ctx.throw(401, 'login required');
+  const values = (ctx.action.params?.values || ctx.request.body || {}) as Record<string, unknown>;
+  const rowIds = (Array.isArray(values.rowIds) ? values.rowIds : [values.rowIds])
+    .map(Number)
+    .filter((id) => Number.isInteger(id) && id > 0);
+  if (!rowIds.length) ctx.throw(400, 'rowIds is required');
+  let status: string;
+  try {
+    status = normalizeHandleStatus(values.status);
+  } catch (error: any) {
+    ctx.throw(400, error.message);
+  }
+
+  const repository = getDailyRepository(ctx);
+  const rows = await repository.find({ filter: { id: { $in: rowIds } } });
+  const override = await canOverrideHandleStatus(ctx);
+  const userId = getUserOwnerId(user);
+  const updatedIds: number[] = [];
+  const skippedIds: number[] = [];
+  for (const row of rows || []) {
+    const id = Number(row?.get ? row.get('id') : row?.id);
+    if (override || getRowOwnerId(row) === userId) updatedIds.push(id);
+    else skippedIds.push(id);
+  }
+
+  if (updatedIds.length) {
+    await repository.update({
+      filter: { id: { $in: updatedIds } },
+      values: { handle_status: status },
+    });
+  }
+  ctx.body = {
+    success: true,
+    status,
+    updated: updatedIds.length,
+    skipped: skippedIds.length,
+    updatedIds,
+    skippedIds,
+  };
+  await next();
+}
+
 export async function getTrackingExceptionPermissions(ctx: Context, next: Next) {
   const roles = await currentRoleNames(ctx);
   const isAgent =
@@ -419,4 +523,6 @@ export const DAILY_AFTER_SALES_ACTIONS = {
   getDraft: getDailyAfterSalesDraft,
   listDraftStates: listDailyDraftStates,
   batchMarkProcessMethod: batchMarkDailyProcessMethod,
+  setHandleStatus: setDailyHandleStatus,
+  batchSetHandleStatus: batchSetDailyHandleStatus,
 };
