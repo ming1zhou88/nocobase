@@ -3,6 +3,9 @@ import { useFlowContext } from '@nocobase/flow-engine';
 import { Button, Select, Space } from 'antd';
 import React, { useState } from 'react';
 
+let memoryScope: 'all' | 'mine' = 'all';
+let memoryStatus = 'all';
+
 const STATUS_OPTIONS = [
   { label: '全部状态', value: 'all' },
   { label: '待处理', value: '待处理' },
@@ -12,10 +15,8 @@ const STATUS_OPTIONS = [
 
 function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
   const ctx = useFlowContext();
-  const [scope, setScope] = useState<'all' | 'mine'>(() =>
-    sessionStorage.getItem('daily-scope') === 'mine' ? 'mine' : 'all',
-  );
-  const [status, setStatus] = useState(() => sessionStorage.getItem('daily-status') || 'all');
+  const [scope, setScope] = useState<'all' | 'mine'>(memoryScope);
+  const [status, setStatus] = useState(memoryStatus);
   const [loading, setLoading] = useState(false);
 
   function getBlockModel() {
@@ -57,8 +58,8 @@ function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
       <Button
         type={scope === 'all' ? 'primary' : 'default'}
         onClick={() => {
+          memoryScope = 'all';
           setScope('all');
-          sessionStorage.setItem('daily-scope', 'all');
           void apply('all', status);
         }}
       >
@@ -67,8 +68,8 @@ function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
       <Button
         type={scope === 'mine' ? 'primary' : 'default'}
         onClick={() => {
+          memoryScope = 'mine';
           setScope('mine');
-          sessionStorage.setItem('daily-scope', 'mine');
           void apply('mine', status);
         }}
       >
@@ -79,8 +80,8 @@ function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
         style={{ width: 130 }}
         options={STATUS_OPTIONS}
         onChange={(value) => {
+          memoryStatus = value;
           setStatus(value);
-          sessionStorage.setItem('daily-status', value);
           void apply(scope, value);
         }}
       />
