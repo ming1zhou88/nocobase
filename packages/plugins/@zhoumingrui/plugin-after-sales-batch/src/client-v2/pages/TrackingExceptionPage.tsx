@@ -1303,7 +1303,8 @@ export default function TrackingExceptionPage() {
         </Button>
       </Space>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-        只读 7D4：异常状态取 exception_status / data_status，行动记录写入 7D4_ActionLog。 路由：{ROUTE} ｜ 数据源：
+        异常状态取 7D4 的 exception_status / data_status；人工处理写回 7D4 并追加 7D4_ActionLog。 路由：{ROUTE} ｜
+        数据源：
         {DATA_SOURCE_KEY} ｜ 集合：{COLLECTION}
       </Typography.Paragraph>
       <style>{`.tracking-exception-table td { white-space: nowrap; vertical-align: middle; height: 40px; padding-top: 6px !important; padding-bottom: 6px !important; } .tracking-exception-table .ant-table-thead > tr > th { height: 38px; white-space: nowrap; } .tracking-exception-table .ant-table-measure-row td, .tracking-exception-table .ant-table-measure-row { height: 0 !important; padding: 0 !important; border: 0 !important; line-height: 0 !important; }`}</style>
