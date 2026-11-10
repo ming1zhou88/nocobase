@@ -323,7 +323,35 @@ export default function AfterSalesBatchPage() {
         pageSize: nextPageSize,
         keyword: nextKeyword,
       });
-      setRecords(response.records || []);
+      const baseRecords = response.records || [];
+      // 列表接口的 guide_has_actual_reply 可能滞后；再用 inspect 接口取一次权威状态，
+      // 保证“重新生成”按钮在回填实际回信后能及时置灰。
+      const serialsWithGuide = baseRecords
+        .filter((row: Record<string, any>) => row.guide_serial)
+        .map((row: Record<string, any>) => String(row.work_order_serial || ''))
+        .filter(Boolean);
+      let mergedRecords = baseRecords;
+      if (serialsWithGuide.length) {
+        try {
+          const inspected = await request('inspectWorkOrders', { work_order_serials: serialsWithGuide });
+          const bySerial = new Map(
+            (inspected.records || []).map((item: Record<string, any>) => [String(item.work_order_serial), item]),
+          );
+          mergedRecords = baseRecords.map((row: Record<string, any>) => {
+            const item = bySerial.get(String(row.work_order_serial));
+            return item
+              ? {
+                  ...row,
+                  guide_has_actual_reply: Boolean(item.has_actual_reply),
+                  guide_review_status: item.review_status ?? row.guide_review_status,
+                }
+              : row;
+          });
+        } catch (error) {
+          // inspect 不可用时退回列表接口字段
+        }
+      }
+      setRecords(mergedRecords);
       setTotal(Number(response.total || 0));
       setPage(Number(response.page || nextPage));
       setPageSize(Number(response.pageSize || nextPageSize));
