@@ -40,6 +40,8 @@ const COLLECTION = '7D4';
 const ACTIONLOG_COLLECTION = '7D4_ActionLog';
 const ROUTE = '/tracking-exception/workbench';
 const PAGE_SIZE = 500;
+// 恢复周期只统计「已恢复且异常持续超过 3 天」的有价值样本（与恢复周期历史表口径一致）
+const RECOVERY_MIN_MINUTES = 72 * 60;
 const GREETINGS = [
   'Hi',
   'Hello',
@@ -961,9 +963,8 @@ export default function TrackingExceptionPage() {
     const premature = resultRows.filter(
       (row) => row.delivered_at && dayjs(row.delivered_at).isAfter(dayjs(row.result_at)),
     );
-    // 平均恢复周期：按分钟精度统计近 30 天的恢复回合。
-    // 排除 <1 小时的“恢复”：这类回合基本发生在同一轮同步里（18–29 分钟一轮），
-    // 属于 Status 抖动，不是真实运输恢复，混进来会把均值压到 0.1 天以内。
+    // 平均恢复周期：只统计“确实恢复 + 异常持续超过 3 天”的有价值样本。
+    // 几十分钟/几小时就恢复的短时波动属于正常现象，会拉低均值，按口径直接排除。
     const cycleMinutes: number[] = [];
     let recoveryTotal = 0;
     for (const row of rows) {
@@ -974,7 +975,7 @@ export default function TrackingExceptionPage() {
       const minutes = dayjs(endedAt).diff(dayjs(row.exception_started_at), 'minute');
       if (!Number.isFinite(minutes) || minutes < 0) continue;
       recoveryTotal += 1;
-      if (minutes < 60) continue;
+      if (minutes <= RECOVERY_MIN_MINUTES) continue;
       cycleMinutes.push(minutes);
     }
     const recoveryAvg = cycleMinutes.length
@@ -995,20 +996,6 @@ export default function TrackingExceptionPage() {
       recoveryTotal,
     };
   }, [rows]);
-
-  // 7D4 的历史起点：用于提示「数据不满 7 天时实质异常必然为 0」
-  const historyStart = useMemo(() => {
-    let earliest: dayjs.Dayjs | null = null;
-    for (const row of rows) {
-      const started = row.exception_started_at || row._startedAt;
-      if (!started) continue;
-      const value = dayjs(started);
-      if (!value.isValid()) continue;
-      if (!earliest || value.isBefore(earliest)) earliest = value;
-    }
-    return earliest;
-  }, [rows]);
-  const historyDays = historyStart ? dayjs().startOf('day').diff(historyStart.startOf('day'), 'day') : null;
 
   const trendSeries = useMemo(() => {
     const byDate = new Map(
@@ -1284,7 +1271,6 @@ export default function TrackingExceptionPage() {
   const renderFilterChip = (filter: { key: FilterKey; label: string }) => (
     <Button
       key={filter.key}
-      size="small"
       type={filterKey === filter.key ? 'primary' : 'default'}
       onClick={() => {
         setFilterKey(filter.key);
@@ -1331,7 +1317,7 @@ export default function TrackingExceptionPage() {
         数据源：
         {DATA_SOURCE_KEY} ｜ 集合：{COLLECTION}
       </Typography.Paragraph>
-      <style>{`.tracking-exception-table td { white-space: nowrap; vertical-align: middle; height: 40px; padding-top: 6px !important; padding-bottom: 6px !important; } .tracking-exception-table .ant-table-thead > tr > th { height: 38px; white-space: nowrap; } .tracking-exception-table .ant-table-measure-row td, .tracking-exception-table .ant-table-measure-row { height: 0 !important; padding: 0 !important; border: 0 !important; line-height: 0 !important; } .tracking-exception-stats .ant-statistic-title { font-size: 13px; color: rgba(0, 0, 0, 0.85); font-weight: 600; }`}</style>
+      <style>{`.tracking-exception-table td { white-space: nowrap; vertical-align: middle; height: 40px; padding-top: 6px !important; padding-bottom: 6px !important; } .tracking-exception-table .ant-table-thead > tr > th { height: 38px; white-space: nowrap; } .tracking-exception-table .ant-table-measure-row td, .tracking-exception-table .ant-table-measure-row { height: 0 !important; padding: 0 !important; border: 0 !important; line-height: 0 !important; } .tracking-exception-stats .ant-statistic-title { font-size: 13px; color: rgba(0, 0, 0, 0.85); font-weight: 600; } .tracking-filter-bar .ant-btn { padding-inline: 10px; }`}</style>
       <div className="tracking-exception-stats" style={{ flexShrink: 0 }}>
         <Row gutter={[16, 16]} align="stretch">
           <Col xs={24} xl={16}>
@@ -1353,7 +1339,7 @@ export default function TrackingExceptionPage() {
                 valueStyle={{ color: stats.prematureRate ? '#cf1322' : '#3f8600' }}
               />
               <Tooltip
-                title={`近 30 天共 ${stats.recoveryTotal} 个恢复回合，其中 ${stats.recoveryCount} 个持续 ≥1 小时计入平均；不足 1 小时的基本是相邻两轮同步之间的 Status 抖动（18–29 分钟，落在 :00/:30 刻度），不计入。`}
+                title={`近 30 天已恢复 ${stats.recoveryTotal} 个回合，其中 ${stats.recoveryCount} 个异常持续超过 3 天，计入平均；3 天以内的短时波动属于正常现象，不计入。`}
               >
                 <Statistic
                   title={
@@ -1373,8 +1359,18 @@ export default function TrackingExceptionPage() {
             </Space>
           </Col>
           <Col xs={24} xl={8}>
-            <Card size="small" title="近 7 日实质异常" style={{ height: '100%' }}>
-              <div style={{ display: 'flex', gap: 4, justifyContent: 'space-between' }}>
+            <Card size="small" style={{ height: '100%' }} styles={{ body: { padding: '8px 12px' } }}>
+              <div
+                style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}
+              >
+                <Typography.Text strong style={{ fontSize: 13 }}>
+                  近 7 日实质异常
+                </Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  按日快照
+                </Typography.Text>
+              </div>
+              <div style={{ display: 'flex', gap: 4 }}>
                 {trendSeries.map((item) => (
                   <div key={item.date} style={{ flex: 1, minWidth: 0, textAlign: 'center' }}>
                     <Typography.Text type="secondary" style={{ fontSize: 11 }}>
@@ -1382,8 +1378,9 @@ export default function TrackingExceptionPage() {
                     </Typography.Text>
                     <div
                       style={{
-                        marginTop: 4,
-                        fontSize: 17,
+                        marginTop: 2,
+                        fontSize: 15,
+                        lineHeight: '18px',
                         fontWeight: 600,
                         color: item.value === null ? '#bfbfbf' : item.isToday ? '#cf1322' : '#262626',
                       }}
@@ -1393,23 +1390,16 @@ export default function TrackingExceptionPage() {
                   </div>
                 ))}
               </div>
-              {historyDays !== null && historyDays < 7 ? (
-                <Typography.Text type="secondary" style={{ display: 'block', marginTop: 6, fontSize: 11 }}>
-                  7D4 数据自 {historyStart?.format('MM-DD')} 起，满 7 天后（
-                  {historyStart?.add(7, 'day').format('MM-DD')}）才会有非 0 值
-                </Typography.Text>
-              ) : null}
             </Card>
           </Col>
         </Row>
       </div>
 
-      <Card size="small" styles={{ body: { padding: 10 } }} style={{ flexShrink: 0 }}>
-        <Space wrap size={[8, 8]} align="center" style={{ width: '100%' }}>
+      <Card className="tracking-filter-bar" size="small" styles={{ body: { padding: 10 } }} style={{ flexShrink: 0 }}>
+        <Space wrap size={[6, 6]} align="center" style={{ width: '100%' }}>
           <Tooltip title="默认显示全部数据；关闭后只看可用 FedEx 数据（可疑 / 非 FedEx / 技术异常会被隐藏）。">
             <Space size={4}>
               <Switch
-                size="small"
                 checked={showSuspect}
                 onChange={(checked) => {
                   setShowSuspect(checked);
@@ -1422,9 +1412,8 @@ export default function TrackingExceptionPage() {
             </Space>
           </Tooltip>
           <Select
-            size="small"
             value={qualityFilter}
-            style={{ width: 128 }}
+            style={{ width: 140 }}
             onChange={setQualityFilter}
             options={[
               { label: '全部质量', value: 'all' },
@@ -1438,11 +1427,10 @@ export default function TrackingExceptionPage() {
             ]}
           />
           <Input
-            size="small"
             allowClear
             prefix={<SearchOutlined />}
             placeholder="订单号 / 运单号 / 店铺 / MSKU"
-            style={{ width: 320 }}
+            style={{ width: 300 }}
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
           />
@@ -1457,11 +1445,11 @@ export default function TrackingExceptionPage() {
             </Button>
           ) : null}
           {canAssign ? (
-            <Button size="small" danger disabled={!selectedRowKeys.length} onClick={() => batchClose()}>
+            <Button danger disabled={!selectedRowKeys.length} onClick={() => batchClose()}>
               批量关闭{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
             </Button>
           ) : null}
-          <Button size="small" onClick={exportRows}>
+          <Button onClick={exportRows}>
             导出{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '当前筛选'}
           </Button>
           {priorityFilters.map(renderFilterChip)}
