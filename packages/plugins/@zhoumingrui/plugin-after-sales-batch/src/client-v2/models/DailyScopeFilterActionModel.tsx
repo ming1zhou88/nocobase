@@ -1,7 +1,7 @@
 import { ActionModel, ActionSceneEnum } from '@nocobase/client-v2';
 import { useFlowContext } from '@nocobase/flow-engine';
-import { Button, Segmented, Select, Space } from 'antd';
-import React, { useState } from 'react';
+import { Button, Select, Space } from 'antd';
+import React, { useEffect, useState } from 'react';
 
 const STATUS_OPTIONS = [
   { label: '全部状态', value: 'all' },
@@ -12,9 +12,18 @@ const STATUS_OPTIONS = [
 
 function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
   const ctx = useFlowContext();
-  const [scope, setScope] = useState<'all' | 'mine'>('all');
-  const [status, setStatus] = useState('all');
+  const [scope, setScope] = useState<'all' | 'mine'>(() =>
+    sessionStorage.getItem('daily-scope') === 'mine' ? 'mine' : 'all',
+  );
+  const [status, setStatus] = useState(() => sessionStorage.getItem('daily-status') || 'all');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (scope !== 'all' || status !== 'all') {
+      void apply(scope, status);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function getBlockModel() {
     const context = (ctx.model?.context || {}) as any;
@@ -39,6 +48,8 @@ function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
         }
         if (Object.keys(filter).length) {
           resource.addFilterGroup?.('daily-scope', filter);
+        } else if (resource.request?.params) {
+          delete resource.request.params.filter;
         }
       }
       await resource.refresh?.();
@@ -49,24 +60,33 @@ function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
 
   return (
     <Space size="small" wrap>
-      <Segmented
-        value={scope}
-        options={[
-          { label: '全部数据', value: 'all' },
-          { label: '我的数据', value: 'mine' },
-        ]}
-        onChange={(value) => {
-          const next = value as 'all' | 'mine';
-          setScope(next);
-          void apply(next, status);
+      <Button
+        type={scope === 'all' ? 'primary' : 'default'}
+        onClick={() => {
+          setScope('all');
+          sessionStorage.setItem('daily-scope', 'all');
+          void apply('all', status);
         }}
-      />
+      >
+        全部数据
+      </Button>
+      <Button
+        type={scope === 'mine' ? 'primary' : 'default'}
+        onClick={() => {
+          setScope('mine');
+          sessionStorage.setItem('daily-scope', 'mine');
+          void apply('mine', status);
+        }}
+      >
+        我的数据
+      </Button>
       <Select
         value={status}
         style={{ width: 130 }}
         options={STATUS_OPTIONS}
         onChange={(value) => {
           setStatus(value);
+          sessionStorage.setItem('daily-status', value);
           void apply(scope, value);
         }}
       />
