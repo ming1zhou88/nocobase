@@ -65,7 +65,7 @@ function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
         onClick={() => {
           setScope('all');
           sessionStorage.setItem('daily-scope', 'all');
-          void apply('all', status);
+          window.location.reload();
         }}
       >
         全部数据
@@ -75,7 +75,7 @@ function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
         onClick={() => {
           setScope('mine');
           sessionStorage.setItem('daily-scope', 'mine');
-          void apply('mine', status);
+          window.location.reload();
         }}
       >
         我的数据
