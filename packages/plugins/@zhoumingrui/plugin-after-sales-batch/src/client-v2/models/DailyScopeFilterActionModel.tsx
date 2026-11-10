@@ -1,7 +1,7 @@
 import { ActionModel, ActionSceneEnum } from '@nocobase/client-v2';
 import { useFlowContext } from '@nocobase/flow-engine';
 import { Button, Select, Space } from 'antd';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 
 const STATUS_OPTIONS = [
   { label: '全部状态', value: 'all' },
@@ -18,16 +18,10 @@ function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
   const [status, setStatus] = useState(() => sessionStorage.getItem('daily-status') || 'all');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (scope !== 'all' || status !== 'all') {
-      void apply(scope, status);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   function getBlockModel() {
     const context = (ctx.model?.context || {}) as any;
-    return context.blockModel || (ctx.model as any)?.parent;
+    const parent = (ctx.model as any)?.parent;
+    return parent?.resource ? parent : context.blockModel || parent;
   }
 
   async function apply(nextScope: 'all' | 'mine', nextStatus: string, refreshOnly = false) {
@@ -65,7 +59,7 @@ function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
         onClick={() => {
           setScope('all');
           sessionStorage.setItem('daily-scope', 'all');
-          window.location.reload();
+          void apply('all', status);
         }}
       >
         全部数据
@@ -75,7 +69,7 @@ function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
         onClick={() => {
           setScope('mine');
           sessionStorage.setItem('daily-scope', 'mine');
-          window.location.reload();
+          void apply('mine', status);
         }}
       >
         我的数据
@@ -87,7 +81,7 @@ function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
         onChange={(value) => {
           setStatus(value);
           sessionStorage.setItem('daily-status', value);
-          window.location.reload();
+          void apply(scope, value);
         }}
       />
       <Button loading={loading} onClick={() => void apply(scope, status, true)}>
