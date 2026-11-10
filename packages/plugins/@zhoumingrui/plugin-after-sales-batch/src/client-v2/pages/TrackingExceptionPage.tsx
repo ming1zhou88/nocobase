@@ -297,12 +297,12 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'all', label: '全部' },
   { key: 'usable', label: '可用 FedEx' },
   { key: 'suspect', label: '可疑/非FedEx' },
-  { key: 'initial-3', label: '初始 3 天以上' },
-  { key: 'initial-3-7', label: '初始 3–7 天' },
-  { key: 'initial-7', label: '初始 7 天以上' },
-  { key: 'transit-3', label: '运输 3 天以上' },
-  { key: 'transit-3-7', label: '运输 3–7 天' },
-  { key: 'transit-7', label: '运输 7 天以上' },
+  { key: 'initial-3', label: '初始≥3天' },
+  { key: 'initial-3-7', label: '初始 3–7天' },
+  { key: 'initial-7', label: '初始≥7天' },
+  { key: 'transit-3', label: '运输≥3天' },
+  { key: 'transit-3-7', label: '运输 3–7天' },
+  { key: 'transit-7', label: '运输≥7天' },
   { key: 'recent-30', label: '近 30 天' },
   { key: 'recovered', label: '已恢复' },
   { key: 'manual', label: '待人工核实' },
@@ -313,6 +313,9 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'technical', label: '技术异常' },
   { key: 'substantive', label: '待实质处理' },
 ];
+
+// 高频操作放在「导出当前筛选」右侧，其余筛选继续往后排（单行 wrap，避免多行占高度）
+const PRIMARY_FILTER_KEYS: FilterKey[] = ['all', 'mine', 'manual', 'recovered', 'unassigned'];
 
 const FILTER_COLORS: Record<FilterKey, string> = {
   all: '#595959',
@@ -1139,21 +1142,21 @@ export default function TrackingExceptionPage() {
     {
       title: '平台订单编号',
       dataIndex: 'order-id',
-      width: 190,
+      width: 180,
       ellipsis: true,
       render: (value: string) => value || '-',
     },
     {
       title: '子订单编号',
       dataIndex: 'order-id-in-warehouse',
-      width: 200,
+      width: 185,
       ellipsis: true,
       render: (value: string) => value || '-',
     },
     {
       title: '运单号',
       dataIndex: 'tracking-number',
-      width: 210,
+      width: 200,
       ellipsis: true,
       render: (value: string) => (
         <Typography.Text copyable style={{ whiteSpace: 'nowrap' }}>
@@ -1164,20 +1167,20 @@ export default function TrackingExceptionPage() {
     {
       title: '仓库',
       dataIndex: 'warehouse-name',
-      width: 180,
+      width: 160,
       ellipsis: true,
       render: (value: string) => value || '-',
     },
     {
       title: '异常类型',
       dataIndex: '_type',
-      width: 100,
+      width: 90,
       render: (value: ExceptionType) => <Tag>{TYPE_LABEL[value]}</Tag>,
     },
     {
       title: '异常开始',
       dataIndex: '_startedAt',
-      width: 150,
+      width: 140,
       render: (value: string) => (value ? dayjs(value).format('YYYY-MM-DD') : '-'),
     },
     {
@@ -1239,7 +1242,7 @@ export default function TrackingExceptionPage() {
     {
       title: '平台订单快递信息',
       key: 'express-info',
-      width: 150,
+      width: 130,
       fixed: 'right' as const,
       render: (_: unknown, row: EnrichedRow) => (
         <Button type="link" size="small" onClick={() => void openExpressInfo(row)}>
@@ -1250,7 +1253,7 @@ export default function TrackingExceptionPage() {
     {
       title: '操作',
       key: 'action',
-      width: 220,
+      width: 200,
       fixed: 'right' as const,
       render: (_: unknown, row: EnrichedRow) => (
         <Space size={0}>
@@ -1271,6 +1274,27 @@ export default function TrackingExceptionPage() {
       ),
     },
   ];
+
+  // 高频筛选紧跟「导出当前筛选」，其余筛选项顺延，整体只占一两行
+  const visibleFilters = FILTERS.filter((filter) => !isAgent || filter.key !== 'unassigned');
+  const priorityFilters = PRIMARY_FILTER_KEYS.map((key) => visibleFilters.find((filter) => filter.key === key)).filter(
+    Boolean,
+  ) as Array<{ key: FilterKey; label: string }>;
+  const restFilters = visibleFilters.filter((filter) => !PRIMARY_FILTER_KEYS.includes(filter.key));
+  const renderFilterChip = (filter: { key: FilterKey; label: string }) => (
+    <Button
+      key={filter.key}
+      size="small"
+      type={filterKey === filter.key ? 'primary' : 'default'}
+      onClick={() => {
+        setFilterKey(filter.key);
+        if (filter.key === 'manual') setShowSuspect(true);
+      }}
+    >
+      {filter.label}
+      <span style={{ marginLeft: 6, color: FILTER_COLORS[filter.key], fontWeight: 600 }}>{counts[filter.key]}</span>
+    </Button>
+  );
 
   return (
     <div
@@ -1307,8 +1331,8 @@ export default function TrackingExceptionPage() {
         数据源：
         {DATA_SOURCE_KEY} ｜ 集合：{COLLECTION}
       </Typography.Paragraph>
-      <style>{`.tracking-exception-table td { white-space: nowrap; vertical-align: middle; height: 40px; padding-top: 6px !important; padding-bottom: 6px !important; } .tracking-exception-table .ant-table-thead > tr > th { height: 38px; white-space: nowrap; } .tracking-exception-table .ant-table-measure-row td, .tracking-exception-table .ant-table-measure-row { height: 0 !important; padding: 0 !important; border: 0 !important; line-height: 0 !important; }`}</style>
-      <div style={{ flexShrink: 0 }}>
+      <style>{`.tracking-exception-table td { white-space: nowrap; vertical-align: middle; height: 40px; padding-top: 6px !important; padding-bottom: 6px !important; } .tracking-exception-table .ant-table-thead > tr > th { height: 38px; white-space: nowrap; } .tracking-exception-table .ant-table-measure-row td, .tracking-exception-table .ant-table-measure-row { height: 0 !important; padding: 0 !important; border: 0 !important; line-height: 0 !important; } .tracking-exception-stats .ant-statistic-title { font-size: 13px; color: rgba(0, 0, 0, 0.85); font-weight: 600; }`}</style>
+      <div className="tracking-exception-stats" style={{ flexShrink: 0 }}>
         <Row gutter={[16, 16]} align="stretch">
           <Col xs={24} xl={16}>
             <Space size="large" wrap>
@@ -1381,73 +1405,67 @@ export default function TrackingExceptionPage() {
       </div>
 
       <Card size="small" styles={{ body: { padding: 10 } }} style={{ flexShrink: 0 }}>
-        <Space direction="vertical" size="small" style={{ width: '100%' }}>
-          <Space wrap size="middle">
-            <Tooltip title="默认显示全部数据；关闭后只看可用 FedEx 数据（可疑 / 非 FedEx / 技术异常会被隐藏）。">
+        <Space wrap size={[8, 8]} align="center" style={{ width: '100%' }}>
+          <Tooltip title="默认显示全部数据；关闭后只看可用 FedEx 数据（可疑 / 非 FedEx / 技术异常会被隐藏）。">
+            <Space size={4}>
               <Switch
+                size="small"
                 checked={showSuspect}
                 onChange={(checked) => {
                   setShowSuspect(checked);
                   if (!checked && filterKey === 'manual') setFilterKey('all');
                 }}
-                checkedChildren="显示可疑数据"
-                unCheckedChildren="只看可用数据"
               />
-            </Tooltip>
-            <Select
-              value={qualityFilter}
-              style={{ width: 150 }}
-              onChange={setQualityFilter}
-              options={[
-                { label: '全部质量', value: 'all' },
-                { label: '可用', value: '可用' },
-                { label: '查询异常', value: '查询异常' },
-                { label: '虚拟单号', value: '虚拟单号' },
-                { label: '非FedEx', value: '非FedEx' },
-                { label: '数据不完整', value: '数据不完整' },
-                { label: '天数异常', value: '天数异常' },
-                { label: '数据过旧', value: '数据过旧' },
-              ]}
-            />
-            <Input
-              allowClear
-              prefix={<SearchOutlined />}
-              placeholder="订单号 / 子订单 / 运单号 / 店铺 / 仓库 / MSKU"
-              style={{ width: 360 }}
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
-            />
-            {canAssign ? (
-              <Button type="primary" disabled={!selectedRowKeys.length} onClick={() => setBatchAssignOpen(true)}>
-                批量指派{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
-              </Button>
-            ) : null}
-            {canAssign ? (
-              <Button danger disabled={!selectedRowKeys.length} onClick={() => batchClose()}>
-                批量关闭{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
-              </Button>
-            ) : null}
-            <Button onClick={exportRows}>
-              导出{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '当前筛选'}
+              <Typography.Text style={{ fontSize: 12 }}>
+                {showSuspect ? '显示可疑数据' : '只看可用数据'}
+              </Typography.Text>
+            </Space>
+          </Tooltip>
+          <Select
+            size="small"
+            value={qualityFilter}
+            style={{ width: 128 }}
+            onChange={setQualityFilter}
+            options={[
+              { label: '全部质量', value: 'all' },
+              { label: '可用', value: '可用' },
+              { label: '查询异常', value: '查询异常' },
+              { label: '虚拟单号', value: '虚拟单号' },
+              { label: '非FedEx', value: '非FedEx' },
+              { label: '数据不完整', value: '数据不完整' },
+              { label: '天数异常', value: '天数异常' },
+              { label: '数据过旧', value: '数据过旧' },
+            ]}
+          />
+          <Input
+            size="small"
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder="订单号 / 运单号 / 店铺 / MSKU"
+            style={{ width: 320 }}
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+          />
+          {canAssign ? (
+            <Button
+              size="small"
+              type="primary"
+              disabled={!selectedRowKeys.length}
+              onClick={() => setBatchAssignOpen(true)}
+            >
+              批量指派{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
             </Button>
-          </Space>
-          <Space wrap size={[8, 8]}>
-            {FILTERS.filter((filter) => !isAgent || filter.key !== 'unassigned').map((filter) => (
-              <Button
-                key={filter.key}
-                type={filterKey === filter.key ? 'primary' : 'default'}
-                onClick={() => {
-                  setFilterKey(filter.key);
-                  if (filter.key === 'manual') setShowSuspect(true);
-                }}
-              >
-                {filter.label}
-                <span style={{ marginLeft: 6, color: FILTER_COLORS[filter.key], fontWeight: 600 }}>
-                  {counts[filter.key]}
-                </span>
-              </Button>
-            ))}
-          </Space>
+          ) : null}
+          {canAssign ? (
+            <Button size="small" danger disabled={!selectedRowKeys.length} onClick={() => batchClose()}>
+              批量关闭{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
+            </Button>
+          ) : null}
+          <Button size="small" onClick={exportRows}>
+            导出{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '当前筛选'}
+          </Button>
+          {priorityFilters.map(renderFilterChip)}
+          {restFilters.map(renderFilterChip)}
         </Space>
       </Card>
 
@@ -1466,7 +1484,7 @@ export default function TrackingExceptionPage() {
             loading={loading}
             dataSource={filteredRows}
             columns={columns as any}
-            scroll={{ x: 2380, y: tableScrollY }}
+            scroll={{ x: 2260, y: tableScrollY }}
             tableLayout="fixed"
             pagination={{
               pageSize: 50,
