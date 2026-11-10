@@ -274,6 +274,7 @@ const QUALITY_COLOR: Record<Quality, string> = {
 
 type FilterKey =
   | 'all'
+  | 'suspect'
   | 'initial-3'
   | 'initial-3-7'
   | 'initial-7'
@@ -292,6 +293,7 @@ type FilterKey =
 
 const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'all', label: '全部' },
+  { key: 'suspect', label: '可疑/非FedEx' },
   { key: 'initial-3', label: '初始 3 天以上' },
   { key: 'initial-3-7', label: '初始 3–7 天' },
   { key: 'initial-7', label: '初始 7 天以上' },
@@ -311,6 +313,7 @@ const FILTERS: Array<{ key: FilterKey; label: string }> = [
 
 const FILTER_COLORS: Record<FilterKey, string> = {
   all: '#595959',
+  suspect: '#d46b08',
   'initial-3': '#d46b08',
   'initial-3-7': '#d46b08',
   'initial-7': '#ad4e00',
@@ -330,6 +333,7 @@ const FILTER_COLORS: Record<FilterKey, string> = {
 
 function matchFilter(row: EnrichedRow, key: FilterKey, currentUserId?: number | string) {
   if (key === 'all') return true;
+  if (key === 'suspect') return !row._isClean;
   if (key === 'recovered') return row._isRecovered;
   if (key === 'manual') return row._needsManual;
   if (key === 'invalid') return row._isInvalid;
@@ -358,7 +362,7 @@ export default function TrackingExceptionPage() {
   const { message } = App.useApp();
   const [rows, setRows] = useState<EnrichedRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showSuspect, setShowSuspect] = useState(false);
+  const [showSuspect, setShowSuspect] = useState(true);
   const [filterKey, setFilterKey] = useState<FilterKey>('all');
   const [keyword, setKeyword] = useState('');
   const [qualityFilter, setQualityFilter] = useState<string>('all');
@@ -802,6 +806,7 @@ export default function TrackingExceptionPage() {
   const counts = useMemo(() => {
     const result: Record<FilterKey, number> = {
       all: 0,
+      suspect: 0,
       'initial-3': 0,
       'initial-3-7': 0,
       'initial-7': 0,
