@@ -2,7 +2,13 @@ import { ActionModel, ActionSceneEnum } from '@nocobase/client-v2';
 import { useFlowContext } from '@nocobase/flow-engine';
 import { App, Button, Modal, Select } from 'antd';
 import type { ButtonProps } from 'antd';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+
+const OVERRIDE_ROLES = ['root', 'admin'];
+
+function readValue(row: any, key: string) {
+  return row?.[key] ?? row?.get?.(key);
+}
 
 const OPTIONS = [
   { label: '快递/邮件通知', value: '快递/邮件通知' },
@@ -25,6 +31,7 @@ function DailyBatchMarkButton({ model }: { model: DailyBatchMarkProcessedActionM
   const [saving, setSaving] = useState(false);
   const [rows, setRows] = useState<Record<string, any>[]>([]);
   const [method, setMethod] = useState('快递/邮件通知');
+  const skippedRef = useRef(0);
 
   function prepare() {
     const selected = selectedRowsOf(ctx);
@@ -32,9 +39,32 @@ function DailyBatchMarkButton({ model }: { model: DailyBatchMarkProcessedActionM
       message.warning('请先勾选至少一行数据');
       return;
     }
-    setRows(selected);
-    setMethod('快递/邮件通知');
-    setOpen(true);
+    const roles: string[] = ((ctx as any).user?.roles || []).map((role: any) => role?.name).filter(Boolean);
+    const override = OVERRIDE_ROLES.some((role) => roles.includes(role));
+    const userId = Number((ctx as any).user?.id);
+    const ownRows = override ? selected : selected.filter((row) => Number(readValue(row, 'owner_id')) === userId);
+    const skipped = selected.length - ownRows.length;
+    if (!ownRows.length) {
+      message.warning('所选数据都不属于你，无法标记处理方式');
+      return;
+    }
+    const openModal = () => {
+      setRows(ownRows);
+      skippedRef.current = skipped;
+      setMethod('快递/邮件通知');
+      setOpen(true);
+    };
+    if (!skipped) {
+      openModal();
+      return;
+    }
+    Modal.confirm({
+      title: '部分数据将跳过',
+      content: `已选 ${selected.length} 行，其中 ${ownRows.length} 行属于你，${skipped} 行属于其他人；只会标记属于你的 ${ownRows.length} 行。`,
+      okText: '继续',
+      cancelText: '取消',
+      onOk: openModal,
+    });
   }
 
   async function submit() {
@@ -45,12 +75,15 @@ function DailyBatchMarkButton({ model }: { model: DailyBatchMarkProcessedActionM
     }
     setSaving(true);
     try {
-      await ctx.api.request({
+      const response = await ctx.api.request({
         url: 'dailyAfterSales:batchMarkProcessMethod',
         method: 'post',
         data: { rowIds, process_method: method },
       });
-      message.success(`已将 ${rowIds.length} 行标记为“${method}”`);
+      const result = response?.data?.data ?? response?.data ?? {};
+      const updated = Number(result.updated ?? rowIds.length);
+      const skipped = Number(result.skipped ?? skippedRef.current);
+      message.success(`已将 ${updated} 行标记为“${method}”${skipped ? `，自动跳过 ${skipped} 行非本人数据` : ''}`);
       setOpen(false);
       const context = (ctx.model?.context || {}) as any;
       const blockModel = context.blockModel || (ctx.model as any)?.parent;
@@ -78,7 +111,10 @@ function DailyBatchMarkButton({ model }: { model: DailyBatchMarkProcessedActionM
         confirmLoading={saving}
         destroyOnClose
       >
-        <div style={{ marginBottom: 12 }}>已勾选 {rows.length} 行，请选择处理方式：</div>
+        <div style={{ marginBottom: 12 }}>
+          已勾选 {rows.length} 行，请选择处理方式：
+          {skippedRef.current ? `（另有 ${skippedRef.current} 行非本人数据将跳过）` : ''}
+        </div>
         <Select value={method} options={OPTIONS} onChange={setMethod} style={{ width: '100%' }} />
         <div style={{ marginTop: 12, color: '#888' }}>该操作只更新处理方式，不修改处理状态。</div>
       </Modal>

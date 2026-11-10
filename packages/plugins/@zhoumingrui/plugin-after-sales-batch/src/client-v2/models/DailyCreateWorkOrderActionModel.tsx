@@ -25,6 +25,11 @@ function DailyCreateWorkOrderButton({ model }: { model: DailyCreateWorkOrderActi
   const pendingValues = useRef<Record<string, unknown>>({});
   const [savingDraft, setSavingDraft] = useState(false);
   const record = (ctx.model?.context as any)?.record || {};
+  const ownerId = Number(record.owner_id ?? record.get?.('owner_id'));
+  const userId = Number((ctx as any).user?.id);
+  const roles: string[] = ((ctx as any).user?.roles || []).map((role: any) => role?.name).filter(Boolean);
+  const canCreate =
+    ['root', 'admin'].some((role) => roles.includes(role)) || (Number.isInteger(ownerId) && ownerId === userId);
   // 列表接口已带回草稿字段时（外部数据源字段元数据 + 角色字段白名单都齐）直接用行数据，
   // 不再逐行请求 listDraftStates；旧环境缺字段时仍回退到逐行查询。
   const listHasDraftInfo =
@@ -182,7 +187,12 @@ function DailyCreateWorkOrderButton({ model }: { model: DailyCreateWorkOrderActi
 
   return (
     <>
-      <Button type="link" onClick={openModal}>
+      <Button
+        type="link"
+        disabled={!canCreate}
+        title={canCreate ? undefined : '只能为自己负责的订单发起售后工单'}
+        onClick={openModal}
+      >
         {hasDraft ? '编辑草稿' : model.props.title || '发起售后工单'}
       </Button>
       <Modal

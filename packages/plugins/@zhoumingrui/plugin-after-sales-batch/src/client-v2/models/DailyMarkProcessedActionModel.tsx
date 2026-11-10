@@ -4,6 +4,12 @@ import { App, Button, Modal, Select } from 'antd';
 import type { ButtonProps } from 'antd';
 import React, { useState } from 'react';
 
+const OVERRIDE_ROLES = ['root', 'admin'];
+
+function readRecordValue(record: any, key: string) {
+  return record?.[key] ?? record?.get?.(key);
+}
+
 const OPTIONS = [
   { label: '快递/邮件通知', value: '快递/邮件通知' },
   { label: '二次回复', value: '二次回复' },
@@ -18,6 +24,11 @@ function DailyMarkProcessedButton({ model }: { model: DailyMarkProcessedActionMo
   const [method, setMethod] = useState('快递/邮件通知');
   const record = (ctx.model?.context as any)?.record || {};
   const rowId = Number(record.id ?? record.get?.('id'));
+  const ownerId = Number(readRecordValue(record, 'owner_id'));
+  const userId = Number((ctx as any).user?.id);
+  const roles: string[] = ((ctx as any).user?.roles || []).map((role: any) => role?.name).filter(Boolean);
+  const canEdit =
+    OVERRIDE_ROLES.some((role) => roles.includes(role)) || (Number.isInteger(ownerId) && ownerId === userId);
 
   function confirmMark() {
     if (!Number.isInteger(rowId) || rowId <= 0) {
@@ -50,7 +61,13 @@ function DailyMarkProcessedButton({ model }: { model: DailyMarkProcessedActionMo
 
   return (
     <>
-      <Button type={(model.props?.type as any) || 'link'} size="small" onClick={confirmMark}>
+      <Button
+        type={(model.props?.type as any) || 'link'}
+        size="small"
+        disabled={!canEdit}
+        title={canEdit ? undefined : '只能标记指派给自己的订单处理方式'}
+        onClick={confirmMark}
+      >
         {model.props?.title || '标记处理方式'}
       </Button>
       <Modal

@@ -130,12 +130,33 @@ export async function batchMarkDailyProcessMethod(ctx: Context, next: Next) {
   const repository = dataSource?.collectionManager?.getRepository('DailyAfterSalesOrder');
   if (!repository) ctx.throw(500, 'DailyAfterSalesOrder repository unavailable');
 
-  await repository.update({
-    filter: { id: { $in: rowIds } },
-    values: { process_method: processMethod },
-  });
+  const user = ctx.state?.currentUser;
+  if (!user?.id) ctx.throw(401, 'login required');
+  const rows = await repository.find({ filter: { id: { $in: rowIds } } });
+  const override = await canOverrideHandleStatus(ctx);
+  const userId = getUserOwnerId(user);
+  const allowedIds: number[] = [];
+  const skippedIds: number[] = [];
+  for (const row of rows || []) {
+    const id = Number(row?.get ? row.get('id') : row?.id);
+    if (override || getRowOwnerId(row) === userId) allowedIds.push(id);
+    else skippedIds.push(id);
+  }
+  if (allowedIds.length) {
+    await repository.update({
+      filter: { id: { $in: allowedIds } },
+      values: { process_method: processMethod },
+    });
+  }
 
-  ctx.body = { success: true, updated: rowIds.length, process_method: processMethod };
+  ctx.body = {
+    success: true,
+    updated: allowedIds.length,
+    skipped: skippedIds.length,
+    updatedIds: allowedIds,
+    skippedIds,
+    process_method: processMethod,
+  };
   await next();
 }
 
