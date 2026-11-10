@@ -626,7 +626,6 @@ export default function TrackingExceptionPage() {
       const data = response?.data?.data ?? response?.data ?? {};
       setCanAssign(Boolean(data.is_assigner));
       setIsAgent(Boolean(data.is_agent));
-      if (data.is_agent) setFilterKey('mine');
     } catch {
       setCanAssign(false);
       setIsAgent(false);
