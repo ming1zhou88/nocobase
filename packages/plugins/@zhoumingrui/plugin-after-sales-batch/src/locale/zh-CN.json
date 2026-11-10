@@ -244,5 +244,8 @@
   "Signed in as": "当前登录",
   "Can operate all rows": "可操作全部工单",
   "Can only operate own rows": "仅本人负责的工单可勾选与操作",
-  "Owner only": "仅工单负责人、售后主管或售后值班可操作"
+  "Owner only": "仅工单负责人、售后主管或售后值班可操作",
+  "All data": "全部数据",
+  "My data": "我的数据",
+  "Retry owner only": "仅批次触发人或售后主管/售后值班可重试失败项"
 }

@@ -326,6 +326,9 @@ export default function AfterSalesBatchPage() {
     const ownerId = Number(record?.owner_id);
     return Boolean(viewer.id && Number.isInteger(ownerId) && ownerId === viewer.id);
   };
+  // 范围开关（复用每日售后订单的「全部数据 / 我的数据」口径）：
+  // 选了售后人员=自己 → 我的数据；未选或选他人 → 全部数据（他人时再叠加人员筛选）。
+  const scope: 'all' | 'mine' = viewer.id && filters.ownerId && Number(filters.ownerId) === viewer.id ? 'mine' : 'all';
 
   // 售后人员下拉：只列售后身份的人（与每日售后订单的负责人来源一致）
   useEffect(() => {
@@ -373,6 +376,11 @@ export default function AfterSalesBatchPage() {
   const [batchSerial, setBatchSerial] = useState<string | null>(null);
   const [batchRecord, setBatchRecord] = useState<Record<string, any> | null>(null);
   const [starting, setStarting] = useState(false);
+  // 「重新尝试失败项」是批次级写操作：批次触发人本人或主管/值班/管理员才可重试，
+  // 避免专员点到别人批次的失败项。服务端强制校验尚未实现（见部署手册遗留项）。
+  const canRetryBatch =
+    canOperateAll ||
+    Boolean(batchRecord?.triggered_by && viewer.name && String(batchRecord.triggered_by).trim() === viewer.name.trim());
 
   const [decisionVisible, setDecisionVisible] = useState(false);
   const [decisionRows, setDecisionRows] = useState<Record<string, any>[]>([]);
@@ -662,6 +670,10 @@ export default function AfterSalesBatchPage() {
   async function handleRetryBatch() {
     if (!batchSerial) {
       message.warning(t('No batch yet'));
+      return;
+    }
+    if (!canRetryBatch) {
+      message.warning(t('Retry owner only'));
       return;
     }
     setStarting(true);
@@ -1046,15 +1058,19 @@ export default function AfterSalesBatchPage() {
             <Typography.Text type="secondary">
               {batchSerial ? `${t('Batch serial')}: ${batchSerial}` : t('No batch yet')}
             </Typography.Text>
-            <Button
-              size="small"
-              icon={<RedoOutlined />}
-              loading={starting}
-              disabled={!batchSerial || Number(batchRecord?.failed_count || 0) === 0}
-              onClick={() => void handleRetryBatch()}
-            >
-              {t('Retry failed')}
-            </Button>
+            <Tooltip title={canRetryBatch ? undefined : t('Retry owner only')}>
+              <span style={{ display: 'inline-block' }}>
+                <Button
+                  size="small"
+                  icon={<RedoOutlined />}
+                  loading={starting}
+                  disabled={!batchSerial || !canRetryBatch || Number(batchRecord?.failed_count || 0) === 0}
+                  onClick={() => void handleRetryBatch()}
+                >
+                  {t('Retry failed')}
+                </Button>
+              </span>
+            </Tooltip>
           </Space>
         }
       >
@@ -1110,6 +1126,19 @@ export default function AfterSalesBatchPage() {
             flexShrink: 0,
           }}
         >
+          <Button
+            type={scope === 'all' ? 'primary' : 'default'}
+            onClick={() => applyFilters({ ...filtersRef.current, ownerId: undefined })}
+          >
+            {t('All data')}
+          </Button>
+          <Button
+            type={scope === 'mine' ? 'primary' : 'default'}
+            disabled={!viewer.id}
+            onClick={() => applyFilters({ ...filtersRef.current, ownerId: viewer.id ?? undefined })}
+          >
+            {t('My data')}
+          </Button>
           <Select
             allowClear
             showSearch
@@ -1368,26 +1397,21 @@ export default function AfterSalesBatchPage() {
                           </Button>
                         </span>
                       </Tooltip>
-                      <Tooltip title={ownerHint}>
-                        <span style={{ display: 'inline-block' }}>
-                          <Button
-                            size="middle"
-                            icon={<FileTextOutlined />}
-                            disabled={!ownerAllowed}
-                            style={actionStyle(!ownerAllowed)}
-                            onClick={() => setDetailRecord(record)}
-                          >
-                            {t('View details')}
-                          </Button>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title={ownerHint || (!record.guide_serial ? t('Guide unavailable') : undefined)}>
+                      <Button
+                        size="middle"
+                        icon={<FileTextOutlined />}
+                        style={actionStyle()}
+                        onClick={() => setDetailRecord(record)}
+                      >
+                        {t('View details')}
+                      </Button>
+                      <Tooltip title={!record.guide_serial ? t('Guide unavailable') : undefined}>
                         <span style={{ display: 'inline-block' }}>
                           <Button
                             size="middle"
                             icon={<EyeOutlined />}
-                            disabled={!ownerAllowed || !record.guide_serial}
-                            style={actionStyle(!ownerAllowed || !record.guide_serial)}
+                            disabled={!record.guide_serial}
+                            style={actionStyle(!record.guide_serial)}
                             onClick={() => void handleViewGuide(record)}
                           >
                             {t('View guide')}

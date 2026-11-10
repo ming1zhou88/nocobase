@@ -244,5 +244,8 @@
   "Signed in as": "Signed in as",
   "Can operate all rows": "Can operate all work orders",
   "Can only operate own rows": "Only work orders assigned to you can be selected or operated",
-  "Owner only": "Only the owner, after-sales manager or duty agent can operate this work order"
+  "Owner only": "Only the owner, after-sales manager or duty agent can operate this work order",
+  "All data": "All data",
+  "My data": "My data",
+  "Retry owner only": "Only the batch trigger, after-sales manager or duty agent can retry failed items"
 }
