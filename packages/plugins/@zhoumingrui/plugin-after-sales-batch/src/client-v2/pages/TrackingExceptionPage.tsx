@@ -1246,7 +1246,7 @@ export default function TrackingExceptionPage() {
           type="warning"
           showIcon
           message="v2 快递异常工作台：数据源 7D4"
-          description="异常状态来自 7D4 的 exception_status/data_status；行动记录写入 7D4_ActionLog。默认只显示数据质量=可用的 12 位 FedEx 行，可疑数据需手动打开。"
+          description="异常状态来自 7D4 的 exception_status/data_status；行动记录写入 7D4_ActionLog。默认显示全部数据；可用 / 可疑数据可在上方质量筛选里切换。"
         />
 
         <Row gutter={[16, 16]} align="stretch">
