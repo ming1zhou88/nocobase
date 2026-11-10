@@ -16,6 +16,7 @@ import {
   App,
   Button,
   Card,
+  DatePicker,
   Descriptions,
   Drawer,
   Form,
@@ -34,6 +35,7 @@ import {
 } from 'antd';
 import type { UploadProps } from 'antd';
 import { useFlowContext } from '@nocobase/flow-engine';
+import dayjs from 'dayjs';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useT } from '../locale';
@@ -89,6 +91,38 @@ function formatMaterialSources(value: unknown): string {
 const BATCH_POLL_INTERVAL_MS = 3000;
 // 与连接器 MAX_BATCH_SIZE 保持一致（默认 50，可用环境变量覆盖时需同步调整）
 const MAX_BATCH_SIZE = 50;
+
+/**
+ * 行级操作权限（对齐「每日售后订单」页）：
+ * - 负责人本人可以操作自己的工单；
+ * - 售后主管 / 售后值班 / 管理员可操作全部工单（复核、代班、兜底）；
+ * - 其他售后专员只能看（列表仍返回全部行），操作列与本行勾选框置灰。
+ */
+const OWNER_BYPASS_ROLES = ['root', 'admin', 'after_sales_manager', 'after_sales_duty'];
+const AFTER_SALES_OWNER_ROLES = ['after_sales_agent', 'after_sales_manager', 'after_sales_duty'];
+
+type ViewerInfo = { id: number | null; name: string; roles: string[] };
+type WorkOrderFilters = {
+  ownerId?: number;
+  orderId?: string;
+  createdFrom?: string;
+  createdTo?: string;
+};
+const EMPTY_FILTERS: WorkOrderFilters = {};
+
+/** 从 ctx.user / auth:check 的返回里取出当前登录人与角色（两种结构都兼容） */
+function readViewer(source: any): ViewerInfo {
+  const data = source?.data?.data ?? source?.data ?? source ?? {};
+  const id = Number(data?.id);
+  const roles = Array.isArray(data?.roles)
+    ? data.roles.map((role: any) => (typeof role === 'string' ? role : role?.name)).filter(Boolean)
+    : [];
+  return {
+    id: Number.isInteger(id) && id > 0 ? id : null,
+    name: String(data?.nickname || data?.username || ''),
+    roles,
+  };
+}
 
 const DEFAULT_REPLY_GREETINGS = [
   'Hi',
@@ -231,6 +265,12 @@ export default function AfterSalesBatchPage() {
   const [pageSize, setPageSize] = useState(30);
   const [keyword, setKeyword] = useState('');
   const [keywordInput, setKeywordInput] = useState('');
+  const [filters, setFilters] = useState<WorkOrderFilters>(EMPTY_FILTERS);
+  const filtersRef = useRef<WorkOrderFilters>(EMPTY_FILTERS);
+  const [orderIdInput, setOrderIdInput] = useState('');
+  const [ownerOptions, setOwnerOptions] = useState<Array<{ label: string; value: number }>>([]);
+  const [ownersLoading, setOwnersLoading] = useState(false);
+  const [viewer, setViewer] = useState<ViewerInfo>(() => readViewer((ctx as any)?.user ?? (ctx as any)?.currentUser));
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [greetingOptions, setGreetingOptions] = useState(DEFAULT_GREETING_OPTIONS);
   const [createVisible, setCreateVisible] = useState(false);
@@ -258,6 +298,77 @@ export default function AfterSalesBatchPage() {
     updateHeight();
     return () => observer.disconnect();
   }, []);
+
+  // 当前登录人：优先取 FlowEngine 上下文的 user；缺失时兜底调 auth:check（角色用于行级操作权限）
+  useEffect(() => {
+    const fromContext = readViewer((ctx as any)?.user ?? (ctx as any)?.currentUser);
+    if (fromContext.id) {
+      setViewer(fromContext);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await ctx.api.request({ url: 'auth:check', skipNotify: true });
+        if (!cancelled) setViewer(readViewer(response?.data?.data ?? response?.data));
+      } catch {
+        // 取不到登录人时按"无权限"处理：操作列全部置灰，避免越权
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ctx]);
+
+  const canOperateAll = viewer.roles.some((role) => OWNER_BYPASS_ROLES.includes(role));
+  const canOperateRow = (record: Record<string, any> | null | undefined) => {
+    if (canOperateAll) return true;
+    const ownerId = Number(record?.owner_id);
+    return Boolean(viewer.id && Number.isInteger(ownerId) && ownerId === viewer.id);
+  };
+
+  // 售后人员下拉：只列售后身份的人（与每日售后订单的负责人来源一致）
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setOwnersLoading(true);
+      try {
+        const response = await ctx.api.request({
+          url: 'users:list',
+          method: 'get',
+          params: { paginate: false, appends: ['roles'], fields: ['id', 'nickname', 'username', 'roles'] },
+        });
+        const users = response?.data?.data ?? [];
+        const options = (Array.isArray(users) ? users : [])
+          .filter((user: any) => (user.roles || []).some((role: any) => AFTER_SALES_OWNER_ROLES.includes(role?.name)))
+          .map((user: any) => ({ label: user.nickname || user.username || String(user.id), value: Number(user.id) }))
+          .filter((option: { label: string; value: number }) => option.label && Number.isInteger(option.value));
+        if (!cancelled) setOwnerOptions(options);
+      } catch {
+        if (!cancelled) setOwnerOptions([]);
+      } finally {
+        if (!cancelled) setOwnersLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ctx]);
+
+  function applyFilters(next: WorkOrderFilters) {
+    filtersRef.current = next;
+    setFilters(next);
+    void loadWorkOrders(1, pageSize, keyword);
+  }
+
+  function resetFilters() {
+    filtersRef.current = EMPTY_FILTERS;
+    setFilters(EMPTY_FILTERS);
+    setKeyword('');
+    setKeywordInput('');
+    setOrderIdInput('');
+    void loadWorkOrders(1, pageSize, '');
+  }
 
   const [batchSerial, setBatchSerial] = useState<string | null>(null);
   const [batchRecord, setBatchRecord] = useState<Record<string, any> | null>(null);
@@ -318,10 +429,16 @@ export default function AfterSalesBatchPage() {
       setLoading(true);
     }
     try {
+      const activeFilters = filtersRef.current;
       const response = await request('listWorkOrders', {
         page: nextPage,
         pageSize: nextPageSize,
         keyword: nextKeyword,
+        // 字段筛选：售后人员 / 平台订单编号（包含匹配）/ 创建时间区间
+        owner_id: activeFilters.ownerId,
+        order_id_like: activeFilters.orderId,
+        created_at_from: activeFilters.createdFrom,
+        created_at_to: activeFilters.createdTo,
       });
       const baseRecords = response.records || [];
       // 列表接口的 guide_has_actual_reply 可能滞后；先让连接器把本页未回填的指南补一次，
@@ -983,6 +1100,64 @@ export default function AfterSalesBatchPage() {
         style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}
         styles={{ body: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: 12 } }}
       >
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 8,
+            flexShrink: 0,
+          }}
+        >
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            loading={ownersLoading}
+            placeholder={t('Owner')}
+            style={{ width: 150 }}
+            value={filters.ownerId}
+            options={ownerOptions}
+            onChange={(value) => applyFilters({ ...filtersRef.current, ownerId: value ?? undefined })}
+          />
+          <Input.Search
+            allowClear
+            placeholder={t('Order ID')}
+            style={{ width: 220 }}
+            value={orderIdInput}
+            onChange={(event) => setOrderIdInput(event.target.value)}
+            onSearch={(value) => applyFilters({ ...filtersRef.current, orderId: value.trim() || undefined })}
+          />
+          <DatePicker.RangePicker
+            allowClear
+            style={{ width: 250 }}
+            value={
+              filters.createdFrom && filters.createdTo ? [dayjs(filters.createdFrom), dayjs(filters.createdTo)] : null
+            }
+            presets={[
+              { label: t('Today'), value: [dayjs().startOf('day'), dayjs().endOf('day')] },
+              { label: t('Last 7 days'), value: [dayjs().subtract(6, 'day').startOf('day'), dayjs().endOf('day')] },
+              { label: t('Last 30 days'), value: [dayjs().subtract(29, 'day').startOf('day'), dayjs().endOf('day')] },
+            ]}
+            onChange={(values) => {
+              if (!values?.[0] || !values?.[1]) {
+                applyFilters({ ...filtersRef.current, createdFrom: undefined, createdTo: undefined });
+                return;
+              }
+              applyFilters({
+                ...filtersRef.current,
+                createdFrom: `${values[0].format('YYYY-MM-DD')} 00:00:00`,
+                createdTo: `${values[1].format('YYYY-MM-DD')} 23:59:59`,
+              });
+            }}
+          />
+          <Button onClick={resetFilters}>{t('Reset filters')}</Button>
+          <Typography.Text type="secondary" style={{ marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+            {viewer.name ? `${t('Signed in as')}: ${viewer.name} · ` : ''}
+            {canOperateAll ? t('Can operate all rows') : t('Can only operate own rows')}
+          </Typography.Text>
+        </div>
         <Space wrap style={{ marginBottom: 8, flexShrink: 0 }}>
           <Input.Search
             style={{ width: 240 }}
@@ -1007,9 +1182,7 @@ export default function AfterSalesBatchPage() {
           <Button
             icon={<ReloadOutlined />}
             onClick={() => {
-              setKeywordInput('');
-              setKeyword('');
-              void loadWorkOrders(1, pageSize, '');
+              void loadWorkOrders(page, pageSize, keyword);
             }}
           >
             {t('Refresh')}
@@ -1065,7 +1238,12 @@ export default function AfterSalesBatchPage() {
             rowKey="work_order_serial"
             loading={loading}
             dataSource={records}
-            rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+            rowSelection={{
+              selectedRowKeys,
+              onChange: setSelectedRowKeys,
+              // 非本人负责的行不允许勾选，避免批量生成/删除越过行级权限
+              getCheckboxProps: (record: Record<string, any>) => ({ disabled: !canOperateRow(record) }),
+            }}
             scroll={{ x: 1900, y: tableScrollY }}
             tableLayout="fixed"
             pagination={{
@@ -1159,6 +1337,9 @@ export default function AfterSalesBatchPage() {
                 width: 370,
                 render: (_value: unknown, record: Record<string, any>) => {
                   const hasGuide = Boolean(record.guide_serial);
+                  // 行级权限：非本人负责（且非主管/值班/管理员）的行，四个操作全部置灰
+                  const ownerAllowed = canOperateRow(record);
+                  const ownerHint = ownerAllowed ? undefined : t('Owner only');
                   const blockedReason =
                     record.guide_review_status === '已审核'
                       ? t('Regenerate blocked reviewed')
@@ -1174,42 +1355,52 @@ export default function AfterSalesBatchPage() {
                   });
                   return (
                     <Space size={6} wrap={false}>
-                      <Button
-                        size="middle"
-                        icon={<EditOutlined />}
-                        style={actionStyle()}
-                        onClick={() => openEditModal(record)}
-                      >
-                        {t('Edit work order')}
-                      </Button>
-                      <Button
-                        size="middle"
-                        icon={<FileTextOutlined />}
-                        style={actionStyle()}
-                        onClick={() => setDetailRecord(record)}
-                      >
-                        {t('View details')}
-                      </Button>
-                      <Tooltip title={!record.guide_serial ? t('Guide unavailable') : undefined}>
+                      <Tooltip title={ownerHint}>
+                        <span style={{ display: 'inline-block' }}>
+                          <Button
+                            size="middle"
+                            icon={<EditOutlined />}
+                            disabled={!ownerAllowed}
+                            style={actionStyle(!ownerAllowed)}
+                            onClick={() => openEditModal(record)}
+                          >
+                            {t('Edit work order')}
+                          </Button>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title={ownerHint}>
+                        <span style={{ display: 'inline-block' }}>
+                          <Button
+                            size="middle"
+                            icon={<FileTextOutlined />}
+                            disabled={!ownerAllowed}
+                            style={actionStyle(!ownerAllowed)}
+                            onClick={() => setDetailRecord(record)}
+                          >
+                            {t('View details')}
+                          </Button>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title={ownerHint || (!record.guide_serial ? t('Guide unavailable') : undefined)}>
                         <span style={{ display: 'inline-block' }}>
                           <Button
                             size="middle"
                             icon={<EyeOutlined />}
-                            disabled={!record.guide_serial}
-                            style={actionStyle(!record.guide_serial)}
+                            disabled={!ownerAllowed || !record.guide_serial}
+                            style={actionStyle(!ownerAllowed || !record.guide_serial)}
                             onClick={() => void handleViewGuide(record)}
                           >
                             {t('View guide')}
                           </Button>
                         </span>
                       </Tooltip>
-                      <Tooltip title={blockedReason}>
+                      <Tooltip title={ownerHint || blockedReason}>
                         <span style={{ display: 'inline-block' }}>
                           <Button
                             size="middle"
                             icon={<RedoOutlined />}
-                            disabled={regenerateDisabled}
-                            style={actionStyle(regenerateDisabled)}
+                            disabled={!ownerAllowed || regenerateDisabled}
+                            style={actionStyle(!ownerAllowed || regenerateDisabled)}
                             onClick={() => void (hasGuide ? handleRegenerate(record) : handleGenerate(record))}
                           >
                             {hasGuide ? t('Regenerate') : t('Generate guide')}
@@ -1233,9 +1424,18 @@ export default function AfterSalesBatchPage() {
         destroyOnClose
         extra={
           detailRecord ? (
-            <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(detailRecord)}>
-              {t('Edit work order')}
-            </Button>
+            <Tooltip title={canOperateRow(detailRecord) ? undefined : t('Owner only')}>
+              <span style={{ display: 'inline-block' }}>
+                <Button
+                  size="small"
+                  icon={<EditOutlined />}
+                  disabled={!canOperateRow(detailRecord)}
+                  onClick={() => openEditModal(detailRecord)}
+                >
+                  {t('Edit work order')}
+                </Button>
+              </span>
+            </Tooltip>
           ) : null
         }
       >

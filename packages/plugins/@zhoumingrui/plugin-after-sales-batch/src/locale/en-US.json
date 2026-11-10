@@ -237,5 +237,12 @@
   "Edit work order": "Edit work order",
   "Edit guide impact": "Changes affect the work order only and do not update an existing guide. Regenerate the guide after saving if the new information should apply (regeneration is blocked once reviewed or after the actual reply is backfilled).",
   "Guide unavailable": "No guide has been generated yet",
-  "Live sending": "Live sending"
+  "Live sending": "Live sending",
+  "Reset filters": "Reset filters",
+  "Last 7 days": "Last 7 days",
+  "Last 30 days": "Last 30 days",
+  "Signed in as": "Signed in as",
+  "Can operate all rows": "Can operate all work orders",
+  "Can only operate own rows": "Only work orders assigned to you can be selected or operated",
+  "Owner only": "Only the owner, after-sales manager or duty agent can operate this work order"
 }
