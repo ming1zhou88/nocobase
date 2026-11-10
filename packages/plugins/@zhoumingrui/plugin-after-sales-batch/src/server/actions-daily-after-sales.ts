@@ -338,16 +338,13 @@ export async function listTrackingExceptions(ctx: Context, next: Next) {
   const values = (ctx.action.params?.values || ctx.request.body || {}) as Record<string, unknown>;
   const user = ctx.state?.currentUser;
   if (!user?.id) ctx.throw(401, 'login required');
-  const roles = await currentRoleNames(ctx);
-  const isAgent =
-    roles.includes('after_sales_agent') &&
-    !roles.some((role) => ['after_sales_manager', 'admin', 'root', 'after_sales_duty'].includes(role));
   const page = Math.max(Number(values.page) || 1, 1);
   const pageSize = Math.min(Math.max(Number(values.pageSize) || 50, 1), 500);
   const dataSource = (ctx.app.dataSourceManager as any).get('d_99cwsyi7q4k');
   const repository = dataSource?.collectionManager?.getRepository('7D4');
   if (!repository) ctx.throw(500, '7D4 repository unavailable');
-  const filter = isAgent ? { handler_id: { $eq: Number(user.id) } } : {};
+  // 所有登录用户都可以查看全部异常行；指派权限由 isAssigner 在写操作上单独控制。
+  const filter = {};
   const fields = String(values.fields || '')
     .split(',')
     .map((field) => field.trim())
