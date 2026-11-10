@@ -338,6 +338,23 @@ export default function AfterSalesBatchPage() {
     }
   }
 
+  function syncGuideState(guideSerial: string, guide: Record<string, any> | null) {
+    const serial = String(guideSerial || '');
+    if (!serial) return;
+    setRecords((previous) =>
+      previous.map((row) =>
+        String(row.guide_serial || '') === serial
+          ? {
+              ...row,
+              guide_review_status: guide?.review_status ?? null,
+              guide_has_actual_reply:
+                Boolean(String(guide?.actual_seller_reply_body || '').trim()) || Boolean(guide?.seller_reply_time),
+            }
+          : row,
+      ),
+    );
+  }
+
   async function loadBatch(currentBatchSerial: string, silent = true) {
     const response = await request('getGuideBatch', { batch_serial: currentBatchSerial });
     setBatchRecord(response.batch || null);
@@ -368,6 +385,19 @@ export default function AfterSalesBatchPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const refreshSilently = () => {
+      void loadWorkOrders(page, pageSize, keyword, true);
+    };
+    const timer = window.setInterval(refreshSilently, 30000);
+    window.addEventListener('focus', refreshSilently);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshSilently);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, keyword]);
 
   useEffect(() => {
     if (!batchSerial) {
@@ -496,6 +526,10 @@ export default function AfterSalesBatchPage() {
     if (!serial) {
       return;
     }
+    if (record.guide_has_actual_reply) {
+      message.warning('已回填卖家实际回信，不能重新生成指南');
+      return;
+    }
     modal.confirm({
       title: t('Generate guide'),
       content: t('Generate guide confirm'),
@@ -511,6 +545,12 @@ export default function AfterSalesBatchPage() {
   async function handleRegenerate(record: Record<string, any>) {
     const serial = String(record.work_order_serial || '');
     if (!serial) {
+      return;
+    }
+    if (record.guide_has_actual_reply || record.guide_review_status === '已审核') {
+      message.warning(
+        record.guide_review_status === '已审核' ? '指南已审核，不能重新生成' : '已回填卖家实际回信，不能重新生成指南',
+      );
       return;
     }
     modal.confirm({
@@ -745,6 +785,7 @@ export default function AfterSalesBatchPage() {
         // 取不到就用库里存的绝对地址
       }
       setGuideRecord(record);
+      syncGuideState(guideSerial, record);
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -790,7 +831,10 @@ export default function AfterSalesBatchPage() {
         guide_serial: guideSerial,
         values: { actual_seller_reply_body: replyDraft, seller_reply_time: sellerReplyTime },
       });
-      setGuideRecord(response.guide || guideRecord);
+      const nextGuide = response.guide || guideRecord;
+      setGuideRecord(nextGuide);
+      syncGuideState(guideSerial, nextGuide);
+      await loadWorkOrders(page, pageSize, keyword, true);
       setEditingReply(false);
       message.success(t('Saved'));
     } catch (error) {
