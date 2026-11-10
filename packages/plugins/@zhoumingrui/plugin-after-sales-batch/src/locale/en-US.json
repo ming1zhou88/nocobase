@@ -207,7 +207,7 @@
   "Regenerate blocked replied": "The seller reply has been backfilled; regeneration is blocked",
   "Similar to previous guide": "Very similar to the previous guide; please check for substantive changes",
   "Batch size limit": "At most {{max}} work orders per batch (selected {{count}}); please split into batches",
-  "Batch size hint": "Up to 50 work orders per batch; split larger selections. Failed items can be retried.",
+  "Batch size hint": "Up to 50 work orders per batch",
   "Generate guide": "Generate guide",
   "Generate guide confirm": "A new guide will be generated for this work order. Continue?",
   "Express mail body": "Express mail body",
@@ -248,5 +248,7 @@
   "All data": "All data",
   "My data": "My data",
   "Retry owner only": "Only the batch trigger, after-sales manager or duty agent can retry failed items",
-  "Express notification": "Express notification"
+  "Express notification": "Express notification",
+  "Keyword hint": "Work order / order ID / email / owner / guide no.",
+  "Batch size detail": "Split larger selections into batches; failed items can be retried separately."
 }

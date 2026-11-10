@@ -18,6 +18,7 @@ import {
   Card,
   DatePicker,
   Descriptions,
+  Divider,
   Drawer,
   Form,
   Input,
@@ -99,12 +100,10 @@ const MAX_BATCH_SIZE = 50;
  * - 其他售后专员只能看（列表仍返回全部行），操作列与本行勾选框置灰。
  */
 const OWNER_BYPASS_ROLES = ['root', 'admin', 'after_sales_manager', 'after_sales_duty'];
-const AFTER_SALES_OWNER_ROLES = ['after_sales_agent', 'after_sales_manager', 'after_sales_duty'];
 
 type ViewerInfo = { id: number | null; name: string; roles: string[] };
 type WorkOrderFilters = {
   ownerId?: number;
-  orderId?: string;
   createdFrom?: string;
   createdTo?: string;
 };
@@ -267,9 +266,6 @@ export default function AfterSalesBatchPage() {
   const [keywordInput, setKeywordInput] = useState('');
   const [filters, setFilters] = useState<WorkOrderFilters>(EMPTY_FILTERS);
   const filtersRef = useRef<WorkOrderFilters>(EMPTY_FILTERS);
-  const [orderIdInput, setOrderIdInput] = useState('');
-  const [ownerOptions, setOwnerOptions] = useState<Array<{ label: string; value: number }>>([]);
-  const [ownersLoading, setOwnersLoading] = useState(false);
   const [viewer, setViewer] = useState<ViewerInfo>(() => readViewer((ctx as any)?.user ?? (ctx as any)?.currentUser));
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [greetingOptions, setGreetingOptions] = useState(DEFAULT_GREETING_OPTIONS);
@@ -327,36 +323,8 @@ export default function AfterSalesBatchPage() {
     return Boolean(viewer.id && Number.isInteger(ownerId) && ownerId === viewer.id);
   };
   // 范围开关（复用每日售后订单的「全部数据 / 我的数据」口径）：
-  // 选了售后人员=自己 → 我的数据；未选或选他人 → 全部数据（他人时再叠加人员筛选）。
+  // 我的数据 = owner_id 固定为登录人；全部数据 = 不限定负责人。
   const scope: 'all' | 'mine' = viewer.id && filters.ownerId && Number(filters.ownerId) === viewer.id ? 'mine' : 'all';
-
-  // 售后人员下拉：只列售后身份的人（与每日售后订单的负责人来源一致）
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setOwnersLoading(true);
-      try {
-        const response = await ctx.api.request({
-          url: 'users:list',
-          method: 'get',
-          params: { paginate: false, appends: ['roles'], fields: ['id', 'nickname', 'username', 'roles'] },
-        });
-        const users = response?.data?.data ?? [];
-        const options = (Array.isArray(users) ? users : [])
-          .filter((user: any) => (user.roles || []).some((role: any) => AFTER_SALES_OWNER_ROLES.includes(role?.name)))
-          .map((user: any) => ({ label: user.nickname || user.username || String(user.id), value: Number(user.id) }))
-          .filter((option: { label: string; value: number }) => option.label && Number.isInteger(option.value));
-        if (!cancelled) setOwnerOptions(options);
-      } catch {
-        if (!cancelled) setOwnerOptions([]);
-      } finally {
-        if (!cancelled) setOwnersLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [ctx]);
 
   function applyFilters(next: WorkOrderFilters) {
     filtersRef.current = next;
@@ -369,7 +337,6 @@ export default function AfterSalesBatchPage() {
     setFilters(EMPTY_FILTERS);
     setKeyword('');
     setKeywordInput('');
-    setOrderIdInput('');
     void loadWorkOrders(1, pageSize, '');
   }
 
@@ -442,9 +409,8 @@ export default function AfterSalesBatchPage() {
         page: nextPage,
         pageSize: nextPageSize,
         keyword: nextKeyword,
-        // 字段筛选：售后人员 / 平台订单编号（包含匹配）/ 创建时间区间
+        // 字段筛选：范围（owner_id）/ 创建时间区间
         owner_id: activeFilters.ownerId,
-        order_id_like: activeFilters.orderId,
         created_at_from: activeFilters.createdFrom,
         created_at_to: activeFilters.createdTo,
       });
@@ -1113,6 +1079,12 @@ export default function AfterSalesBatchPage() {
 
       <Card
         title={t('Work orders')}
+        extra={
+          <Typography.Text type="secondary" style={{ whiteSpace: 'nowrap' }}>
+            {viewer.name ? `${t('Signed in as')}: ${viewer.name} · ` : ''}
+            {canOperateAll ? t('Can operate all rows') : t('Can only operate own rows')}
+          </Typography.Text>
+        }
         style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}
         styles={{ body: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: 12 } }}
       >
@@ -1139,24 +1111,25 @@ export default function AfterSalesBatchPage() {
           >
             {t('My data')}
           </Button>
-          <Select
-            allowClear
-            showSearch
-            optionFilterProp="label"
-            loading={ownersLoading}
-            placeholder={t('Owner')}
-            style={{ width: 150 }}
-            value={filters.ownerId}
-            options={ownerOptions}
-            onChange={(value) => applyFilters({ ...filtersRef.current, ownerId: value ?? undefined })}
-          />
           <Input.Search
             allowClear
-            placeholder={t('Order ID')}
-            style={{ width: 220 }}
-            value={orderIdInput}
-            onChange={(event) => setOrderIdInput(event.target.value)}
-            onSearch={(value) => applyFilters({ ...filtersRef.current, orderId: value.trim() || undefined })}
+            style={{ width: 360 }}
+            placeholder={t('Keyword hint')}
+            value={keywordInput}
+            onChange={(event) => {
+              const value = event.target.value;
+              setKeywordInput(value);
+              // 清空输入框（含 allowClear 的 ×）时同步解除筛选
+              if (!value && keyword) {
+                setKeyword('');
+                void loadWorkOrders(1, pageSize, '');
+              }
+            }}
+            onSearch={(value) => {
+              setKeywordInput(value);
+              setKeyword(value);
+              void loadWorkOrders(1, pageSize, value);
+            }}
           />
           <DatePicker.RangePicker
             allowClear
@@ -1182,32 +1155,8 @@ export default function AfterSalesBatchPage() {
             }}
           />
           <Button onClick={resetFilters}>{t('Reset filters')}</Button>
-          <Typography.Text type="secondary" style={{ marginLeft: 'auto', whiteSpace: 'nowrap' }}>
-            {viewer.name ? `${t('Signed in as')}: ${viewer.name} · ` : ''}
-            {canOperateAll ? t('Can operate all rows') : t('Can only operate own rows')}
-          </Typography.Text>
         </div>
         <Space wrap style={{ marginBottom: 8, flexShrink: 0 }}>
-          <Input.Search
-            style={{ width: 240 }}
-            placeholder={t('Keyword')}
-            allowClear
-            value={keywordInput}
-            onChange={(event) => {
-              const value = event.target.value;
-              setKeywordInput(value);
-              // 清空输入框（含 allowClear 的 ×）时同步解除筛选
-              if (!value && keyword) {
-                setKeyword('');
-                void loadWorkOrders(1, pageSize, '');
-              }
-            }}
-            onSearch={(value) => {
-              setKeywordInput(value);
-              setKeyword(value);
-              void loadWorkOrders(1, pageSize, value);
-            }}
-          />
           <Button
             icon={<ReloadOutlined />}
             onClick={() => {
@@ -1225,6 +1174,7 @@ export default function AfterSalesBatchPage() {
           <Button icon={<PlusOutlined />} type="primary" onClick={() => void openCreateModal()}>
             {t('Create work order')}
           </Button>
+          <Divider type="vertical" style={{ margin: 0 }} />
           <Select
             style={{ width: 150 }}
             value={provider}
@@ -1240,9 +1190,11 @@ export default function AfterSalesBatchPage() {
           <Button danger icon={<DeleteOutlined />} onClick={() => void handleDelete()}>
             {t('Delete selected')}
           </Button>
-          <Typography.Text type="secondary">
-            {t('Batch size hint')}（{selectedRowKeys.length}/{MAX_BATCH_SIZE}）
-          </Typography.Text>
+          <Tooltip title={t('Batch size detail')}>
+            <Typography.Text type="secondary" style={{ whiteSpace: 'nowrap' }}>
+              {t('Batch size hint')}（{selectedRowKeys.length}/{MAX_BATCH_SIZE}）
+            </Typography.Text>
+          </Tooltip>
         </Space>
         <style>{`
           .after-sales-batch-table .ant-table-thead > tr > th { white-space: nowrap; }
