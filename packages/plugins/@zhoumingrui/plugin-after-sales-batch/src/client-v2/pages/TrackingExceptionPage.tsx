@@ -1328,7 +1328,7 @@ export default function TrackingExceptionPage() {
                 valueStyle={{ color: stats.prematureRate ? '#cf1322' : '#3f8600' }}
               />
               <Tooltip
-                title={`近 30 天共 ${stats.recoveryTotal} 个恢复回合，其中 ${stats.recoveryCount} 个持续 ≥1 小时计入平均；其余不足 1 小时的多为同一轮同步内的 Status 抖动（常见 18–29 分钟），不计入。`}
+                title={`近 30 天共 ${stats.recoveryTotal} 个恢复回合，其中 ${stats.recoveryCount} 个持续 ≥1 小时计入平均；不足 1 小时的基本是相邻两轮同步之间的 Status 抖动（18–29 分钟，落在 :00/:30 刻度），不计入。`}
               >
                 <Statistic
                   title={
