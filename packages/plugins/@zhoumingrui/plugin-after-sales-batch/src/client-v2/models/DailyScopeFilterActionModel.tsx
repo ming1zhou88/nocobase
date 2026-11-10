@@ -87,7 +87,7 @@ function DailyScopeFilter({ model }: { model: DailyScopeFilterActionModel }) {
         onChange={(value) => {
           setStatus(value);
           sessionStorage.setItem('daily-status', value);
-          void apply(scope, value);
+          window.location.reload();
         }}
       />
       <Button loading={loading} onClick={() => void apply(scope, status, true)}>
