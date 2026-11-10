@@ -247,5 +247,6 @@
   "Owner only": "Only the owner, after-sales manager or duty agent can operate this work order",
   "All data": "All data",
   "My data": "My data",
-  "Retry owner only": "Only the batch trigger, after-sales manager or duty agent can retry failed items"
+  "Retry owner only": "Only the batch trigger, after-sales manager or duty agent can retry failed items",
+  "Express notification": "Express notification"
 }

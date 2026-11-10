@@ -247,5 +247,6 @@
   "Owner only": "仅工单负责人、售后主管或售后值班可操作",
   "All data": "全部数据",
   "My data": "我的数据",
-  "Retry owner only": "仅批次触发人或售后主管/售后值班可重试失败项"
+  "Retry owner only": "仅批次触发人或售后主管/售后值班可重试失败项",
+  "Express notification": "快递通知"
 }

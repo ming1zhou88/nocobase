@@ -1458,7 +1458,6 @@ export default function TrackingExceptionPage() {
       </Card>
 
       <Card
-        size="small"
         title="异常明细"
         style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}
         styles={{ body: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: 12 } }}

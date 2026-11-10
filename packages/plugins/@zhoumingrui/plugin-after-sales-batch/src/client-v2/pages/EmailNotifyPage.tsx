@@ -393,7 +393,7 @@ export default function EmailNotifyPage() {
     >
       <Space align="center" wrap>
         <Typography.Title level={3} style={{ marginBottom: 0 }}>
-          {t('Express notification emails')}
+          {t('Express notification')}
         </Typography.Title>
         <Tooltip title={t('Copy route path')}>
           <Button
@@ -467,7 +467,6 @@ export default function EmailNotifyPage() {
       </Card>
 
       <Card
-        size="small"
         title={`${t('Sendable today')}（${records.length}）`}
         style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}
         styles={{ body: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: 12 } }}
