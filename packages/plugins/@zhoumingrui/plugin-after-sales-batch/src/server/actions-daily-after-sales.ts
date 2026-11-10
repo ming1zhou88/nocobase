@@ -111,7 +111,11 @@ export async function batchAssignDailyAfterSales(ctx: Context, next: Next) {
 
 /**
  * 批量标记每日售后订单的处理方式：人工处理 / 程序处理。
- * 只更新 process_method，不改 handle_status；是否算“已处理”由业务另行判断。
+ *
+ * 处理方式一旦标定，说明这单已经有人处理过：
+ * - 当前状态为「待处理」或空 → 同步改为「已处理」；
+ * - 当前是「持续跟踪」→ 保持不动，避免覆盖跟进状态；
+ * - 当前已是「已处理」→ 保持。
  */
 export async function batchMarkDailyProcessMethod(ctx: Context, next: Next) {
   const values = (ctx.action.params?.values || ctx.request.body || {}) as Record<string, unknown>;
@@ -137,10 +141,16 @@ export async function batchMarkDailyProcessMethod(ctx: Context, next: Next) {
   const userId = getUserOwnerId(user);
   const allowedIds: number[] = [];
   const skippedIds: number[] = [];
+  const toHandledIds: number[] = [];
   for (const row of rows || []) {
     const id = Number(row?.get ? row.get('id') : row?.id);
-    if (override || getRowOwnerId(row) === userId) allowedIds.push(id);
-    else skippedIds.push(id);
+    if (override || getRowOwnerId(row) === userId) {
+      allowedIds.push(id);
+      const status = String((row?.get ? row.get('handle_status') : row?.handle_status) ?? '').trim();
+      if (!status || status === '待处理') toHandledIds.push(id);
+    } else {
+      skippedIds.push(id);
+    }
   }
   if (allowedIds.length) {
     await repository.update({
@@ -148,13 +158,21 @@ export async function batchMarkDailyProcessMethod(ctx: Context, next: Next) {
       values: { process_method: processMethod },
     });
   }
+  if (toHandledIds.length) {
+    await repository.update({
+      filter: { id: { $in: toHandledIds } },
+      values: { handle_status: '已处理' },
+    });
+  }
 
   ctx.body = {
     success: true,
     updated: allowedIds.length,
     skipped: skippedIds.length,
+    status_updated: toHandledIds.length,
     updatedIds: allowedIds,
     skippedIds,
+    to_handled_ids: toHandledIds,
     process_method: processMethod,
   };
   await next();

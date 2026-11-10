@@ -42,12 +42,14 @@ function DailyMarkProcessedButton({ model }: { model: DailyMarkProcessedActionMo
   async function submit() {
     setSaving(true);
     try {
-      await ctx.api.request({
+      const response = await ctx.api.request({
         url: 'dailyAfterSales:batchMarkProcessMethod',
         method: 'post',
         data: { rowIds: [rowId], process_method: method },
       });
-      message.success(`已标记为“${method}”`);
+      const result = response?.data?.data ?? response?.data ?? {};
+      const statusUpdated = Number(result.status_updated ?? 0);
+      message.success(`已标记为“${method}”${statusUpdated ? '，处理状态已更新为已处理' : ''}`);
       setOpen(false);
       const blockModel = (ctx.model?.context as any)?.blockModel || (ctx.model as any)?.parent;
       await blockModel?.resource?.refresh?.();

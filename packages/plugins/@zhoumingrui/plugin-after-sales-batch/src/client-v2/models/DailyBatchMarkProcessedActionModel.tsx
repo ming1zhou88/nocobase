@@ -83,7 +83,12 @@ function DailyBatchMarkButton({ model }: { model: DailyBatchMarkProcessedActionM
       const result = response?.data?.data ?? response?.data ?? {};
       const updated = Number(result.updated ?? rowIds.length);
       const skipped = Number(result.skipped ?? skippedRef.current);
-      message.success(`已将 ${updated} 行标记为“${method}”${skipped ? `，自动跳过 ${skipped} 行非本人数据` : ''}`);
+      const statusUpdated = Number(result.status_updated ?? 0);
+      message.success(
+        `已将 ${updated} 行标记为“${method}”${statusUpdated ? `，${statusUpdated} 行状态更新为已处理` : ''}${
+          skipped ? `，自动跳过 ${skipped} 行非本人数据` : ''
+        }`,
+      );
       setOpen(false);
       const context = (ctx.model?.context || {}) as any;
       const blockModel = context.blockModel || (ctx.model as any)?.parent;
