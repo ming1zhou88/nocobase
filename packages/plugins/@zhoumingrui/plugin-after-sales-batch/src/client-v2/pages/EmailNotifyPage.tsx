@@ -263,10 +263,16 @@ export default function EmailNotifyPage() {
     return '';
   }, [date]);
 
-  const sendableRecords = useMemo(() => records.filter((record) => record.sendable), [records]);
+  // 「今日待发」只统计今天（美西）窗口内的订单；批量搜索会带出窗口外的历史/未来单，
+  // 这些单仍可查看，但不计入今日待发、也不能直接发送。
+  const sendableRecords = useMemo(
+    () => records.filter((record) => record.sendable && record.in_today_window !== false),
+    [records],
+  );
   const sentRecords = useMemo(() => records.filter((record) => Number(record.email_sent)), [records]);
   const blockedRecords = useMemo(
-    () => records.filter((record) => !record.sendable && !Number(record.email_sent)),
+    () =>
+      records.filter((record) => !Number(record.email_sent) && (!record.sendable || record.in_today_window === false)),
     [records],
   );
   const displayRecords = useMemo(() => {
@@ -299,6 +305,23 @@ export default function EmailNotifyPage() {
       message.warning(t('Please select at least one order'));
       return;
     }
+    // 批量搜索会带出「不限日期」的行：先拦掉不在今日（美西）窗口的订单，
+    // 否则连接器建任务时会把它们全部跳过，最后只提示一句“没有待发订单”。
+    const rowsById = new Map(records.map((record) => [String(record.order_id), record]));
+    const outsideWindow = orderIds.filter((orderId) => rowsById.get(String(orderId))?.in_today_window === false);
+    if (outsideWindow.length) {
+      modal.warning({
+        title: t('Not in today window'),
+        content: outsideWindow
+          .map((orderId) => {
+            const record = rowsById.get(String(orderId));
+            return `${orderId}：${String(record?.platform_sendable_at_pacific || '-')}（${t('Pacific time')}）`;
+          })
+          .join('\n'),
+        okText: t('Confirm'),
+      });
+      return;
+    }
     modal.confirm({
       title: t('Trigger sending'),
       content: t('Will send {{count}} notification emails. Continue?', { count: orderIds.length }),
@@ -315,6 +338,22 @@ export default function EmailNotifyPage() {
             write_back: dryRun ? (dryRunWriteBack ? 1 : 0) : 1,
           });
           setJobSerial(String(job.job_serial));
+          if (Number(job.runnable_count || 0) === 0) {
+            // 连接器建任务时已把不可发/不在窗口的订单标成 skipped；把真实原因显示出来，
+            // 不再继续调 Dify 得到笼统的“没有待发订单”。
+            const detail = await request('getEmailNotifyJob', { job_serial: job.job_serial });
+            const reasons = (detail.items || [])
+              .filter((item: Record<string, any>) => item.status === 'skipped')
+              .map((item: Record<string, any>) => `${item.order_id}：${item.error || '-'}`)
+              .join('\n');
+            modal.warning({
+              title: t('No sendable orders'),
+              content: reasons || t('No sendable orders'),
+              okText: t('Confirm'),
+            });
+            await loadJob(String(job.job_serial), false);
+            return;
+          }
           const result = await request('runEmailNotifyJobViaDify', {
             job_serial: job.job_serial,
             dry_run: dryRun ? 1 : '',
@@ -341,6 +380,12 @@ export default function EmailNotifyPage() {
   async function handleSendOne(record: Record<string, any>) {
     if (!record.sendable) {
       message.warning(String(record.reason || t('Not sendable')));
+      return;
+    }
+    if (record.in_today_window === false) {
+      message.warning(
+        `${t('Not in today window')}：${String(record.platform_sendable_at_pacific || '-')}（${t('Pacific time')}）`,
+      );
       return;
     }
     await sendOrders([String(record.order_id)], String(record.order_id));
@@ -545,7 +590,10 @@ export default function EmailNotifyPage() {
             value={activeTab}
             onChange={(value) => setActiveTab(String(value))}
             options={[
-              { label: `${t('Today sendable')} (${records.length})`, value: 'all' },
+              {
+                label: `${batchMeta ? t('Batch search results') : t('Today sendable')} (${records.length})`,
+                value: 'all',
+              },
               { label: `${t('Today pending')} (${sendableRecords.length})`, value: 'pending' },
               { label: `${t('Today sent')} (${sentRecords.length})`, value: 'sent' },
               { label: `${t('Not sendable')} (${blockedRecords.length})`, value: 'blocked' },
@@ -554,7 +602,7 @@ export default function EmailNotifyPage() {
           {windowInfo ? (
             <Tooltip title={windowInfo.note}>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {t('Filter window')}：{windowInfo.start} ~ {windowInfo.end}（{t('US Pacific')}）
+                {t('Filter window')}：{windowInfo.date}（{t('US Pacific')}）
               </Typography.Text>
             </Tooltip>
           ) : null}
@@ -567,7 +615,7 @@ export default function EmailNotifyPage() {
             rowSelection={{
               selectedRowKeys,
               onChange: setSelectedRowKeys,
-              getCheckboxProps: (record) => ({ disabled: !record.sendable }),
+              getCheckboxProps: (record) => ({ disabled: !record.sendable || record.in_today_window === false }),
             }}
             scroll={{ x: 1900, y: tableScrollY }}
             pagination={{ pageSize: 20, showSizeChanger: true }}
@@ -616,8 +664,8 @@ export default function EmailNotifyPage() {
               },
               {
                 title: t('Sendable at (Pacific)'),
-                dataIndex: 'platform_sendable_at',
-                key: 'platform_sendable_at',
+                dataIndex: 'platform_sendable_at_pacific',
+                key: 'platform_sendable_at_pacific',
                 width: 190,
                 render: (value: unknown) => <span style={{ whiteSpace: 'nowrap' }}>{String(value || '-')}</span>,
               },
@@ -634,6 +682,19 @@ export default function EmailNotifyPage() {
                   if (!record.sendable) {
                     return (
                       <Tooltip title={String(record.reason || '-')}>
+                        <Button size="small" disabled>
+                          {t('Send')}
+                        </Button>
+                      </Tooltip>
+                    );
+                  }
+                  if (record.in_today_window === false) {
+                    return (
+                      <Tooltip
+                        title={`${t('Not in today window')}：${String(record.platform_sendable_at_pacific || '-')}（${t(
+                          'Pacific time',
+                        )}）`}
+                      >
                         <Button size="small" disabled>
                           {t('Send')}
                         </Button>
@@ -785,7 +846,7 @@ export default function EmailNotifyPage() {
               {String(detailRecord.update_time || '-')}
             </Descriptions.Item>
             <Descriptions.Item label={t('Sendable at (Pacific)')}>
-              {String(detailRecord.platform_sendable_at || '-')}
+              {String(detailRecord.platform_sendable_at_pacific || detailRecord.platform_sendable_at || '-')}
             </Descriptions.Item>
             <Descriptions.Item label={t('Remark')}>{String(detailRecord.remark || '-')}</Descriptions.Item>
             <Descriptions.Item label={t('Express mail sent')}>
