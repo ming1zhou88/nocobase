@@ -45,11 +45,20 @@ function DailyAssignButton({ model }: { model: DailyAssignActionModel }) {
       const response = await ctx.api.request({
         url: 'users:list',
         method: 'get',
-        params: { paginate: false, appends: ['roles'], fields: ['nickname', 'username', 'roles'] },
+        params: {
+          paginate: false,
+          appends: ['roles'],
+          fields: ['nickname', 'username', 'roles', 'employment_status', 'left_at'],
+        },
       });
       const users = response?.data?.data ?? [];
       const list: OwnerOption[] = (Array.isArray(users) ? users : [])
-        .filter((user: any) => (user.roles || []).some((role: any) => ASSIGNEE_ROLES.includes(role?.name)))
+        .filter(
+          (user: any) =>
+            (user.roles || []).some((role: any) => ASSIGNEE_ROLES.includes(role?.name)) &&
+            user.employment_status === '在职' &&
+            !user.left_at,
+        )
         .map((user: any) => ({ label: user.nickname || user.username, value: user.nickname || user.username }))
         .filter((item) => item.value);
       setOptions(list);
