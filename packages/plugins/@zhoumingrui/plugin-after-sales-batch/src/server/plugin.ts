@@ -1,6 +1,7 @@
 import { Context, Next } from '@nocobase/actions';
 import { installTrackingExceptionAssign } from './tracking-exception-assign';
 import { installDailyAfterSalesAssign } from './daily-after-sales-assign';
+import { installStaffStatusSync } from './staff-status-sync';
 import { installAssignmentFieldGuard } from './assignment-field-guard';
 import { normalizeWorkOrderRecord, normalizeWorkOrderRecords } from './work-order-field-alias';
 import { DAILY_AFTER_SALES_ACTIONS, DAILY_AFTER_SALES_RESOURCE } from './actions-daily-after-sales';
@@ -542,6 +543,9 @@ export class PluginAfterSalesBatchServer extends Plugin {
     // 行级 scope 只限制"改哪几行"，不限制"改哪几列" —— 专员本可把自己那行的 owner_id
     // 改成别人（推单）。ACL 的 fields 不管写（只影响客户端渲染），所以在这里 403。
     installAssignmentFieldGuard(this.app, this.log as any);
+
+    // ---- 人员在职状态缓存：事件同步 + 每日全量兜底 ----
+    installStaffStatusSync(this.app, this.log as any);
 
     // ---- Dify 路径（新版）----
     this.app.resourceManager.define({

@@ -73,19 +73,27 @@ function DailyBatchAssignButton({ model }: { model: DailyBatchAssignActionModel 
       message.warning('请先勾选至少一行数据，再批量指派');
       return;
     }
+    const assignable = rows.filter((row) => String(row.handle_status ?? row.get?.('handle_status') ?? '') !== '已处理');
+    if (!assignable.length) {
+      message.warning('所选订单都已处理，不能改派');
+      return;
+    }
+    if (assignable.length < rows.length) {
+      message.warning(`已自动跳过 ${rows.length - assignable.length} 行已处理订单`);
+    }
     const openOwnerModal = () => {
-      rowsRef.current = rows;
-      setCount(rows.length);
+      rowsRef.current = assignable;
+      setCount(assignable.length);
       setOpen(true);
       if (!options.length) void loadOwners();
     };
     // 已有负责人的行：先确认是否重新指派（未指派过的直接进选择窗口）
-    const assigned = rows.filter((row) => String(row.owner_name ?? row.get?.('owner_name') ?? '').trim());
+    const assigned = assignable.filter((row) => String(row.owner_name ?? row.get?.('owner_name') ?? '').trim());
     if (assigned.length) {
       const names = [...new Set(assigned.map((row) => String(row.owner_name ?? row.get?.('owner_name') ?? '').trim()))];
       modal.confirm({
         title: '确认重新指派',
-        content: `所选 ${rows.length} 行中有 ${assigned.length} 行已指派${
+        content: `所选可改派 ${assignable.length} 行中有 ${assigned.length} 行已指派${
           names.length ? `（如 ${names.slice(0, 3).join('、')}）` : ''
         }，继续会覆盖原负责人。`,
         okText: '继续指派',

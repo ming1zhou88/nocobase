@@ -70,6 +70,8 @@ function DailyAssignButton({ model }: { model: DailyAssignActionModel }) {
 
   const roles: string[] = ((ctx as any).user?.roles || []).map((role: any) => role?.name).filter(Boolean);
   const canAssign = roles.some((name) => ['after_sales_manager', 'admin', 'root', 'after_sales_duty'].includes(name));
+  const isHandled = String(record.handle_status ?? record.get?.('handle_status') ?? '') === '已处理';
+  const canReassign = canAssign && !isHandled;
 
   async function handleAssign() {
     const roles: string[] = ((ctx as any).user?.roles || []).map((role: any) => role?.name).filter(Boolean);
@@ -135,8 +137,8 @@ function DailyAssignButton({ model }: { model: DailyAssignActionModel }) {
       <Button
         type="link"
         size="small"
-        disabled={!canAssign}
-        title={canAssign ? undefined : '仅售后值班/售后主管可指派'}
+        disabled={!canReassign}
+        title={isHandled ? '已处理订单不能改派' : canAssign ? undefined : '仅售后值班/售后主管可指派'}
         onClick={handleAssign}
       >
         {model.props?.title || '指派'}
