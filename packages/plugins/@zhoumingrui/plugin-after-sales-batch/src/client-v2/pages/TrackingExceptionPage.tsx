@@ -680,12 +680,32 @@ export default function TrackingExceptionPage() {
       onOk: async () => {
         try {
           const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
+          const stamp = dayjs().format('YYYY-MM-DD HH:mm');
+          const operatorName = ctx.currentUser?.nickname || ctx.currentUser?.username || '人工';
           for (const id of selectedRowKeys) {
+            const row = rows.find((item) => String(item.id) === String(id));
             await ctx.api.request({
               url: `${COLLECTION}:update?filterByTk=${id}`,
               method: 'post',
               headers: { 'x-data-source': DATA_SOURCE_KEY },
               data: { handle_status: 'closed', closed_at: now, close_reason: '批量关闭' },
+            });
+            await ctx.api.request({
+              url: `${ACTIONLOG_COLLECTION}:create`,
+              method: 'post',
+              headers: { 'x-data-source': DATA_SOURCE_KEY },
+              data: {
+                exception_id: id,
+                orderItem_orderItemId: row?.orderItem_orderItemId ?? null,
+                'tracking-number': row?.['tracking-number'] ?? null,
+                action_type: 'close',
+                action_at: now,
+                action_status: 'done',
+                action_note: `[批量关闭 ${stamp}] 批量关闭`,
+                close_reason: '批量关闭',
+                operator_id: ctx.currentUser?.id ?? null,
+                operator_name: operatorName,
+              },
             });
           }
           message.success(`已关闭 ${selectedRowKeys.length} 行`);
@@ -696,7 +716,7 @@ export default function TrackingExceptionPage() {
         }
       },
     });
-  }, [canAssign, ctx, load, message, selectedRowKeys]);
+  }, [canAssign, ctx, load, message, rows, selectedRowKeys]);
 
   const loadTrend = useCallback(async () => {
     try {
@@ -861,7 +881,7 @@ export default function TrackingExceptionPage() {
     // 待人工核实始终按全量数据计数；否则默认“只看可用数据”时按钮永远显示 0。
     result.manual = rows.filter((row) => row._needsManual).length;
     return result;
-  }, [scopedRows, rows]);
+  }, [ctx.currentUser?.id, scopedRows, rows]);
 
   const filteredRows = useMemo(() => {
     const lower = keyword.trim().toLowerCase();
@@ -888,7 +908,7 @@ export default function TrackingExceptionPage() {
       if (recoveredDiff !== 0) return recoveredDiff;
       return (b._ageDays ?? -1) - (a._ageDays ?? -1);
     });
-  }, [scopedRows, filterKey, qualityFilter, keyword]);
+  }, [ctx.currentUser?.id, scopedRows, filterKey, qualityFilter, keyword]);
 
   const exportRows = useCallback(() => {
     const source = selectedRowKeys.length ? rows.filter((row) => selectedRowKeys.includes(row.id)) : filteredRows;
