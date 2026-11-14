@@ -504,6 +504,11 @@ export default function TrackingExceptionPage() {
   const [refundAmount, setRefundAmount] = useState<string>('');
   const [refundCurrency, setRefundCurrency] = useState('USD');
   const [claimRecordNo, setClaimRecordNo] = useState('');
+  const [claimAmount, setClaimAmount] = useState('');
+  const [claimCurrency, setClaimCurrency] = useState('USD');
+  const [claimReceived, setClaimReceived] = useState('');
+  const [claimStatus, setClaimStatus] = useState('');
+  const [claimSaving, setClaimSaving] = useState(false);
   const [closeReason, setCloseReason] = useState('');
   const [customerContacted, setCustomerContacted] = useState<string>('0');
   const [workOrderSerial, setWorkOrderSerial] = useState('');
@@ -1394,6 +1399,45 @@ export default function TrackingExceptionPage() {
     }
   }
 
+  async function saveClaim() {
+    if (!selected) return;
+    setClaimSaving(true);
+    try {
+      const data = {
+        exception_id: selected.id,
+        claim_record_no: claimRecordNo.trim() || null,
+        claim_amount: claimAmount === '' ? null : Number(claimAmount),
+        claim_currency: claimCurrency || 'USD',
+        claim_received_amount: claimReceived === '' ? null : Number(claimReceived),
+        claim_status: claimStatus.trim() || null,
+        updated_by: currentUser?.nickname || currentUser?.username || '人工',
+      };
+      let exists = false;
+      try {
+        const response = await ctx.api.request({
+          url: `7D4_Claim:get?filterByTk=${selected.id}`,
+          method: 'get',
+          headers: { 'x-data-source': DATA_SOURCE_KEY },
+        });
+        exists = Boolean(response?.data?.data ?? response?.data);
+      } catch {
+        exists = false;
+      }
+      await ctx.api.request({
+        url: exists ? `7D4_Claim:update?filterByTk=${selected.id}` : '7D4_Claim:create',
+        method: 'post',
+        headers: { 'x-data-source': DATA_SOURCE_KEY },
+        data,
+      });
+      message.success('索赔信息已保存');
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setClaimSaving(false);
+    }
+  }
+
   async function saveActionLog() {
     if (!selected) return;
     setSaving(true);
@@ -2030,6 +2074,40 @@ export default function TrackingExceptionPage() {
                     onChange={(event) => setClaimRecordNo(event.target.value)}
                     placeholder="索赔记录号（可选）"
                   />
+                  <Input
+                    value={claimAmount}
+                    onChange={(event) => setClaimAmount(event.target.value)}
+                    placeholder="索赔金额"
+                    style={{ width: 120 }}
+                  />
+                  <Select
+                    value={claimCurrency}
+                    onChange={setClaimCurrency}
+                    style={{ width: 90 }}
+                    options={[{ value: 'USD' }, { value: 'CNY' }, { value: 'EUR' }]}
+                  />
+                  <Input
+                    value={claimReceived}
+                    onChange={(event) => setClaimReceived(event.target.value)}
+                    placeholder="实际赔付金额"
+                    style={{ width: 140 }}
+                  />
+                  <Select
+                    value={claimStatus || undefined}
+                    onChange={setClaimStatus}
+                    allowClear
+                    placeholder="索赔状态"
+                    style={{ width: 130 }}
+                    options={[
+                      { label: '申请中', value: 'pending' },
+                      { label: '已批准', value: 'approved' },
+                      { label: '已赔付', value: 'paid' },
+                      { label: '已拒绝', value: 'rejected' },
+                    ]}
+                  />
+                  <Button loading={claimSaving} onClick={() => void saveClaim()}>
+                    保存索赔
+                  </Button>
                   <Input
                     value={workOrderSerial}
                     onChange={(event) => setWorkOrderSerial(event.target.value)}
