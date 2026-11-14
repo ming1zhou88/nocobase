@@ -107,11 +107,13 @@ const FIELDS = [
 
 type Row = Record<string, any>;
 type Quality = '可用' | '查询异常' | '虚拟单号' | '非FedEx' | '数据不完整' | '天数异常' | '数据过旧';
+type Carrier = 'FedEx' | 'UPS' | '其他';
 type ExceptionType = 'initial' | 'transit' | 'other';
 type ExceptionState = '异常中' | '已恢复' | '待核实' | '已作废';
 
 type EnrichedRow = Row & {
   _quality: Quality;
+  _carrier: Carrier;
   _qualityReasons: string[];
   _type: ExceptionType;
   _state: ExceptionState;
@@ -161,6 +163,15 @@ function numberOrNull(value: unknown) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0 || number > 365) return null;
   return number;
+}
+
+function detectCarrier(tracking: unknown): Carrier {
+  const value = String(tracking || '')
+    .trim()
+    .toUpperCase();
+  if (/^1Z/.test(value)) return 'UPS';
+  if (/^\d{12}$/.test(value)) return 'FedEx';
+  return '其他';
 }
 
 function enrich(row: Row): EnrichedRow {
@@ -243,6 +254,7 @@ function enrich(row: Row): EnrichedRow {
   return {
     ...row,
     _quality: quality,
+    _carrier: detectCarrier(row['tracking-number']),
     _qualityReasons: reasons,
     _type: type,
     _state: state,
@@ -384,6 +396,8 @@ export default function TrackingExceptionPage() {
   const [filterKey, setFilterKey] = useState<FilterKey>('all');
   const [keyword, setKeyword] = useState('');
   const [qualityFilter, setQualityFilter] = useState<string>('all');
+  const [carrierFilter, setCarrierFilter] = useState<'all' | Carrier>('all');
+  const [ownerFilter, setOwnerFilter] = useState<string>('all');
   const [selected, setSelected] = useState<EnrichedRow | null>(null);
   const [manualNote, setManualNote] = useState('');
   const [actionLogs, setActionLogs] = useState<Row[]>([]);
@@ -865,7 +879,20 @@ export default function TrackingExceptionPage() {
     return () => observer.disconnect();
   }, [loading]);
 
-  const scopedRows = useMemo(() => (showSuspect ? rows : rows.filter((row) => row._isClean)), [rows, showSuspect]);
+  const filterScopedRows = useMemo(
+    () =>
+      rows.filter((row) => {
+        if (carrierFilter !== 'all' && row._carrier !== carrierFilter) return false;
+        if (ownerFilter === 'unassigned') return !row.handler_id;
+        if (ownerFilter !== 'all' && Number(row.handler_id) !== Number(ownerFilter)) return false;
+        return true;
+      }),
+    [rows, carrierFilter, ownerFilter],
+  );
+  const scopedRows = useMemo(
+    () => (showSuspect ? filterScopedRows : filterScopedRows.filter((row) => row._isClean)),
+    [filterScopedRows, showSuspect],
+  );
 
   const counts = useMemo(() => {
     const result: Record<FilterKey, number> = {
@@ -895,7 +922,7 @@ export default function TrackingExceptionPage() {
       }
     }
     // 待人工核实始终按全量数据计数；否则默认“只看可用数据”时按钮永远显示 0。
-    result.manual = rows.filter((row) => row._needsManual && !row._isClosed).length;
+    result.manual = filterScopedRows.filter((row) => row._needsManual && !row._isClosed).length;
     return result;
   }, [currentUser?.id, scopedRows, rows]);
 
@@ -1212,6 +1239,14 @@ export default function TrackingExceptionPage() {
       ),
     },
     {
+      title: '物流商',
+      dataIndex: '_carrier',
+      width: 85,
+      render: (value: Carrier) => (
+        <Tag color={value === 'FedEx' ? 'blue' : value === 'UPS' ? 'purple' : 'default'}>{value}</Tag>
+      ),
+    },
+    {
       title: '仓库',
       dataIndex: 'warehouse-name',
       width: 160,
@@ -1471,6 +1506,32 @@ export default function TrackingExceptionPage() {
               </Typography.Text>
             </Space>
           </Tooltip>
+          <Select
+            value={carrierFilter}
+            style={{ width: 120 }}
+            onChange={setCarrierFilter}
+            options={[
+              { label: '全部物流商', value: 'all' },
+              { label: 'FedEx', value: 'FedEx' },
+              { label: 'UPS', value: 'UPS' },
+              { label: '其他', value: '其他' },
+            ]}
+          />
+          <Select
+            value={ownerFilter}
+            style={{ width: 150 }}
+            showSearch
+            optionFilterProp="label"
+            onChange={setOwnerFilter}
+            options={[
+              { label: '全部处理人', value: 'all' },
+              { label: '未指派', value: 'unassigned' },
+              ...users.map((user) => ({
+                label: String(user.nickname || user.username || user.id),
+                value: String(user.id),
+              })),
+            ]}
+          />
           <Select
             value={qualityFilter}
             style={{ width: 140 }}
