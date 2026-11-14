@@ -73,6 +73,7 @@ const FIELDS = [
   'exception_reason',
   'note',
   'handle_status',
+  'closed_at',
   'handler_id',
   'handler_name',
   'owner_id',
@@ -394,6 +395,8 @@ export default function TrackingExceptionPage() {
   const [loading, setLoading] = useState(false);
   const [showSuspect, setShowSuspect] = useState(true);
   const [filterKey, setFilterKey] = useState<FilterKey>('all');
+  const [workloadOpen, setWorkloadOpen] = useState(false);
+  const [workloadDate, setWorkloadDate] = useState(dayjs());
   const [keyword, setKeyword] = useState('');
   const [qualityFilter, setQualityFilter] = useState<string>('all');
   const [carrierFilter, setCarrierFilter] = useState<'all' | Carrier>('all');
@@ -1060,6 +1063,43 @@ export default function TrackingExceptionPage() {
     };
   }, [rows]);
 
+  const workloadRows = useMemo(() => {
+    const target = workloadDate.startOf('day');
+    const byOwner = new Map<
+      string,
+      { id: string; name: string; assigned: number; completed: number; carryover: number; open: number }
+    >();
+    for (const row of rows) {
+      const id = row.handler_id ? String(row.handler_id) : '';
+      if (!id) continue;
+      if (!byOwner.has(id)) {
+        byOwner.set(id, {
+          id,
+          name: String(row.handler_name || row.owner_name || id),
+          assigned: 0,
+          completed: 0,
+          carryover: 0,
+          open: 0,
+        });
+      }
+      const item = byOwner.get(id)!;
+      const assignedAt = row.assigned_at ? dayjs(row.assigned_at) : null;
+      const closedAt = row.closed_at ? dayjs(row.closed_at) : null;
+      const isOpen = row._isActive && !row._isClosed;
+      if (assignedAt?.isSame(target, 'day')) item.assigned += 1;
+      if (closedAt?.isSame(target, 'day')) item.completed += 1;
+      if (isOpen) item.open += 1;
+      if (isOpen && assignedAt && assignedAt.isBefore(target, 'day')) item.carryover += 1;
+    }
+    return Array.from(byOwner.values())
+      .map((item) => ({
+        ...item,
+        remaining: item.assigned + item.carryover - item.completed,
+        rate: item.assigned + item.carryover > 0 ? (item.completed * 100) / (item.assigned + item.carryover) : 0,
+      }))
+      .sort((a, b) => b.open - a.open || b.assigned - a.assigned);
+  }, [rows, workloadDate]);
+
   const trendSeries = useMemo(() => {
     const byDate = new Map(
       trendRows.map((row) => [String(row.stat_date || '').slice(0, 10), Number(row.substantive_total || 0)]),
@@ -1406,6 +1446,7 @@ export default function TrackingExceptionPage() {
         <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
           刷新
         </Button>
+        <Button onClick={() => setWorkloadOpen(true)}>今日分派</Button>
       </Space>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
         异常状态取 7D4 的 exception_status / data_status；人工处理写回 7D4 并追加 7D4_ActionLog。 路由：{ROUTE} ｜
@@ -1880,6 +1921,55 @@ export default function TrackingExceptionPage() {
                 dataIndex: 'purchase-date',
                 width: 150,
                 render: (value: string) => (value ? dayjs(value).format('YYYY-MM-DD') : '-'),
+              },
+            ]}
+          />
+        </Space>
+      </Drawer>
+
+      <Drawer open={workloadOpen} width={820} title="分派与工作量" onClose={() => setWorkloadOpen(false)}>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Space wrap>
+            <Typography.Text>统计日期：</Typography.Text>
+            <DatePicker value={workloadDate} onChange={(value) => value && setWorkloadDate(value)} allowClear={false} />
+            <Typography.Text type="secondary">
+              当日新分、当日完成、昨日结转和当前在手均按当前分配人与当前异常数据计算。
+            </Typography.Text>
+          </Space>
+          <Table
+            rowKey="id"
+            size="small"
+            pagination={false}
+            dataSource={workloadRows}
+            columns={[
+              {
+                title: '处理人',
+                dataIndex: 'name',
+                width: 120,
+                render: (value: string, row: any) => (
+                  <Button
+                    type="link"
+                    style={{ padding: 0 }}
+                    onClick={() => {
+                      setOwnerFilter(String(row.id));
+                      setFilterKey('all');
+                      setWorkloadOpen(false);
+                    }}
+                  >
+                    {value}
+                  </Button>
+                ),
+              },
+              { title: '当日新分', dataIndex: 'assigned', width: 90 },
+              { title: '当日完成', dataIndex: 'completed', width: 90 },
+              { title: '历史结转', dataIndex: 'carryover', width: 90 },
+              { title: '当日剩余', dataIndex: 'remaining', width: 90 },
+              { title: '当前在手', dataIndex: 'open', width: 90 },
+              {
+                title: '完成率',
+                dataIndex: 'rate',
+                width: 100,
+                render: (value: number) => `${Number(value || 0).toFixed(1)}%`,
               },
             ]}
           />
