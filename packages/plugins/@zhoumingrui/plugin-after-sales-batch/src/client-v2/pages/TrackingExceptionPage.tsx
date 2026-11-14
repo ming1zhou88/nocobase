@@ -785,6 +785,26 @@ export default function TrackingExceptionPage() {
     }
   }, [ctx, message]);
 
+  const openHandlingSummary = useCallback(async () => {
+    try {
+      const response = await ctx.api.request({
+        url: 'desktopRoutes:list',
+        method: 'get',
+        params: { pageSize: 100, filter: JSON.stringify({ title: '快递异常处理汇总' }) },
+      });
+      const routes = response?.data?.data ?? response?.data ?? [];
+      const route = Array.isArray(routes) ? routes.find((item: any) => item?.title === '快递异常处理汇总') : null;
+      const href = route?.options?.href;
+      if (!href) {
+        message.warning('未找到快递异常处理汇总页面');
+        return;
+      }
+      window.open(href.startsWith('http') ? href : `${window.location.origin}${href}`, '_blank');
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    }
+  }, [ctx, message]);
+
   const loadPermissions = useCallback(async () => {
     try {
       const response = await ctx.api.request({
@@ -1640,6 +1660,7 @@ export default function TrackingExceptionPage() {
         </Button>
         <Button onClick={() => setWorkloadOpen(true)}>今日分派</Button>
         <Button onClick={() => void openHandlingDetail()}>快递异常处理明细</Button>
+        <Button onClick={() => void openHandlingSummary()}>快递异常处理汇总</Button>
       </Space>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
         异常状态取 7D4 的 exception_status / data_status；人工处理写回 7D4 并追加 7D4_ActionLog。 路由：{ROUTE} ｜

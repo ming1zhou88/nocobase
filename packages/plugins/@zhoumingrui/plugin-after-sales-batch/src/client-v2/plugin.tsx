@@ -83,6 +83,11 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
       componentLoader: () => import('./pages/HandlingDetailPage'),
     });
 
+    this.router.add('admin.tracking-exception-handling-summary', {
+      path: '/admin/tracking-exception/handling-summary',
+      componentLoader: () => import('./pages/HandlingSummaryPage'),
+    });
+
     (this.app.pm.get('async-task-manager') as AsyncTaskManagerClientV2Plugin | undefined)?.taskOrigins.register(
       'afterSalesBatch',
       {
