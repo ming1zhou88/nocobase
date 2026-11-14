@@ -374,6 +374,10 @@ function matchFilter(row: EnrichedRow, key: FilterKey, currentUserId?: number | 
 export default function TrackingExceptionPage() {
   const ctx = useFlowContext();
   const { message } = App.useApp();
+  // v2 flow context 的当前用户可能挂在 ctx.user，而不是 currentUser。
+  // 统一归一化，否则“我接手”没有效果，“我的待办”也永远按空用户计算。
+  const rawCurrentUser: any = (ctx as any)?.user ?? (ctx as any)?.currentUser;
+  const currentUser: any = rawCurrentUser?.data?.data ?? rawCurrentUser?.data ?? rawCurrentUser ?? {};
   const [rows, setRows] = useState<EnrichedRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSuspect, setShowSuspect] = useState(true);
@@ -498,16 +502,16 @@ export default function TrackingExceptionPage() {
   }, [assignUserId, ctx, load, message, selected, users]);
 
   const acceptCase = useCallback(async () => {
-    if (!selected || !ctx.currentUser?.id) return;
+    if (!selected || !currentUser?.id) return;
     setAssigning(true);
     try {
-      const name = ctx.currentUser.nickname || ctx.currentUser.username || String(ctx.currentUser.id);
+      const name = currentUser.nickname || currentUser.username || String(currentUser.id);
       await ctx.api.request({
         url: `${COLLECTION}:update?filterByTk=${selected.id}`,
         method: 'post',
         headers: { 'x-data-source': DATA_SOURCE_KEY },
         data: {
-          handler_id: ctx.currentUser.id,
+          handler_id: currentUser.id,
           handler_name: name,
           handle_status: '跟踪中',
           handle_updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
@@ -528,7 +532,7 @@ export default function TrackingExceptionPage() {
       setWorkOrderRow(row);
       setWorkOrderMode(row.work_order_serial ? 'link' : 'create');
       setLinkSerial(String(row.work_order_serial || ''));
-      setCreateGreeting(String(ctx.currentUser?.replyGreeting || ctx.currentUser?.reply_greeting || 'Hi'));
+      setCreateGreeting(String(currentUser?.replyGreeting || currentUser?.reply_greeting || 'Hi'));
       setCreateIssueType(String(row.exception_reason || ''));
       setCreateContext('');
       setCreateTone('');
@@ -537,10 +541,10 @@ export default function TrackingExceptionPage() {
       setCreateTemplate('');
       setWorkOrderOpen(true);
       // 邮件抬头默认取当前登录人的个人配置；读取失败时保留 Hi 兜底。
-      if (ctx.currentUser?.id) {
+      if (currentUser?.id) {
         try {
           const response = await ctx.api.request({
-            url: `users:get?filterByTk=${ctx.currentUser.id}`,
+            url: `users:get?filterByTk=${currentUser.id}`,
             method: 'get',
           });
           const user = response?.data?.data ?? response?.data ?? {};
@@ -580,7 +584,7 @@ export default function TrackingExceptionPage() {
           action_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
           action_status: 'done',
           action_note: `关联售后工单：${serial}`,
-          operator_name: ctx.currentUser?.nickname || ctx.currentUser?.username || '人工',
+          operator_name: currentUser?.nickname || currentUser?.username || '人工',
         },
       });
       message.success('已关联工单');
@@ -685,7 +689,7 @@ export default function TrackingExceptionPage() {
         try {
           const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
           const stamp = dayjs().format('YYYY-MM-DD HH:mm');
-          const operatorName = ctx.currentUser?.nickname || ctx.currentUser?.username || '人工';
+          const operatorName = currentUser?.nickname || currentUser?.username || '人工';
           let closedCount = 0;
           let skippedCount = 0;
           for (const id of selectedRowKeys) {
@@ -714,7 +718,7 @@ export default function TrackingExceptionPage() {
                 action_status: 'done',
                 action_note: note,
                 close_reason: note,
-                operator_id: ctx.currentUser?.id ?? null,
+                operator_id: currentUser?.id ?? null,
                 operator_name: operatorName,
               },
             });
@@ -887,18 +891,18 @@ export default function TrackingExceptionPage() {
     for (const row of scopedRows) {
       for (const filter of FILTERS) {
         if (filter.key === 'manual') continue;
-        if (matchFilter(row, filter.key, ctx.currentUser?.id)) result[filter.key] += 1;
+        if (matchFilter(row, filter.key, currentUser?.id)) result[filter.key] += 1;
       }
     }
     // 待人工核实始终按全量数据计数；否则默认“只看可用数据”时按钮永远显示 0。
     result.manual = rows.filter((row) => row._needsManual && !row._isClosed).length;
     return result;
-  }, [ctx.currentUser?.id, scopedRows, rows]);
+  }, [currentUser?.id, scopedRows, rows]);
 
   const filteredRows = useMemo(() => {
     const lower = keyword.trim().toLowerCase();
     const filtered = scopedRows.filter((row) => {
-      if (!matchFilter(row, filterKey, ctx.currentUser?.id)) return false;
+      if (!matchFilter(row, filterKey, currentUser?.id)) return false;
       if (qualityFilter !== 'all' && row._quality !== qualityFilter) return false;
       if (!lower) return true;
       return [
@@ -920,7 +924,7 @@ export default function TrackingExceptionPage() {
       if (recoveredDiff !== 0) return recoveredDiff;
       return (b._ageDays ?? -1) - (a._ageDays ?? -1);
     });
-  }, [ctx.currentUser?.id, scopedRows, filterKey, qualityFilter, keyword]);
+  }, [currentUser?.id, scopedRows, filterKey, qualityFilter, keyword]);
 
   const exportRows = useCallback(() => {
     const source = selectedRowKeys.length ? rows.filter((row) => selectedRowKeys.includes(row.id)) : filteredRows;
@@ -1090,8 +1094,8 @@ export default function TrackingExceptionPage() {
           action_status: action === 'abnormal' ? 'in_progress' : 'done',
           action_note: line,
           close_reason: action === 'recovered' ? line : null,
-          operator_id: ctx.currentUser?.id ?? null,
-          operator_name: ctx.currentUser?.nickname || ctx.currentUser?.username || '人工',
+          operator_id: currentUser?.id ?? null,
+          operator_name: currentUser?.nickname || currentUser?.username || '人工',
         },
       });
       message.success('已记录人工核实行动');
@@ -1129,7 +1133,7 @@ export default function TrackingExceptionPage() {
           refund_currency: refundCurrency || null,
           claim_record_no: claimRecordNo.trim() || null,
           close_reason: actionType === 'close' ? closeReason.trim() || actionNote.trim() || null : null,
-          operator_name: ctx.currentUser?.nickname || ctx.currentUser?.username || '人工',
+          operator_name: currentUser?.nickname || currentUser?.username || '人工',
         },
       });
       const resultPatch: Row = {};
@@ -1890,7 +1894,7 @@ export default function TrackingExceptionPage() {
           ) : (
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
               <Typography.Text type="secondary">
-                当前登录人：{ctx.currentUser?.nickname || ctx.currentUser?.username || '-'}
+                当前登录人：{currentUser?.nickname || currentUser?.username || '-'}
                 ；邮件抬头默认取个人配置，可手动修改。
               </Typography.Text>
               <Typography.Text type="secondary">
