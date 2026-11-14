@@ -235,6 +235,25 @@ export default function HandlingSummaryPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handlerSummaryRows = useMemo(() => {
+    const map = new Map<
+      string,
+      { key: string; handler: string; total: number; reship: number; refund: number; closed: number; claims: number }
+    >();
+    for (const row of filteredRows) {
+      const handler = String(row.handler_name || row.operator_name || '未记录');
+      if (!map.has(handler))
+        map.set(handler, { key: handler, handler, total: 0, reship: 0, refund: 0, closed: 0, claims: 0 });
+      const item = map.get(handler)!;
+      item.total += 1;
+      if (row.action_type === 'reship' || row.resend_tracking_number) item.reship += 1;
+      if (row.action_type === 'refund' || String(row.handle_result || '').includes('退款')) item.refund += 1;
+      if (row.action_type === 'close') item.closed += 1;
+      if (row.claim_record_no) item.claims += 1;
+    }
+    return Array.from(map.values()).sort((a, b) => b.total - a.total || a.handler.localeCompare(b.handler));
+  }, [filteredRows]);
+
   const setFilter = (key: keyof Filters, value: string) => setFilters((prev) => ({ ...prev, [key]: value }));
 
   return (
@@ -262,6 +281,18 @@ export default function HandlingSummaryPage() {
               setFilter('endDate', values?.[1] ? values[1].format('YYYY-MM-DD') : '');
             }}
             placeholder={['行动开始日期', '行动结束日期']}
+          />
+          <DatePicker.MonthPicker
+            placeholder="按月份"
+            onChange={(value) => {
+              if (!value) {
+                setFilter('startDate', '');
+                setFilter('endDate', '');
+                return;
+              }
+              setFilter('startDate', value.startOf('month').format('YYYY-MM-DD'));
+              setFilter('endDate', value.endOf('month').format('YYYY-MM-DD'));
+            }}
           />
           <Input
             allowClear
@@ -339,6 +370,22 @@ export default function HandlingSummaryPage() {
           columns={[
             { title: '行动日期', dataIndex: 'date', width: 120 },
             { title: '店铺', dataIndex: 'store', width: 180, ellipsis: true },
+            { title: '行动记录', dataIndex: 'total', width: 100 },
+            { title: '补寄', dataIndex: 'reship', width: 90 },
+            { title: '退款', dataIndex: 'refund', width: 90 },
+            { title: '关闭', dataIndex: 'closed', width: 90 },
+            { title: '索赔记录', dataIndex: 'claims', width: 100 },
+          ]}
+        />
+      </Card>
+      <Card title="按处理人汇总" size="small" style={{ marginBottom: 12 }} styles={{ body: { padding: 12 } }}>
+        <Table
+          rowKey="key"
+          size="small"
+          dataSource={handlerSummaryRows}
+          pagination={false}
+          columns={[
+            { title: '处理人', dataIndex: 'handler', width: 160 },
             { title: '行动记录', dataIndex: 'total', width: 100 },
             { title: '补寄', dataIndex: 'reship', width: 90 },
             { title: '退款', dataIndex: 'refund', width: 90 },
