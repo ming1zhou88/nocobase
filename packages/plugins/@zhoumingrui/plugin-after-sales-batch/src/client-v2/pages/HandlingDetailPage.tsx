@@ -1,4 +1,4 @@
-import { App, Button, Card, Col, Input, Row, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
+import { App, Button, Card, Col, DatePicker, Input, Row, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useFlowContext } from '@nocobase/flow-engine';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -41,6 +41,8 @@ type DetailFilters = {
   status: string;
   keyword: string;
   exceptionId: string;
+  startDate: string;
+  endDate: string;
 };
 
 const CARRIER_OPTIONS = [
@@ -85,6 +87,8 @@ function initialFilters(): DetailFilters {
     status: query.get('handle_status') || 'all',
     keyword: tracking || order,
     exceptionId: query.get('exception_id') || '',
+    startDate: query.get('start_date') || '',
+    endDate: query.get('end_date') || '',
   };
 }
 
@@ -143,6 +147,14 @@ export default function HandlingDetailPage() {
       ) {
         return false;
       }
+      if (filters.startDate) {
+        const actionAt = row.action_at ? dayjs(row.action_at) : null;
+        if (!actionAt || actionAt.isBefore(dayjs(filters.startDate).startOf('day'))) return false;
+      }
+      if (filters.endDate) {
+        const actionAt = row.action_at ? dayjs(row.action_at) : null;
+        if (!actionAt || actionAt.isAfter(dayjs(filters.endDate).endOf('day'))) return false;
+      }
       if (!keyword) return true;
       return [
         row.store_name,
@@ -188,6 +200,67 @@ export default function HandlingDetailPage() {
   }, [filteredRows]);
 
   const update = (key: keyof DetailFilters, value: string) => setFilters((prev) => ({ ...prev, [key]: value }));
+
+  const exportRows = () => {
+    const headers = [
+      '店铺',
+      '平台订单编号',
+      '子订单编号',
+      '运单号',
+      '物流商',
+      '处理人',
+      '处理状态',
+      '处理结果',
+      '行动类型',
+      '行动说明',
+      '行动时间',
+      '结果时间',
+      '妥投时间',
+      '关闭时间',
+      '处理判定',
+      '补寄运单号',
+      '退款金额',
+      '退款币种',
+      '索赔记录',
+      '恢复天数',
+    ];
+    const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const body = filteredRows.map((row) =>
+      [
+        row.store_name,
+        row.order_id,
+        row.sub_order_id,
+        row.tracking_number,
+        row.carrier,
+        row.handler_name,
+        row.handle_status,
+        row.handle_result,
+        row.action_type,
+        row.action_note,
+        row.action_at,
+        row.result_at,
+        row.delivered_at,
+        row.closed_at,
+        row.premature_label,
+        row.resend_tracking_number,
+        row.refund_amount,
+        row.refund_currency,
+        row.claim_record_no,
+        row.recovery_days,
+      ]
+        .map(quote)
+        .join(','),
+    );
+    const blob = new Blob(['\uFEFF' + [headers.map(quote).join(','), ...body].join('\n')], {
+      type: 'text/csv;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `快递异常处理明细_${dayjs().format('YYYYMMDD_HHmm')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const columns = [
     { title: '店铺', dataIndex: 'store_name', width: 120, ellipsis: true, render: (value: string) => value || '-' },
@@ -323,6 +396,18 @@ export default function HandlingDetailPage() {
             placeholder="订单号 / 运单号 / 店铺 / 行动说明"
             style={{ width: 300 }}
           />
+          <DatePicker.RangePicker
+            value={[
+              filters.startDate ? dayjs(filters.startDate) : null,
+              filters.endDate ? dayjs(filters.endDate) : null,
+            ]}
+            onChange={(values) => {
+              update('startDate', values?.[0] ? values[0].format('YYYY-MM-DD') : '');
+              update('endDate', values?.[1] ? values[1].format('YYYY-MM-DD') : '');
+            }}
+            placeholder={['行动开始日期', '行动结束日期']}
+          />
+          <Button onClick={exportRows}>导出当前筛选</Button>
           <Button
             onClick={() =>
               setFilters({
@@ -333,6 +418,8 @@ export default function HandlingDetailPage() {
                 status: 'all',
                 keyword: '',
                 exceptionId: '',
+                startDate: '',
+                endDate: '',
               })
             }
           >
