@@ -1913,7 +1913,9 @@ export default function TrackingExceptionPage() {
         数据源：
         {DATA_SOURCE_KEY} ｜ 集合：{COLLECTION}
       </Typography.Paragraph>
-      <style>{`.tracking-exception-table td { white-space: nowrap; vertical-align: middle; height: 40px; padding-top: 6px !important; padding-bottom: 6px !important; } .tracking-exception-table .ant-table-thead > tr > th { height: 38px; white-space: nowrap; } .tracking-exception-table .ant-table-measure-row td, .tracking-exception-table .ant-table-measure-row { height: 0 !important; padding: 0 !important; border: 0 !important; line-height: 0 !important; } .tracking-exception-stats .ant-statistic-title { font-size: 13px; color: rgba(0, 0, 0, 0.85); font-weight: 600; } .tracking-filter-bar .ant-btn { padding-inline: 10px; }`}</style>
+      <style>{`.tracking-exception-table td { white-space: nowrap; vertical-align: middle; height: 40px; padding-top: 6px !important; padding-bottom: 6px !important; } .tracking-exception-table .ant-table-thead > tr > th { height: 38px; white-space: nowrap; } .tracking-exception-table .ant-table-measure-row td, .tracking-exception-table .ant-table-measure-row { height: 0 !important; padding: 0 !important; border: 0 !important; line-height: 0 !important; } .tracking-exception-stats .ant-statistic-title { font-size: 13px; color: rgba(0, 0, 0, 0.85); font-weight: 600; } .tracking-filter-bar .ant-btn { height: 32px; padding-inline: 12px; }
+        .tracking-filter-bar .ant-btn > .anticon { font-size: 15px; }
+        .tracking-filter-bar .ant-btn-sm { height: 32px; }`}</style>
       <div className="tracking-exception-stats" style={{ flexShrink: 0 }}>
         <Row gutter={[16, 16]} align="stretch">
           <Col xs={24} xl={16}>
@@ -2116,7 +2118,7 @@ export default function TrackingExceptionPage() {
                 批量核实恢复{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
               </Button>
             ) : null}
-            <Button size="small" onClick={exportRows}>
+            <Button onClick={exportRows}>
               导出{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '当前筛选'}
             </Button>
           </Space>
