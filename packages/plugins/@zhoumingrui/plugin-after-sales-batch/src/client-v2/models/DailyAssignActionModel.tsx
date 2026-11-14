@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import { refreshSiblingDataBlocks } from './refreshSiblingDataBlocks';
 
 const ASSIGNEE_ROLES = ['after_sales_agent', 'after_sales_manager'];
+const isAssigneeRole = (role: any) => ASSIGNEE_ROLES.includes(role?.name) || role?.title === '售后';
 
 type OwnerOption = { label: string; value: string };
 
@@ -55,7 +56,7 @@ function DailyAssignButton({ model }: { model: DailyAssignActionModel }) {
       const list: OwnerOption[] = (Array.isArray(users) ? users : [])
         .filter(
           (user: any) =>
-            (user.roles || []).some((role: any) => ASSIGNEE_ROLES.includes(role?.name)) &&
+            (user.roles || []).some((role: any) => isAssigneeRole(role)) &&
             user.employment_status === '在职' &&
             !user.left_at,
         )

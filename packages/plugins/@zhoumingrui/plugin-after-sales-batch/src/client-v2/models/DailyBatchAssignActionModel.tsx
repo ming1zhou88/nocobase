@@ -7,6 +7,7 @@ import { refreshSiblingDataBlocks } from './refreshSiblingDataBlocks';
 
 /** 有售后身份的角色（批量指派只对这些人有意义） */
 const ASSIGNEE_ROLES = ['after_sales_agent', 'after_sales_manager'];
+const isAssigneeRole = (role: any) => ASSIGNEE_ROLES.includes(role?.name) || role?.title === '售后';
 /** 有资格执行批量指派的角色 */
 const ASSIGNER_ROLES = ['after_sales_manager', 'admin', 'root', 'after_sales_duty'];
 
@@ -52,7 +53,7 @@ function DailyBatchAssignButton({ model }: { model: DailyBatchAssignActionModel 
       const list: OwnerOption[] = (Array.isArray(users) ? users : [])
         .filter(
           (user: any) =>
-            (user.roles || []).some((role: any) => ASSIGNEE_ROLES.includes(role?.name)) &&
+            (user.roles || []).some((role: any) => isAssigneeRole(role)) &&
             user.employment_status === '在职' &&
             !user.left_at,
         )
