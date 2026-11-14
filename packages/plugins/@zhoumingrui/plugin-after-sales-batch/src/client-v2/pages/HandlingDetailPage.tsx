@@ -385,7 +385,7 @@ export default function HandlingDetailPage() {
   ];
 
   return (
-    <div style={{ padding: 24, boxSizing: 'border-box' }}>
+    <div style={{ padding: 24, boxSizing: 'border-box', width: '100%', minWidth: 0 }}>
       <Space align="center" wrap style={{ marginBottom: 12 }}>
         <Typography.Title level={3} style={{ margin: 0 }}>
           快递异常处理明细
@@ -469,32 +469,32 @@ export default function HandlingDetailPage() {
         </Space>
       </Card>
       <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
-        <Col xs={12} md={4}>
+        <Col xs={12} sm={8} md={6} xl={3}>
           <Card size="small">
             <Statistic title="处理明细" value={filteredRows.length} />
           </Card>
         </Col>
-        <Col xs={12} md={4}>
+        <Col xs={12} sm={8} md={6} xl={3}>
           <Card size="small">
             <Statistic title="补寄" value={summary.reship} valueStyle={{ color: '#1677ff' }} />
           </Card>
         </Col>
-        <Col xs={12} md={4}>
+        <Col xs={12} sm={8} md={6} xl={3}>
           <Card size="small">
             <Statistic title="退款" value={summary.refund} valueStyle={{ color: '#d46b08' }} />
           </Card>
         </Col>
-        <Col xs={12} md={4}>
+        <Col xs={12} sm={8} md={6} xl={3}>
           <Card size="small">
             <Statistic title="关闭" value={summary.closed} valueStyle={{ color: '#389e0d' }} />
           </Card>
         </Col>
-        <Col xs={12} md={4}>
+        <Col xs={12} sm={8} md={6} xl={3}>
           <Card size="small">
             <Statistic title="索赔记录" value={summary.claims} />
           </Card>
         </Col>
-        <Col xs={12} md={4}>
+        <Col xs={12} sm={8} md={6} xl={3}>
           <Card size="small">
             <Statistic title="退款金额" value={summary.refundAmount || '-'} />
           </Card>
