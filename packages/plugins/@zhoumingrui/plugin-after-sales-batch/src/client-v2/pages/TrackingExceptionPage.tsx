@@ -1415,20 +1415,31 @@ export default function TrackingExceptionPage() {
       let exists = false;
       try {
         const response = await ctx.api.request({
-          url: `7D4_Claim:get?filterByTk=${selected.id}`,
+          url: `7D4_Claim:list?pageSize=1&filter=${encodeURIComponent(JSON.stringify({ exception_id: selected.id }))}`,
           method: 'get',
           headers: { 'x-data-source': DATA_SOURCE_KEY },
         });
-        exists = Boolean(response?.data?.data ?? response?.data);
+        const body = response?.data?.data ?? response?.data ?? [];
+        exists = Array.isArray(body) ? body.length > 0 : Boolean(body?.data?.length);
       } catch {
         exists = false;
       }
-      await ctx.api.request({
-        url: exists ? `7D4_Claim:update?filterByTk=${selected.id}` : '7D4_Claim:create',
-        method: 'post',
-        headers: { 'x-data-source': DATA_SOURCE_KEY },
-        data,
-      });
+      try {
+        await ctx.api.request({
+          url: exists ? `7D4_Claim:update?filterByTk=${selected.id}` : '7D4_Claim:create',
+          method: 'post',
+          headers: { 'x-data-source': DATA_SOURCE_KEY },
+          data,
+        });
+      } catch (error) {
+        if (exists) throw error;
+        await ctx.api.request({
+          url: `7D4_Claim:create`,
+          method: 'post',
+          headers: { 'x-data-source': DATA_SOURCE_KEY },
+          data,
+        });
+      }
       message.success('索赔信息已保存');
       await load();
     } catch (error) {
