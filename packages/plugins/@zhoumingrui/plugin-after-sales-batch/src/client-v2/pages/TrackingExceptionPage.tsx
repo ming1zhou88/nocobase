@@ -6,6 +6,9 @@ import {
   Descriptions,
   DatePicker,
   Col,
+  Divider,
+  Dropdown,
+  Popover,
   Drawer,
   Form,
   Input,
@@ -21,7 +24,18 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
-import { CopyOutlined, InfoCircleOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import {
+  BarChartOutlined,
+  ClockCircleOutlined,
+  CopyOutlined,
+  DownOutlined,
+  FileSearchOutlined,
+  InfoCircleOutlined,
+  ReloadOutlined,
+  SafetyCertificateOutlined,
+  SearchOutlined,
+  TeamOutlined,
+} from '@ant-design/icons';
 import { useFlowContext } from '@nocobase/flow-engine';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
@@ -1707,6 +1721,19 @@ export default function TrackingExceptionPage() {
     Boolean,
   ) as Array<{ key: FilterKey; label: string }>;
   const restFilters = visibleFilters.filter((filter) => !PRIMARY_FILTER_KEYS.includes(filter.key));
+  const stageFilterKeys: FilterKey[] = [
+    'initial-3',
+    'initial-3-7',
+    'initial-7',
+    'transit-3',
+    'transit-3-7',
+    'transit-7',
+  ];
+  const qualityFilterKeys: FilterKey[] = ['usable', 'suspect', 'technical'];
+  const focusFilterKeys: FilterKey[] = ['recent-30', 'invalid', 'active', 'substantive'];
+  const stageFilters = restFilters.filter((filter) => stageFilterKeys.includes(filter.key));
+  const qualityFilters = restFilters.filter((filter) => qualityFilterKeys.includes(filter.key));
+  const focusFilters = restFilters.filter((filter) => focusFilterKeys.includes(filter.key));
   const renderFilterChip = (filter: { key: FilterKey; label: string }) => (
     <Button
       key={filter.key}
@@ -1719,6 +1746,118 @@ export default function TrackingExceptionPage() {
       {filter.label}
       <span style={{ marginLeft: 6, color: FILTER_COLORS[filter.key], fontWeight: 600 }}>{counts[filter.key]}</span>
     </Button>
+  );
+
+  const advancedFilterContent = (
+    <div style={{ width: 680, maxHeight: 430, overflow: 'auto', paddingRight: 4 }}>
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Space>
+          <Typography.Text>条件关系：</Typography.Text>
+          <Select
+            value={advancedLogic}
+            style={{ width: 130 }}
+            onChange={setAdvancedLogic}
+            options={[
+              { label: '满足全部', value: 'and' },
+              { label: '满足任意', value: 'or' },
+            ]}
+          />
+          <Button
+            onClick={() =>
+              setAdvancedConditions((items) => [
+                ...items,
+                { id: `${Date.now()}-${items.length}`, field: 'carrier', operator: 'eq', value: '' },
+              ])
+            }
+          >
+            添加条件
+          </Button>
+        </Space>
+        {advancedConditions.map((condition, index) => {
+          const field = ADVANCED_FIELDS.find((item) => item.value === condition.field);
+          const noValue = condition.operator === 'is_empty' || condition.operator === 'not_empty';
+          return (
+            <Space key={condition.id} wrap align="center">
+              <Typography.Text type="secondary">#{index + 1}</Typography.Text>
+              <Select
+                value={condition.field}
+                style={{ width: 140 }}
+                onChange={(value: AdvancedField) =>
+                  setAdvancedConditions((items) =>
+                    items.map((item) =>
+                      item.id === condition.id
+                        ? {
+                            ...item,
+                            field: value,
+                            operator:
+                              ADVANCED_FIELDS.find((candidate) => candidate.value === value)?.kind === 'number'
+                                ? 'eq'
+                                : 'contains',
+                            value: '',
+                          }
+                        : item,
+                    ),
+                  )
+                }
+                options={ADVANCED_FIELDS.map((item) => ({ label: item.label, value: item.value }))}
+              />
+              <Select
+                value={condition.operator}
+                style={{ width: 130 }}
+                onChange={(value: AdvancedOperator) =>
+                  setAdvancedConditions((items) =>
+                    items.map((item) => (item.id === condition.id ? { ...item, operator: value } : item)),
+                  )
+                }
+                options={
+                  field?.kind === 'number'
+                    ? [
+                        { label: '等于', value: 'eq' },
+                        { label: '大于等于', value: 'gte' },
+                        { label: '小于等于', value: 'lte' },
+                        { label: '为空', value: 'is_empty' },
+                        { label: '不为空', value: 'not_empty' },
+                      ]
+                    : [
+                        { label: '等于', value: 'eq' },
+                        { label: '不等于', value: 'neq' },
+                        { label: '包含', value: 'contains' },
+                        { label: '不包含', value: 'not_contains' },
+                        { label: '为空', value: 'is_empty' },
+                        { label: '不为空', value: 'not_empty' },
+                      ]
+                }
+              />
+              {!noValue ? (
+                <Input
+                  value={condition.value}
+                  style={{ width: 190 }}
+                  placeholder={field?.kind === 'number' ? '输入数字' : '输入筛选值'}
+                  onChange={(event) =>
+                    setAdvancedConditions((items) =>
+                      items.map((item) => (item.id === condition.id ? { ...item, value: event.target.value } : item)),
+                    )
+                  }
+                />
+              ) : null}
+              <Button
+                danger
+                type="text"
+                onClick={() => setAdvancedConditions((items) => items.filter((item) => item.id !== condition.id))}
+              >
+                删除
+              </Button>
+            </Space>
+          );
+        })}
+        <Space>
+          <Button type="primary" onClick={() => setAdvancedOpen(false)}>
+            应用
+          </Button>
+          <Button onClick={() => setAdvancedConditions([])}>重置</Button>
+        </Space>
+      </Space>
+    </div>
   );
 
   return (
@@ -1747,13 +1886,27 @@ export default function TrackingExceptionPage() {
             }}
           />
         </Tooltip>
-        <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
-          刷新
+        <Button type="primary" icon={<TeamOutlined />} onClick={() => setWorkloadOpen(true)}>
+          今日分派
         </Button>
-        <Button onClick={() => setWorkloadOpen(true)}>今日分派</Button>
-        <Button onClick={() => void openHandlingDetail()}>快递异常处理明细</Button>
-        <Button onClick={() => void openHandlingSummary()}>快递异常处理汇总</Button>
-        <Button onClick={() => void openRecoveryDetail()}>快递异常恢复周期</Button>
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'detail', icon: <FileSearchOutlined />, label: '快递异常处理明细' },
+              { key: 'summary', icon: <BarChartOutlined />, label: '快递异常处理汇总' },
+              { key: 'recovery', icon: <ClockCircleOutlined />, label: '快递异常恢复周期' },
+            ],
+            onClick: ({ key }) => {
+              if (key === 'detail') void openHandlingDetail();
+              if (key === 'summary') void openHandlingSummary();
+              if (key === 'recovery') void openRecoveryDetail();
+            },
+          }}
+        >
+          <Button>
+            更多页面 <DownOutlined />
+          </Button>
+        </Dropdown>
       </Space>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
         异常状态取 7D4 的 exception_status / data_status；人工处理写回 7D4 并追加 7D4_ActionLog。 路由：{ROUTE} ｜
@@ -1839,27 +1992,18 @@ export default function TrackingExceptionPage() {
       </div>
 
       <Card className="tracking-filter-bar" size="small" styles={{ body: { padding: 10 } }} style={{ flexShrink: 0 }}>
-        <Space wrap size={[6, 6]} align="center" style={{ width: '100%' }}>
-          <Tooltip title="默认显示全部数据；关闭后只看可用 FedEx 数据（可疑 / 非 FedEx / 技术异常会被隐藏）。">
-            <Space size={4}>
-              <Switch
-                checked={showSuspect}
-                onChange={(checked) => {
-                  setShowSuspect(checked);
-                  if (!checked && filterKey === 'manual') setFilterKey('all');
-                }}
-              />
-              <Typography.Text style={{ fontSize: 12 }}>
-                {showSuspect ? '显示可疑数据' : '只看可用数据'}
-              </Typography.Text>
-            </Space>
-          </Tooltip>
-          <Button onClick={() => setAdvancedOpen(true)}>
-            高级筛选{advancedConditions.length ? `（${advancedConditions.length}）` : ''}
-          </Button>
+        <Space wrap size={[8, 8]} align="center" style={{ width: '100%' }}>
+          <Input
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder="订单号 / 运单号 / 店铺 / MSKU"
+            style={{ width: 320 }}
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+          />
           <Select
             value={carrierFilter}
-            style={{ width: 120 }}
+            style={{ width: 130 }}
             onChange={setCarrierFilter}
             options={[
               { label: '全部物流商', value: 'all' },
@@ -1898,34 +2042,101 @@ export default function TrackingExceptionPage() {
               { label: '数据过旧', value: '数据过旧' },
             ]}
           />
-          <Input
-            allowClear
-            prefix={<SearchOutlined />}
-            placeholder="订单号 / 运单号 / 店铺 / MSKU"
-            style={{ width: 300 }}
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-          />
-          {canAssign ? (
-            <Button
-              size="small"
-              type="primary"
-              disabled={!selectedRowKeys.length}
-              onClick={() => setBatchAssignOpen(true)}
-            >
-              批量指派{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
-            </Button>
-          ) : null}
-          {canAssign ? (
-            <Button danger disabled={!selectedRowKeys.length} onClick={() => batchClose()}>
-              批量核实恢复{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
-            </Button>
-          ) : null}
-          <Button onClick={exportRows}>
-            导出{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '当前筛选'}
+          <Popover
+            trigger="click"
+            placement="bottomLeft"
+            open={advancedOpen}
+            onOpenChange={setAdvancedOpen}
+            content={advancedFilterContent}
+          >
+            <Button>高级筛选{advancedConditions.length ? `（${advancedConditions.length}）` : ''}</Button>
+          </Popover>
+          <Button
+            onClick={() => {
+              setKeyword('');
+              setCarrierFilter('all');
+              setOwnerFilter('all');
+              setQualityFilter('all');
+              setAdvancedConditions([]);
+              setFilterKey('all');
+            }}
+          >
+            重置
           </Button>
-          {priorityFilters.map(renderFilterChip)}
-          {restFilters.map(renderFilterChip)}
+          <Tooltip title="刷新数据">
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()} />
+          </Tooltip>
+        </Space>
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 8,
+            marginTop: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <Space wrap size={[6, 6]}>
+            <Tooltip title="关闭后只看可用数据">
+              <Switch
+                size="small"
+                checked={showSuspect}
+                onChange={(checked) => {
+                  setShowSuspect(checked);
+                  if (!checked && filterKey === 'manual') setFilterKey('all');
+                }}
+              />
+            </Tooltip>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              队列：
+            </Typography.Text>
+            {priorityFilters.map(renderFilterChip)}
+          </Space>
+          <Space wrap size={[6, 6]}>
+            {canAssign ? (
+              <Button
+                size="small"
+                type="primary"
+                icon={<TeamOutlined />}
+                disabled={!selectedRowKeys.length}
+                onClick={() => setBatchAssignOpen(true)}
+              >
+                批量指派{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
+              </Button>
+            ) : null}
+            {canAssign ? (
+              <Button
+                size="small"
+                icon={<SafetyCertificateOutlined />}
+                disabled={!selectedRowKeys.length}
+                onClick={() => batchClose()}
+              >
+                批量核实恢复{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
+              </Button>
+            ) : null}
+            <Button size="small" onClick={exportRows}>
+              导出{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '当前筛选'}
+            </Button>
+          </Space>
+        </div>
+
+        <Space wrap size={[6, 6]} align="center" style={{ marginTop: 8 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            异常阶段：
+          </Typography.Text>
+          {stageFilters.map(renderFilterChip)}
+          <Divider type="vertical" />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            数据质量：
+          </Typography.Text>
+          {qualityFilters.map(renderFilterChip)}
+          <Divider type="vertical" />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            重点关注：
+          </Typography.Text>
+          {focusFilters.map(renderFilterChip)}
         </Space>
       </Card>
 
@@ -2338,116 +2549,6 @@ export default function TrackingExceptionPage() {
               },
             ]}
           />
-        </Space>
-      </Drawer>
-
-      <Drawer open={advancedOpen} width={760} title="高级筛选" onClose={() => setAdvancedOpen(false)}>
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Space>
-            <Typography.Text>条件关系：</Typography.Text>
-            <Select
-              value={advancedLogic}
-              style={{ width: 130 }}
-              onChange={setAdvancedLogic}
-              options={[
-                { label: '满足全部', value: 'and' },
-                { label: '满足任意', value: 'or' },
-              ]}
-            />
-            <Button
-              onClick={() =>
-                setAdvancedConditions((items) => [
-                  ...items,
-                  { id: `${Date.now()}-${items.length}`, field: 'carrier', operator: 'eq', value: '' },
-                ])
-              }
-            >
-              添加条件
-            </Button>
-          </Space>
-          {advancedConditions.map((condition, index) => {
-            const field = ADVANCED_FIELDS.find((item) => item.value === condition.field);
-            const noValue = condition.operator === 'is_empty' || condition.operator === 'not_empty';
-            return (
-              <Space key={condition.id} wrap align="center">
-                <Typography.Text type="secondary">#{index + 1}</Typography.Text>
-                <Select
-                  value={condition.field}
-                  style={{ width: 140 }}
-                  onChange={(value: AdvancedField) =>
-                    setAdvancedConditions((items) =>
-                      items.map((item) =>
-                        item.id === condition.id
-                          ? {
-                              ...item,
-                              field: value,
-                              operator:
-                                ADVANCED_FIELDS.find((candidate) => candidate.value === value)?.kind === 'number'
-                                  ? 'eq'
-                                  : 'contains',
-                              value: '',
-                            }
-                          : item,
-                      ),
-                    )
-                  }
-                  options={ADVANCED_FIELDS.map((item) => ({ label: item.label, value: item.value }))}
-                />
-                <Select
-                  value={condition.operator}
-                  style={{ width: 130 }}
-                  onChange={(value: AdvancedOperator) =>
-                    setAdvancedConditions((items) =>
-                      items.map((item) => (item.id === condition.id ? { ...item, operator: value } : item)),
-                    )
-                  }
-                  options={
-                    field?.kind === 'number'
-                      ? [
-                          { label: '等于', value: 'eq' },
-                          { label: '大于等于', value: 'gte' },
-                          { label: '小于等于', value: 'lte' },
-                          { label: '为空', value: 'is_empty' },
-                          { label: '不为空', value: 'not_empty' },
-                        ]
-                      : [
-                          { label: '等于', value: 'eq' },
-                          { label: '不等于', value: 'neq' },
-                          { label: '包含', value: 'contains' },
-                          { label: '不包含', value: 'not_contains' },
-                          { label: '为空', value: 'is_empty' },
-                          { label: '不为空', value: 'not_empty' },
-                        ]
-                  }
-                />
-                {!noValue ? (
-                  <Input
-                    value={condition.value}
-                    style={{ width: 190 }}
-                    placeholder={field?.kind === 'number' ? '输入数字' : '输入筛选值'}
-                    onChange={(event) =>
-                      setAdvancedConditions((items) =>
-                        items.map((item) => (item.id === condition.id ? { ...item, value: event.target.value } : item)),
-                      )
-                    }
-                  />
-                ) : null}
-                <Button
-                  danger
-                  type="text"
-                  onClick={() => setAdvancedConditions((items) => items.filter((item) => item.id !== condition.id))}
-                >
-                  删除
-                </Button>
-              </Space>
-            );
-          })}
-          <Space>
-            <Button type="primary" onClick={() => setAdvancedOpen(false)}>
-              应用
-            </Button>
-            <Button onClick={() => setAdvancedConditions([])}>重置</Button>
-          </Space>
         </Space>
       </Drawer>
 
