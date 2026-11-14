@@ -1,4 +1,4 @@
-import { App, Button, Card, Input, Select, Space, Table, Tag, Typography } from 'antd';
+import { App, Button, Card, Col, Input, Row, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useFlowContext } from '@nocobase/flow-engine';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -24,6 +24,11 @@ const FIELDS = [
   'closed_at',
   'premature_label',
   'recovery_days',
+  'contact_target',
+  'refund_amount',
+  'refund_currency',
+  'resend_tracking_number',
+  'claim_record_no',
 ];
 
 type Row = Record<string, any>;
@@ -153,6 +158,35 @@ export default function HandlingDetailPage() {
     });
   }, [filters, rows]);
 
+  const summary = useMemo(() => {
+    let reship = 0;
+    let refund = 0;
+    let closed = 0;
+    let claims = 0;
+    const refundAmounts = new Map<string, number>();
+    for (const row of filteredRows) {
+      const actionType = String(row.action_type || '');
+      const result = String(row.handle_result || '');
+      if (actionType === 'reship' || result.includes('补寄') || row.resend_tracking_number) reship += 1;
+      if (actionType === 'refund' || result.includes('退款')) refund += 1;
+      if (actionType === 'close' || String(row.handle_status || '') === 'closed') closed += 1;
+      if (row.claim_record_no) claims += 1;
+      if (row.refund_amount != null && Number.isFinite(Number(row.refund_amount))) {
+        const currency = String(row.refund_currency || 'CNY');
+        refundAmounts.set(currency, (refundAmounts.get(currency) || 0) + Number(row.refund_amount));
+      }
+    }
+    return {
+      reship,
+      refund,
+      closed,
+      claims,
+      refundAmount: Array.from(refundAmounts.entries())
+        .map(([currency, amount]) => `${currency} ${amount.toFixed(2)}`)
+        .join(' / '),
+    };
+  }, [filteredRows]);
+
   const update = (key: keyof DetailFilters, value: string) => setFilters((prev) => ({ ...prev, [key]: value }));
 
   const columns = [
@@ -206,6 +240,27 @@ export default function HandlingDetailPage() {
       dataIndex: 'premature_label',
       width: 95,
       render: (value: string) => <Tag color={value === '过早处理' ? 'red' : 'green'}>{value || '-'}</Tag>,
+    },
+    {
+      title: '补寄运单号',
+      dataIndex: 'resend_tracking_number',
+      width: 165,
+      ellipsis: true,
+      render: (value: string) => value || '-',
+    },
+    {
+      title: '退款金额',
+      dataIndex: 'refund_amount',
+      width: 110,
+      render: (value: number, row: Row) =>
+        value == null ? '-' : `${row.refund_currency || ''} ${Number(value).toFixed(2)}`,
+    },
+    {
+      title: '索赔记录',
+      dataIndex: 'claim_record_no',
+      width: 130,
+      ellipsis: true,
+      render: (value: string) => value || '-',
     },
     {
       title: '恢复天数',
@@ -285,6 +340,38 @@ export default function HandlingDetailPage() {
           </Button>
         </Space>
       </Card>
+      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+        <Col xs={12} md={4}>
+          <Card size="small">
+            <Statistic title="处理明细" value={filteredRows.length} />
+          </Card>
+        </Col>
+        <Col xs={12} md={4}>
+          <Card size="small">
+            <Statistic title="补寄" value={summary.reship} valueStyle={{ color: '#1677ff' }} />
+          </Card>
+        </Col>
+        <Col xs={12} md={4}>
+          <Card size="small">
+            <Statistic title="退款" value={summary.refund} valueStyle={{ color: '#d46b08' }} />
+          </Card>
+        </Col>
+        <Col xs={12} md={4}>
+          <Card size="small">
+            <Statistic title="关闭" value={summary.closed} valueStyle={{ color: '#389e0d' }} />
+          </Card>
+        </Col>
+        <Col xs={12} md={4}>
+          <Card size="small">
+            <Statistic title="索赔记录" value={summary.claims} />
+          </Card>
+        </Col>
+        <Col xs={12} md={4}>
+          <Card size="small">
+            <Statistic title="退款金额" value={summary.refundAmount || '-'} />
+          </Card>
+        </Col>
+      </Row>
       <Card size="small" styles={{ body: { padding: 12 } }}>
         <Table
           rowKey="id"
