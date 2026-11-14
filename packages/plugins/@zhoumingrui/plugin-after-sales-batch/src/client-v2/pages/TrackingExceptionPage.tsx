@@ -773,14 +773,13 @@ export default function TrackingExceptionPage() {
         },
       });
       const routes = response?.data?.data ?? response?.data ?? [];
-      const route = Array.isArray(routes)
-        ? routes.find((item: any) => item?.title === '快递异常处理明细' && item?.schemaUid)
-        : null;
-      if (!route?.schemaUid) {
+      const route = Array.isArray(routes) ? routes.find((item: any) => item?.title === '快递异常处理明细') : null;
+      const href = route?.options?.href;
+      if (!href) {
         message.warning('未找到快递异常处理明细页面');
         return;
       }
-      window.open(`${window.location.origin}/v/admin/${route.schemaUid}`, '_blank');
+      window.open(href.startsWith('http') ? href : `${window.location.origin}${href}`, '_blank');
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error));
     }
@@ -1554,7 +1553,7 @@ export default function TrackingExceptionPage() {
     {
       title: '操作',
       key: 'action',
-      width: 200,
+      width: 260,
       fixed: 'right' as const,
       render: (_: unknown, row: EnrichedRow) => (
         <Space size={0}>
@@ -1567,6 +1566,20 @@ export default function TrackingExceptionPage() {
             }}
           >
             查看 / 处理
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            onClick={() =>
+              window.open(
+                `/v/admin/tracking-exception/handling-detail?exception_id=${encodeURIComponent(
+                  String(row.id),
+                )}&tracking_number=${encodeURIComponent(String(row['tracking-number'] || ''))}`,
+                '_blank',
+              )
+            }
+          >
+            处理明细
           </Button>
           <Button type="link" size="small" onClick={() => openWorkOrder(row)}>
             创建或关联工单
