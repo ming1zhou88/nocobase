@@ -484,6 +484,7 @@ export default function TrackingExceptionPage() {
   const [filterKey, setFilterKey] = useState<FilterKey>('all');
   const [workloadOpen, setWorkloadOpen] = useState(false);
   const [workloadDate, setWorkloadDate] = useState(dayjs());
+  const [workloadPeriod, setWorkloadPeriod] = useState<'day' | 'month'>('day');
   const [assignmentLogs, setAssignmentLogs] = useState<Row[]>([]);
   const [keyword, setKeyword] = useState('');
   const [qualityFilter, setQualityFilter] = useState<string>('all');
@@ -1245,8 +1246,14 @@ export default function TrackingExceptionPage() {
 
   useEffect(() => {
     if (!workloadOpen) return;
-    const start = workloadDate.startOf('day').format('YYYY-MM-DD HH:mm:ss');
-    const end = workloadDate.add(1, 'day').startOf('day').format('YYYY-MM-DD HH:mm:ss');
+    const start = (workloadPeriod === 'month' ? workloadDate.startOf('month') : workloadDate.startOf('day')).format(
+      'YYYY-MM-DD HH:mm:ss',
+    );
+    const end = (
+      workloadPeriod === 'month'
+        ? workloadDate.add(1, 'month').startOf('month')
+        : workloadDate.add(1, 'day').startOf('day')
+    ).format('YYYY-MM-DD HH:mm:ss');
     void ctx.api
       .request({
         url: '7D4_AssignmentLog:list',
@@ -1263,10 +1270,10 @@ export default function TrackingExceptionPage() {
         setAssignmentLogs(Array.isArray(body) ? body : body?.data ?? []);
       })
       .catch(() => setAssignmentLogs([]));
-  }, [ctx, workloadDate, workloadOpen]);
+  }, [ctx, workloadDate, workloadOpen, workloadPeriod]);
 
   const workloadRows = useMemo(() => {
-    const target = workloadDate.startOf('day');
+    const target = workloadPeriod === 'month' ? workloadDate.startOf('month') : workloadDate.startOf('day');
     const byOwner = new Map<
       string,
       { id: string; name: string; assigned: number; completed: number; carryover: number; open: number }
@@ -1288,8 +1295,18 @@ export default function TrackingExceptionPage() {
       const assignedAt = row.assigned_at ? dayjs(row.assigned_at) : null;
       const closedAt = row.closed_at ? dayjs(row.closed_at) : null;
       const isOpen = row._isActive && !row._isClosed;
-      if (assignedAt?.isSame(target, 'day')) item.assigned += 1;
-      if (closedAt?.isSame(target, 'day')) item.completed += 1;
+      if (
+        assignedAt &&
+        ((workloadPeriod === 'month' && assignedAt.isSame(target, 'month')) ||
+          (workloadPeriod === 'day' && assignedAt.isSame(target, 'day')))
+      )
+        item.assigned += 1;
+      if (
+        closedAt &&
+        ((workloadPeriod === 'month' && closedAt.isSame(target, 'month')) ||
+          (workloadPeriod === 'day' && closedAt.isSame(target, 'day')))
+      )
+        item.completed += 1;
       if (isOpen) item.open += 1;
       if (isOpen && assignedAt && assignedAt.isBefore(target, 'day')) item.carryover += 1;
     }
@@ -1321,7 +1338,7 @@ export default function TrackingExceptionPage() {
         rate: item.assigned + item.carryover > 0 ? (item.completed * 100) / (item.assigned + item.carryover) : 0,
       }))
       .sort((a, b) => b.open - a.open || b.assigned - a.assigned);
-  }, [assignmentLogs, rows, workloadDate]);
+  }, [assignmentLogs, rows, workloadDate, workloadPeriod]);
 
   const trendSeries = useMemo(() => {
     const byDate = new Map(
@@ -2257,10 +2274,31 @@ export default function TrackingExceptionPage() {
       <Drawer open={workloadOpen} width={820} title="分派与工作量" onClose={() => setWorkloadOpen(false)}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <Space wrap>
-            <Typography.Text>统计日期：</Typography.Text>
-            <DatePicker value={workloadDate} onChange={(value) => value && setWorkloadDate(value)} allowClear={false} />
+            <Typography.Text>统计周期：</Typography.Text>
+            <Select
+              value={workloadPeriod}
+              style={{ width: 90 }}
+              onChange={(value) => setWorkloadPeriod(value)}
+              options={[
+                { label: '日', value: 'day' },
+                { label: '月', value: 'month' },
+              ]}
+            />
+            {workloadPeriod === 'month' ? (
+              <DatePicker.MonthPicker
+                value={workloadDate}
+                onChange={(value) => value && setWorkloadDate(value)}
+                allowClear={false}
+              />
+            ) : (
+              <DatePicker
+                value={workloadDate}
+                onChange={(value) => value && setWorkloadDate(value)}
+                allowClear={false}
+              />
+            )}
             <Typography.Text type="secondary">
-              当日新分、当日完成、昨日结转和当前在手均按当前分配人与当前异常数据计算。
+              按当前分配人与当前异常数据计算；分配量优先取分配事件记录。
             </Typography.Text>
           </Space>
           <Table
@@ -2287,10 +2325,10 @@ export default function TrackingExceptionPage() {
                   </Button>
                 ),
               },
-              { title: '当日新分', dataIndex: 'assigned', width: 90 },
-              { title: '当日完成', dataIndex: 'completed', width: 90 },
-              { title: '历史结转', dataIndex: 'carryover', width: 90 },
-              { title: '当日剩余', dataIndex: 'remaining', width: 90 },
+              { title: workloadPeriod === 'month' ? '本月新分' : '当日新分', dataIndex: 'assigned', width: 90 },
+              { title: workloadPeriod === 'month' ? '本月完成' : '当日完成', dataIndex: 'completed', width: 90 },
+              { title: workloadPeriod === 'month' ? '期初结转' : '历史结转', dataIndex: 'carryover', width: 90 },
+              { title: workloadPeriod === 'month' ? '本月剩余' : '当日剩余', dataIndex: 'remaining', width: 90 },
               { title: '当前在手', dataIndex: 'open', width: 90 },
               {
                 title: '完成率',
