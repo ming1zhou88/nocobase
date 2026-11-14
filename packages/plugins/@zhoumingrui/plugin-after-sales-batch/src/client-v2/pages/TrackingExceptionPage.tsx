@@ -75,6 +75,7 @@ const FIELDS = [
   'handle_status',
   'closed_at',
   'handler_id',
+  'assigned_at',
   'handler_name',
   'owner_id',
   'owner_account',
@@ -391,12 +392,36 @@ export default function TrackingExceptionPage() {
   // 统一归一化，否则“我接手”没有效果，“我的待办”也永远按空用户计算。
   const rawCurrentUser: any = (ctx as any)?.user ?? (ctx as any)?.currentUser;
   const currentUser: any = rawCurrentUser?.data?.data ?? rawCurrentUser?.data ?? rawCurrentUser ?? {};
+
+  const writeAssignmentLog = useCallback(
+    async (row: any, toUser: any, source: string) => {
+      if (!row?.id || !toUser?.id) return;
+      await ctx.api.request({
+        url: '7D4_AssignmentLog:create',
+        method: 'post',
+        headers: { 'x-data-source': DATA_SOURCE_KEY },
+        data: {
+          exception_id: Number(row.id),
+          from_handler_id: row.handler_id ?? null,
+          from_handler_name: row.handler_name ?? null,
+          to_handler_id: Number(toUser.id),
+          to_handler_name: toUser.nickname || toUser.username || String(toUser.id),
+          assigned_by: currentUser?.id ?? null,
+          assigned_by_name: currentUser?.nickname || currentUser?.username || '人工',
+          assigned_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+          source,
+        },
+      });
+    },
+    [ctx, currentUser],
+  );
   const [rows, setRows] = useState<EnrichedRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSuspect, setShowSuspect] = useState(true);
   const [filterKey, setFilterKey] = useState<FilterKey>('all');
   const [workloadOpen, setWorkloadOpen] = useState(false);
   const [workloadDate, setWorkloadDate] = useState(dayjs());
+  const [assignmentLogs, setAssignmentLogs] = useState<Row[]>([]);
   const [keyword, setKeyword] = useState('');
   const [qualityFilter, setQualityFilter] = useState<string>('all');
   const [carrierFilter, setCarrierFilter] = useState<'all' | Carrier>('all');
@@ -505,8 +530,16 @@ export default function TrackingExceptionPage() {
         url: `${COLLECTION}:update?filterByTk=${selected.id}`,
         method: 'post',
         headers: { 'x-data-source': DATA_SOURCE_KEY },
-        data: { handler_name: name, handler_id: user.id, owner_id: user.id },
+        data: {
+          handler_name: name,
+          handler_id: user.id,
+          owner_id: user.id,
+          assigned_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+          assign_status: '已指派',
+          assign_source: 'manual',
+        },
       });
+      await writeAssignmentLog(selected, user, 'manual');
       message.success(`已指派给 ${name}`);
       setSelected(null);
       setAssignUserId('');
@@ -516,7 +549,7 @@ export default function TrackingExceptionPage() {
     } finally {
       setAssigning(false);
     }
-  }, [assignUserId, ctx, load, message, selected, users]);
+  }, [assignUserId, ctx, load, message, selected, users, writeAssignmentLog]);
 
   const acceptCase = useCallback(async () => {
     if (!selected || !currentUser?.id) return;
@@ -530,10 +563,15 @@ export default function TrackingExceptionPage() {
         data: {
           handler_id: currentUser.id,
           handler_name: name,
+          owner_id: currentUser.id,
+          assigned_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+          assign_status: '已指派',
+          assign_source: 'accept',
           handle_status: '跟踪中',
           handle_updated_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
         },
       });
+      await writeAssignmentLog(selected, currentUser, 'accept');
       message.success('已接手');
       setSelected(null);
       await load();
@@ -542,7 +580,7 @@ export default function TrackingExceptionPage() {
     } finally {
       setAssigning(false);
     }
-  }, [ctx, load, message, selected]);
+  }, [ctx, currentUser, load, message, selected, writeAssignmentLog]);
 
   const openWorkOrder = useCallback(
     async (row: EnrichedRow) => {
@@ -683,6 +721,13 @@ export default function TrackingExceptionPage() {
         method: 'post',
         data: { rowIds: selectedRowKeys.map(Number), owner_id: Number(batchAssignUserId) },
       });
+      const targetUser = users.find((item) => String(item.id) === String(batchAssignUserId));
+      if (targetUser) {
+        for (const id of selectedRowKeys) {
+          const row = rows.find((item) => String(item.id) === String(id));
+          await writeAssignmentLog(row, targetUser, 'batch');
+        }
+      }
       message.success(`已指派 ${selectedRowKeys.length} 行`);
       setBatchAssignOpen(false);
       setBatchAssignUserId('');
@@ -693,7 +738,7 @@ export default function TrackingExceptionPage() {
     } finally {
       setBatchAssigning(false);
     }
-  }, [batchAssignUserId, ctx, load, message, selectedRowKeys]);
+  }, [batchAssignUserId, ctx, load, message, rows, selectedRowKeys, users, writeAssignmentLog]);
 
   const batchClose = useCallback(() => {
     if (!canAssign || !selectedRowKeys.length) return;
@@ -1063,6 +1108,28 @@ export default function TrackingExceptionPage() {
     };
   }, [rows]);
 
+  useEffect(() => {
+    if (!workloadOpen) return;
+    const start = workloadDate.startOf('day').format('YYYY-MM-DD HH:mm:ss');
+    const end = workloadDate.add(1, 'day').startOf('day').format('YYYY-MM-DD HH:mm:ss');
+    void ctx.api
+      .request({
+        url: '7D4_AssignmentLog:list',
+        method: 'get',
+        headers: { 'x-data-source': DATA_SOURCE_KEY },
+        params: {
+          pageSize: 2000,
+          sort: ['assigned_at'],
+          filter: JSON.stringify({ assigned_at: { $gte: start, $lt: end } }),
+        },
+      })
+      .then((response) => {
+        const body = response?.data?.data ?? response?.data ?? {};
+        setAssignmentLogs(Array.isArray(body) ? body : body?.data ?? []);
+      })
+      .catch(() => setAssignmentLogs([]));
+  }, [ctx, workloadDate, workloadOpen]);
+
   const workloadRows = useMemo(() => {
     const target = workloadDate.startOf('day');
     const byOwner = new Map<
@@ -1091,6 +1158,27 @@ export default function TrackingExceptionPage() {
       if (isOpen) item.open += 1;
       if (isOpen && assignedAt && assignedAt.isBefore(target, 'day')) item.carryover += 1;
     }
+    const assignedFromLogs = new Map<string, Set<number>>();
+    for (const log of assignmentLogs) {
+      const ownerId = log.to_handler_id ? String(log.to_handler_id) : '';
+      if (!ownerId || !log.exception_id) continue;
+      if (!assignedFromLogs.has(ownerId)) assignedFromLogs.set(ownerId, new Set());
+      assignedFromLogs.get(ownerId)!.add(Number(log.exception_id));
+      if (!byOwner.has(ownerId)) {
+        byOwner.set(ownerId, {
+          id: ownerId,
+          name: String(log.to_handler_name || ownerId),
+          assigned: 0,
+          completed: 0,
+          carryover: 0,
+          open: 0,
+        });
+      }
+    }
+    for (const [ownerId, ids] of assignedFromLogs) {
+      const item = byOwner.get(ownerId);
+      if (item) item.assigned = ids.size;
+    }
     return Array.from(byOwner.values())
       .map((item) => ({
         ...item,
@@ -1098,7 +1186,7 @@ export default function TrackingExceptionPage() {
         rate: item.assigned + item.carryover > 0 ? (item.completed * 100) / (item.assigned + item.carryover) : 0,
       }))
       .sort((a, b) => b.open - a.open || b.assigned - a.assigned);
-  }, [rows, workloadDate]);
+  }, [assignmentLogs, rows, workloadDate]);
 
   const trendSeries = useMemo(() => {
     const byDate = new Map(
