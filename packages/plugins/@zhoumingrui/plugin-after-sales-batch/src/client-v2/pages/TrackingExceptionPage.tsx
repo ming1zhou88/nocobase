@@ -121,6 +121,7 @@ type EnrichedRow = Row & {
   _isClean: boolean;
   _isRecovered: boolean;
   _isInvalid: boolean;
+  _isClosed: boolean;
   _needsManual: boolean;
   _isActive: boolean;
   _isTechnical: boolean;
@@ -251,6 +252,7 @@ function enrich(row: Row): EnrichedRow {
     _isClean: isClean,
     _isRecovered: isRecovered,
     _isInvalid: isInvalid,
+    _isClosed: String(row.handle_status || '').toLowerCase() === 'closed',
     _needsManual: needsManual,
     _isActive: row.exception_active === 1 || row.exception_active === true || (!isRecovered && !isInvalid),
     _isTechnical: isTechnical,
@@ -345,14 +347,16 @@ function matchFilter(row: EnrichedRow, key: FilterKey, currentUserId?: number | 
   if (key === 'usable') return row._isClean;
   if (key === 'suspect') return !row._isClean;
   if (key === 'recovered') return row._isRecovered;
-  if (key === 'manual') return row._needsManual;
+  if (key === 'manual') return row._needsManual && !row._isClosed;
   if (key === 'invalid') return row._isInvalid;
-  if (key === 'unassigned') return !row.handler_id && row._isActive && !row._isTechnical;
+  if (key === 'unassigned') return !row.handler_id && row._isActive && !row._isTechnical && !row._isClosed;
   if (key === 'mine')
-    return Boolean(row.handler_id) && Number(row.handler_id) === Number(currentUserId) && row._isActive;
-  if (key === 'active') return row._isActive;
+    return (
+      Boolean(row.handler_id) && Number(row.handler_id) === Number(currentUserId) && row._isActive && !row._isClosed
+    );
+  if (key === 'active') return row._isActive && !row._isClosed;
   if (key === 'technical') return row._isTechnical;
-  if (key === 'substantive') return row._isActive && !row._isTechnical && (row._ageDays ?? 0) >= 7;
+  if (key === 'substantive') return row._isActive && !row._isTechnical && !row._isClosed && (row._ageDays ?? 0) >= 7;
   if (key === 'recent-30') {
     if (!row._startedAt) return false;
     return dayjs(row._startedAt).isAfter(dayjs().startOf('day').subtract(30, 'day'));
@@ -673,22 +677,29 @@ export default function TrackingExceptionPage() {
   const batchClose = useCallback(() => {
     if (!canAssign || !selectedRowKeys.length) return;
     Modal.confirm({
-      title: '批量关闭快递异常',
-      content: `确认关闭选中的 ${selectedRowKeys.length} 行？关闭后仍保留记录。`,
-      okText: '确认关闭',
+      title: '批量核实恢复快递异常',
+      content: `确认将选中的 ${selectedRowKeys.length} 行标记为已核实恢复并关闭？关闭后仍保留记录。`,
+      okText: '确认核实恢复',
       cancelText: '取消',
       onOk: async () => {
         try {
           const now = dayjs().format('YYYY-MM-DD HH:mm:ss');
           const stamp = dayjs().format('YYYY-MM-DD HH:mm');
           const operatorName = ctx.currentUser?.nickname || ctx.currentUser?.username || '人工';
+          let closedCount = 0;
+          let skippedCount = 0;
           for (const id of selectedRowKeys) {
             const row = rows.find((item) => String(item.id) === String(id));
+            if (String(row?.handle_status || '').toLowerCase() === 'closed') {
+              skippedCount += 1;
+              continue;
+            }
+            const note = `[批量核实 ${stamp}] 已核实恢复`;
             await ctx.api.request({
               url: `${COLLECTION}:update?filterByTk=${id}`,
               method: 'post',
               headers: { 'x-data-source': DATA_SOURCE_KEY },
-              data: { handle_status: 'closed', closed_at: now, close_reason: '批量关闭' },
+              data: { handle_status: 'closed', closed_at: now, close_reason: note },
             });
             await ctx.api.request({
               url: `${ACTIONLOG_COLLECTION}:create`,
@@ -701,14 +712,15 @@ export default function TrackingExceptionPage() {
                 action_type: 'close',
                 action_at: now,
                 action_status: 'done',
-                action_note: `[批量关闭 ${stamp}] 批量关闭`,
-                close_reason: '批量关闭',
+                action_note: note,
+                close_reason: note,
                 operator_id: ctx.currentUser?.id ?? null,
                 operator_name: operatorName,
               },
             });
+            closedCount += 1;
           }
-          message.success(`已关闭 ${selectedRowKeys.length} 行`);
+          message.success(`已关闭 ${closedCount} 行${skippedCount ? `，跳过 ${skippedCount} 行已关闭数据` : ''}`);
           setSelectedRowKeys([]);
           await load();
         } catch (error) {
@@ -879,7 +891,7 @@ export default function TrackingExceptionPage() {
       }
     }
     // 待人工核实始终按全量数据计数；否则默认“只看可用数据”时按钮永远显示 0。
-    result.manual = rows.filter((row) => row._needsManual).length;
+    result.manual = rows.filter((row) => row._needsManual && !row._isClosed).length;
     return result;
   }, [ctx.currentUser?.id, scopedRows, rows]);
 
@@ -1009,7 +1021,7 @@ export default function TrackingExceptionPage() {
       suspect: rows.length - clean.length,
       substantive: substantive.length,
       technical: rows.filter((row) => row._isTechnical).length,
-      unassigned: activeRows.filter((row) => !row.handler_id && !row._isTechnical).length,
+      unassigned: activeRows.filter((row) => !row.handler_id && !row._isTechnical && !row._isClosed).length,
       prematureRate: resultRows.length ? (premature.length * 100) / resultRows.length : 0,
       recoveryAvg,
       recoveryCount: cycleMinutes.length,
@@ -1035,6 +1047,10 @@ export default function TrackingExceptionPage() {
 
   async function saveManualCheck(action: 'recovered' | 'abnormal' | 'note') {
     if (!selected) return;
+    if (action === 'recovered' && selected._isClosed) {
+      message.info('该行已经是已关闭状态，无需重复核实恢复');
+      return;
+    }
     setSaving(true);
     try {
       const now = dayjs();
@@ -1042,6 +1058,25 @@ export default function TrackingExceptionPage() {
       const actionText = action === 'recovered' ? '已核实恢复' : action === 'abnormal' ? '仍异常' : '备注';
       const line = `[人工核实 ${stamp}] ${actionText}${manualNote.trim() ? `：${manualNote.trim()}` : ''}`;
       const actionType = action === 'recovered' ? 'close' : action === 'abnormal' ? 'tracking' : 'other';
+      if (action !== 'note') {
+        const update: Record<string, unknown> = {
+          handle_status: action === 'recovered' ? 'closed' : 'pending',
+          handle_updated_at: now.format('YYYY-MM-DD HH:mm:ss'),
+        };
+        if (action === 'recovered') {
+          update.closed_at = now.format('YYYY-MM-DD HH:mm:ss');
+          update.close_reason = line;
+        } else {
+          update.closed_at = null;
+          update.close_reason = null;
+        }
+        await ctx.api.request({
+          url: `${COLLECTION}:update?filterByTk=${selected.id}`,
+          method: 'post',
+          headers: { 'x-data-source': DATA_SOURCE_KEY },
+          data: update,
+        });
+      }
       await ctx.api.request({
         url: `${ACTIONLOG_COLLECTION}:create`,
         method: 'post',
@@ -1055,6 +1090,7 @@ export default function TrackingExceptionPage() {
           action_status: action === 'abnormal' ? 'in_progress' : 'done',
           action_note: line,
           close_reason: action === 'recovered' ? line : null,
+          operator_id: ctx.currentUser?.id ?? null,
           operator_name: ctx.currentUser?.nickname || ctx.currentUser?.username || '人工',
         },
       });
@@ -1466,7 +1502,7 @@ export default function TrackingExceptionPage() {
           ) : null}
           {canAssign ? (
             <Button danger disabled={!selectedRowKeys.length} onClick={() => batchClose()}>
-              批量关闭{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
+              批量核实恢复{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
             </Button>
           ) : null}
           <Button onClick={exportRows}>
