@@ -311,6 +311,69 @@ type FilterKey =
   | 'technical'
   | 'substantive';
 
+type AdvancedField = 'carrier' | 'quality' | 'handle_status' | 'type' | 'age' | 'store' | 'tracking' | 'order';
+type AdvancedOperator = 'eq' | 'neq' | 'contains' | 'not_contains' | 'is_empty' | 'not_empty' | 'gte' | 'lte';
+type AdvancedCondition = { id: string; field: AdvancedField; operator: AdvancedOperator; value: string };
+
+const ADVANCED_FIELDS: Array<{ value: AdvancedField; label: string; kind: 'string' | 'number' }> = [
+  { value: 'carrier', label: '物流商', kind: 'string' },
+  { value: 'quality', label: '数据质量', kind: 'string' },
+  { value: 'handle_status', label: '处理状态', kind: 'string' },
+  { value: 'type', label: '异常类型', kind: 'string' },
+  { value: 'age', label: '持续天数', kind: 'number' },
+  { value: 'store', label: '店铺', kind: 'string' },
+  { value: 'tracking', label: '运单号', kind: 'string' },
+  { value: 'order', label: '平台订单号', kind: 'string' },
+];
+
+function advancedFieldValue(row: EnrichedRow, field: AdvancedField): string {
+  switch (field) {
+    case 'carrier':
+      return row._carrier;
+    case 'quality':
+      return row._quality;
+    case 'handle_status':
+      return String(row.handle_status || '');
+    case 'type':
+      return row._type;
+    case 'age':
+      return row._ageDays === null || row._ageDays === undefined ? '' : String(row._ageDays);
+    case 'store':
+      return String(row['store-name'] || '');
+    case 'tracking':
+      return String(row['tracking-number'] || '');
+    case 'order':
+      return String(row['order-id'] || '');
+    default:
+      return '';
+  }
+}
+
+function matchesAdvancedCondition(row: EnrichedRow, condition: AdvancedCondition): boolean {
+  const actual = advancedFieldValue(row, condition.field);
+  const expected = String(condition.value || '');
+  if (condition.operator === 'is_empty') return actual.trim() === '';
+  if (condition.operator === 'not_empty') return actual.trim() !== '';
+  if (condition.operator === 'eq') return actual.toLowerCase() === expected.toLowerCase();
+  if (condition.operator === 'neq') return actual.toLowerCase() !== expected.toLowerCase();
+  if (condition.operator === 'contains') return actual.toLowerCase().includes(expected.toLowerCase());
+  if (condition.operator === 'not_contains') return !actual.toLowerCase().includes(expected.toLowerCase());
+  const left = Number(actual);
+  const right = Number(expected);
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
+  if (condition.operator === 'gte') return left >= right;
+  if (condition.operator === 'lte') return left <= right;
+  return true;
+}
+
+function matchesAdvancedConditions(row: EnrichedRow, conditions: AdvancedCondition[], logic: 'and' | 'or'): boolean {
+  const valid = conditions.filter((item) => item.field);
+  if (!valid.length) return true;
+  return logic === 'and'
+    ? valid.every((condition) => matchesAdvancedCondition(row, condition))
+    : valid.some((condition) => matchesAdvancedCondition(row, condition));
+}
+
 const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'all', label: '全部' },
   { key: 'usable', label: '可用 FedEx' },
@@ -426,6 +489,9 @@ export default function TrackingExceptionPage() {
   const [qualityFilter, setQualityFilter] = useState<string>('all');
   const [carrierFilter, setCarrierFilter] = useState<'all' | Carrier>('all');
   const [ownerFilter, setOwnerFilter] = useState<string>('all');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedLogic, setAdvancedLogic] = useState<'and' | 'or'>('and');
+  const [advancedConditions, setAdvancedConditions] = useState<AdvancedCondition[]>([]);
   const [selected, setSelected] = useState<EnrichedRow | null>(null);
   const [manualNote, setManualNote] = useState('');
   const [actionLogs, setActionLogs] = useState<Row[]>([]);
@@ -954,12 +1020,13 @@ export default function TrackingExceptionPage() {
   const filterScopedRows = useMemo(
     () =>
       rows.filter((row) => {
+        if (!matchesAdvancedConditions(row, advancedConditions, advancedLogic)) return false;
         if (carrierFilter !== 'all' && row._carrier !== carrierFilter) return false;
         if (ownerFilter === 'unassigned') return !row.handler_id;
         if (ownerFilter !== 'all' && Number(row.handler_id) !== Number(ownerFilter)) return false;
         return true;
       }),
-    [rows, carrierFilter, ownerFilter],
+    [rows, carrierFilter, ownerFilter, advancedConditions, advancedLogic],
   );
   const scopedRows = useMemo(
     () => (showSuspect ? filterScopedRows : filterScopedRows.filter((row) => row._isClean)),
@@ -1660,6 +1727,9 @@ export default function TrackingExceptionPage() {
               </Typography.Text>
             </Space>
           </Tooltip>
+          <Button onClick={() => setAdvancedOpen(true)}>
+            高级筛选{advancedConditions.length ? `（${advancedConditions.length}）` : ''}
+          </Button>
           <Select
             value={carrierFilter}
             style={{ width: 120 }}
@@ -2086,6 +2156,116 @@ export default function TrackingExceptionPage() {
               },
             ]}
           />
+        </Space>
+      </Drawer>
+
+      <Drawer open={advancedOpen} width={760} title="高级筛选" onClose={() => setAdvancedOpen(false)}>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Space>
+            <Typography.Text>条件关系：</Typography.Text>
+            <Select
+              value={advancedLogic}
+              style={{ width: 130 }}
+              onChange={setAdvancedLogic}
+              options={[
+                { label: '满足全部', value: 'and' },
+                { label: '满足任意', value: 'or' },
+              ]}
+            />
+            <Button
+              onClick={() =>
+                setAdvancedConditions((items) => [
+                  ...items,
+                  { id: `${Date.now()}-${items.length}`, field: 'carrier', operator: 'eq', value: '' },
+                ])
+              }
+            >
+              添加条件
+            </Button>
+          </Space>
+          {advancedConditions.map((condition, index) => {
+            const field = ADVANCED_FIELDS.find((item) => item.value === condition.field);
+            const noValue = condition.operator === 'is_empty' || condition.operator === 'not_empty';
+            return (
+              <Space key={condition.id} wrap align="center">
+                <Typography.Text type="secondary">#{index + 1}</Typography.Text>
+                <Select
+                  value={condition.field}
+                  style={{ width: 140 }}
+                  onChange={(value: AdvancedField) =>
+                    setAdvancedConditions((items) =>
+                      items.map((item) =>
+                        item.id === condition.id
+                          ? {
+                              ...item,
+                              field: value,
+                              operator:
+                                ADVANCED_FIELDS.find((candidate) => candidate.value === value)?.kind === 'number'
+                                  ? 'eq'
+                                  : 'contains',
+                              value: '',
+                            }
+                          : item,
+                      ),
+                    )
+                  }
+                  options={ADVANCED_FIELDS.map((item) => ({ label: item.label, value: item.value }))}
+                />
+                <Select
+                  value={condition.operator}
+                  style={{ width: 130 }}
+                  onChange={(value: AdvancedOperator) =>
+                    setAdvancedConditions((items) =>
+                      items.map((item) => (item.id === condition.id ? { ...item, operator: value } : item)),
+                    )
+                  }
+                  options={
+                    field?.kind === 'number'
+                      ? [
+                          { label: '等于', value: 'eq' },
+                          { label: '大于等于', value: 'gte' },
+                          { label: '小于等于', value: 'lte' },
+                          { label: '为空', value: 'is_empty' },
+                          { label: '不为空', value: 'not_empty' },
+                        ]
+                      : [
+                          { label: '等于', value: 'eq' },
+                          { label: '不等于', value: 'neq' },
+                          { label: '包含', value: 'contains' },
+                          { label: '不包含', value: 'not_contains' },
+                          { label: '为空', value: 'is_empty' },
+                          { label: '不为空', value: 'not_empty' },
+                        ]
+                  }
+                />
+                {!noValue ? (
+                  <Input
+                    value={condition.value}
+                    style={{ width: 190 }}
+                    placeholder={field?.kind === 'number' ? '输入数字' : '输入筛选值'}
+                    onChange={(event) =>
+                      setAdvancedConditions((items) =>
+                        items.map((item) => (item.id === condition.id ? { ...item, value: event.target.value } : item)),
+                      )
+                    }
+                  />
+                ) : null}
+                <Button
+                  danger
+                  type="text"
+                  onClick={() => setAdvancedConditions((items) => items.filter((item) => item.id !== condition.id))}
+                >
+                  删除
+                </Button>
+              </Space>
+            );
+          })}
+          <Space>
+            <Button type="primary" onClick={() => setAdvancedOpen(false)}>
+              应用
+            </Button>
+            <Button onClick={() => setAdvancedConditions([])}>重置</Button>
+          </Space>
         </Space>
       </Drawer>
 
