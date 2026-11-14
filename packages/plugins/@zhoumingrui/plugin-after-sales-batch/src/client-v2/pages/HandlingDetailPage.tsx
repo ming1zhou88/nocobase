@@ -29,6 +29,10 @@ const FIELDS = [
   'refund_currency',
   'resend_tracking_number',
   'claim_record_no',
+  'claim_amount',
+  'claim_currency',
+  'claim_received_amount',
+  'claim_status',
 ];
 
 type Row = Record<string, any>;
@@ -176,6 +180,8 @@ export default function HandlingDetailPage() {
     let closed = 0;
     let claims = 0;
     const refundAmounts = new Map<string, number>();
+    const claimAmounts = new Map<string, number>();
+    const claimReceived = new Map<string, number>();
     for (const row of filteredRows) {
       const actionType = String(row.action_type || '');
       const result = String(row.handle_result || '');
@@ -183,6 +189,14 @@ export default function HandlingDetailPage() {
       if (actionType === 'refund' || result.includes('退款')) refund += 1;
       if (actionType === 'close' || String(row.handle_status || '') === 'closed') closed += 1;
       if (row.claim_record_no) claims += 1;
+      if (row.claim_amount != null && Number.isFinite(Number(row.claim_amount))) {
+        const currency = String(row.claim_currency || 'CNY');
+        claimAmounts.set(currency, (claimAmounts.get(currency) || 0) + Number(row.claim_amount));
+      }
+      if (row.claim_received_amount != null && Number.isFinite(Number(row.claim_received_amount))) {
+        const currency = String(row.claim_currency || 'CNY');
+        claimReceived.set(currency, (claimReceived.get(currency) || 0) + Number(row.claim_received_amount));
+      }
       if (row.refund_amount != null && Number.isFinite(Number(row.refund_amount))) {
         const currency = String(row.refund_currency || 'CNY');
         refundAmounts.set(currency, (refundAmounts.get(currency) || 0) + Number(row.refund_amount));
@@ -195,6 +209,12 @@ export default function HandlingDetailPage() {
       claims,
       refundAmount: Array.from(refundAmounts.entries())
         .map(([currency, amount]) => `${currency} ${amount.toFixed(2)}`)
+        .join(' / '),
+      claimAmount: Array.from(claimAmounts.entries())
+        .map(([c, n]) => `${c} ${n.toFixed(2)}`)
+        .join(' / '),
+      claimReceived: Array.from(claimReceived.entries())
+        .map(([c, n]) => `${c} ${n.toFixed(2)}`)
         .join(' / '),
     };
   }, [filteredRows]);
@@ -222,6 +242,9 @@ export default function HandlingDetailPage() {
       '退款金额',
       '退款币种',
       '索赔记录',
+      '索赔金额',
+      '实际赔付金额',
+      '索赔状态',
       '恢复天数',
     ];
     const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -246,6 +269,9 @@ export default function HandlingDetailPage() {
         row.refund_amount,
         row.refund_currency,
         row.claim_record_no,
+        row.claim_amount,
+        row.claim_received_amount,
+        row.claim_status,
         row.recovery_days,
       ]
         .map(quote)
@@ -335,6 +361,21 @@ export default function HandlingDetailPage() {
       ellipsis: true,
       render: (value: string) => value || '-',
     },
+    {
+      title: '索赔金额',
+      dataIndex: 'claim_amount',
+      width: 110,
+      render: (value: number, row: Row) =>
+        value == null ? '-' : `${row.claim_currency || ''} ${Number(value).toFixed(2)}`,
+    },
+    {
+      title: '实际赔付',
+      dataIndex: 'claim_received_amount',
+      width: 110,
+      render: (value: number, row: Row) =>
+        value == null ? '-' : `${row.claim_currency || ''} ${Number(value).toFixed(2)}`,
+    },
+    { title: '索赔状态', dataIndex: 'claim_status', width: 100, render: (value: string) => value || '-' },
     {
       title: '恢复天数',
       dataIndex: 'recovery_days',

@@ -19,6 +19,10 @@ const FIELDS = [
   'refund_currency',
   'resend_tracking_number',
   'claim_record_no',
+  'claim_amount',
+  'claim_currency',
+  'claim_received_amount',
+  'claim_status',
   'store_name',
   'order_id',
   'tracking_number',
@@ -112,11 +116,21 @@ export default function HandlingSummaryPage() {
     let closed = 0;
     let claims = 0;
     const refundAmounts = new Map<string, number>();
+    const claimAmounts = new Map<string, number>();
+    const claimReceived = new Map<string, number>();
     for (const row of filteredRows) {
       if (row.action_type === 'reship' || row.resend_tracking_number) reship += 1;
       if (row.action_type === 'refund' || String(row.handle_result || '').includes('退款')) refund += 1;
       if (row.action_type === 'close') closed += 1;
       if (row.claim_record_no) claims += 1;
+      if (row.claim_amount != null && Number.isFinite(Number(row.claim_amount))) {
+        const currency = String(row.claim_currency || 'CNY');
+        claimAmounts.set(currency, (claimAmounts.get(currency) || 0) + Number(row.claim_amount));
+      }
+      if (row.claim_received_amount != null && Number.isFinite(Number(row.claim_received_amount))) {
+        const currency = String(row.claim_currency || 'CNY');
+        claimReceived.set(currency, (claimReceived.get(currency) || 0) + Number(row.claim_received_amount));
+      }
       if (row.refund_amount != null && Number.isFinite(Number(row.refund_amount))) {
         const currency = String(row.refund_currency || 'CNY');
         refundAmounts.set(currency, (refundAmounts.get(currency) || 0) + Number(row.refund_amount));
@@ -128,6 +142,12 @@ export default function HandlingSummaryPage() {
       closed,
       claims,
       refundAmount: Array.from(refundAmounts.entries())
+        .map(([c, n]) => `${c} ${n.toFixed(2)}`)
+        .join(' / '),
+      claimAmount: Array.from(claimAmounts.entries())
+        .map(([c, n]) => `${c} ${n.toFixed(2)}`)
+        .join(' / '),
+      claimReceived: Array.from(claimReceived.entries())
         .map(([c, n]) => `${c} ${n.toFixed(2)}`)
         .join(' / '),
     };
@@ -241,9 +261,19 @@ export default function HandlingSummaryPage() {
             <Statistic title="索赔记录" value={summary.claims} />
           </Card>
         </Col>
-        <Col xs={12} md={4}>
+        <Col xs={12} md={3}>
           <Card size="small">
             <Statistic title="退款金额" value={summary.refundAmount || '-'} />
+          </Card>
+        </Col>
+        <Col xs={12} md={3}>
+          <Card size="small">
+            <Statistic title="索赔金额" value={summary.claimAmount || '-'} />
+          </Card>
+        </Col>
+        <Col xs={12} md={3}>
+          <Card size="small">
+            <Statistic title="实际赔付" value={summary.claimReceived || '-'} />
           </Card>
         </Col>
       </Row>
@@ -318,6 +348,19 @@ export default function HandlingSummaryPage() {
               ellipsis: true,
               render: (v: string) => v || '-',
             },
+            {
+              title: '索赔金额',
+              dataIndex: 'claim_amount',
+              width: 110,
+              render: (v: number, r: Row) => (v == null ? '-' : `${r.claim_currency || ''} ${Number(v).toFixed(2)}`),
+            },
+            {
+              title: '实际赔付',
+              dataIndex: 'claim_received_amount',
+              width: 110,
+              render: (v: number, r: Row) => (v == null ? '-' : `${r.claim_currency || ''} ${Number(v).toFixed(2)}`),
+            },
+            { title: '索赔状态', dataIndex: 'claim_status', width: 100, render: (v: string) => v || '-' },
           ]}
         />
       </Card>
