@@ -182,6 +182,59 @@ export default function HandlingSummaryPage() {
     return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date) || a.store.localeCompare(b.store));
   }, [filteredRows]);
 
+  const exportRows = () => {
+    const headers = [
+      '行动时间',
+      '店铺',
+      '平台订单编号',
+      '运单号',
+      '处理人',
+      '行动类型',
+      '行动说明',
+      '操作人',
+      '退款金额',
+      '退款币种',
+      '补寄运单号',
+      '索赔记录',
+      '索赔金额',
+      '索赔币种',
+      '实际赔付金额',
+      '索赔状态',
+    ];
+    const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const body = filteredRows.map((row) =>
+      [
+        row.action_at,
+        row.store_name,
+        row.order_id,
+        row.tracking_number,
+        row.handler_name,
+        row.action_type,
+        row.action_note,
+        row.operator_name,
+        row.refund_amount,
+        row.refund_currency,
+        row.resend_tracking_number,
+        row.claim_record_no,
+        row.claim_amount,
+        row.claim_currency,
+        row.claim_received_amount,
+        row.claim_status,
+      ]
+        .map(quote)
+        .join(','),
+    );
+    const blob = new Blob(['\uFEFF' + [headers.map(quote).join(','), ...body].join('\n')], {
+      type: 'text/csv;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `快递异常处理汇总_${dayjs().format('YYYYMMDD_HHmm')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const setFilter = (key: keyof Filters, value: string) => setFilters((prev) => ({ ...prev, [key]: value }));
 
   return (

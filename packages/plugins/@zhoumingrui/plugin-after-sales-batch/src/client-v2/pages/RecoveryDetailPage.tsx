@@ -122,6 +122,53 @@ export default function RecoveryDetailPage() {
 
   const setFilter = (key: keyof Filters, value: string) => setFilters((prev) => ({ ...prev, [key]: value }));
 
+  const exportRows = () => {
+    const headers = [
+      '店铺',
+      '平台订单编号',
+      '子订单编号',
+      '运单号',
+      '物流商',
+      '处理人',
+      '异常开始',
+      '恢复时间',
+      '结果时间',
+      '妥投时间',
+      '关闭时间',
+      '恢复天数',
+      '处理判定',
+    ];
+    const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const body = filteredRows.map((row) =>
+      [
+        row.store_name,
+        row.order_id,
+        row.sub_order_id,
+        row.tracking_number,
+        row.carrier,
+        row.handler_name,
+        row.exception_started_at,
+        row.exception_recovered_at,
+        row.result_at,
+        row.delivered_at,
+        row.closed_at,
+        row.recovery_days,
+        row.premature_label,
+      ]
+        .map(quote)
+        .join(','),
+    );
+    const blob = new Blob(['\uFEFF' + [headers.map(quote).join(','), ...body].join('\n')], {
+      type: 'text/csv;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `快递异常恢复周期_${dayjs().format('YYYYMMDD_HHmm')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const columns = [
     { title: '店铺', dataIndex: 'store_name', width: 130, ellipsis: true, render: (v: string) => v || '-' },
     { title: '平台订单编号', dataIndex: 'order_id', width: 180, ellipsis: true, render: (v: string) => v || '-' },
