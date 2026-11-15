@@ -2135,7 +2135,8 @@ export default function TrackingExceptionPage() {
             数据质量：
           </Typography.Text>
           {qualityFilters.map(renderFilterChip)}
-          <Divider type="vertical" />
+        </Space>
+        <Space wrap size={[6, 6]} align="center" style={{ marginTop: 6 }}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             重点关注：
           </Typography.Text>
