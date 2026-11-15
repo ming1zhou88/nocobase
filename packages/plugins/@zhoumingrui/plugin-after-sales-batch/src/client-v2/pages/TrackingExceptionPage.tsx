@@ -2103,12 +2103,12 @@ export default function TrackingExceptionPage() {
 
         <div
           style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            gap: 12,
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, max-content) minmax(0, 1fr)',
+            columnGap: 12,
+            rowGap: 8,
             marginTop: 8,
-            flexWrap: 'wrap',
+            alignItems: 'start',
           }}
         >
           <Space wrap size={[6, 6]} align="center">
@@ -2133,19 +2133,19 @@ export default function TrackingExceptionPage() {
             </Typography.Text>
             {stageFilters.map(renderFilterChip)}
           </Space>
+          <Space wrap size={[6, 6]} align="center">
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              数据质量：
+            </Typography.Text>
+            {qualityFilters.map(renderFilterChip)}
+          </Space>
+          <Space wrap size={[6, 6]} align="center">
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              重点关注：
+            </Typography.Text>
+            {focusFilters.map(renderFilterChip)}
+          </Space>
         </div>
-
-        <Space wrap size={[6, 6]} align="center" style={{ marginTop: 8 }}>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            数据质量：
-          </Typography.Text>
-          {qualityFilters.map(renderFilterChip)}
-          <Divider type="vertical" />
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            重点关注：
-          </Typography.Text>
-          {focusFilters.map(renderFilterChip)}
-        </Space>
       </Card>
 
       <Card
