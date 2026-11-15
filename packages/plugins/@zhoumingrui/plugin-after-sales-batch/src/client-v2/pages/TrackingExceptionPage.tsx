@@ -1995,107 +1995,83 @@ export default function TrackingExceptionPage() {
       </div>
 
       <Card className="tracking-filter-bar" size="small" styles={{ body: { padding: 10 } }} style={{ flexShrink: 0 }}>
-        <Space wrap size={[8, 8]} align="center" style={{ width: '100%' }}>
-          <Input
-            allowClear
-            prefix={<SearchOutlined />}
-            placeholder="订单号 / 运单号 / 店铺 / MSKU"
-            style={{ width: 320 }}
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-          />
-          <Select
-            value={carrierFilter}
-            style={{ width: 130 }}
-            onChange={setCarrierFilter}
-            options={[
-              { label: '全部物流商', value: 'all' },
-              { label: 'FedEx', value: 'FedEx' },
-              { label: 'UPS', value: 'UPS' },
-              { label: '其他', value: '其他' },
-            ]}
-          />
-          <Select
-            value={ownerFilter}
-            style={{ width: 150 }}
-            showSearch
-            optionFilterProp="label"
-            onChange={setOwnerFilter}
-            options={[
-              { label: '全部处理人', value: 'all' },
-              { label: '未指派', value: 'unassigned' },
-              ...users.map((user) => ({
-                label: String(user.nickname || user.username || user.id),
-                value: String(user.id),
-              })),
-            ]}
-          />
-          <Select
-            value={qualityFilter}
-            style={{ width: 140 }}
-            onChange={setQualityFilter}
-            options={[
-              { label: '全部质量', value: 'all' },
-              { label: '可用', value: '可用' },
-              { label: '查询异常', value: '查询异常' },
-              { label: '虚拟单号', value: '虚拟单号' },
-              { label: '其他承运商', value: '其他承运商' },
-              { label: '数据不完整', value: '数据不完整' },
-              { label: '天数异常', value: '天数异常' },
-              { label: '数据过旧', value: '数据过旧' },
-            ]}
-          />
-          <Popover
-            trigger="click"
-            placement="bottomLeft"
-            open={advancedOpen}
-            onOpenChange={setAdvancedOpen}
-            content={advancedFilterContent}
-          >
-            <Button>高级筛选{advancedConditions.length ? `（${advancedConditions.length}）` : ''}</Button>
-          </Popover>
-          <Button
-            onClick={() => {
-              setKeyword('');
-              setCarrierFilter('all');
-              setOwnerFilter('all');
-              setQualityFilter('all');
-              setAdvancedConditions([]);
-              setFilterKey('all');
-            }}
-          >
-            重置
-          </Button>
-          <Tooltip title="刷新数据">
-            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()} />
-          </Tooltip>
-        </Space>
-
         <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 8,
-            marginTop: 8,
-            flexWrap: 'wrap',
-          }}
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
         >
-          <Space wrap size={[6, 6]}>
-            <Tooltip title="关闭后只看可用数据">
-              <Switch
-                size="small"
-                checked={showSuspect}
-                onChange={(checked) => {
-                  setShowSuspect(checked);
-                  if (!checked && filterKey === 'manual') setFilterKey('all');
-                }}
-              />
+          <Space wrap size={[8, 8]} align="center">
+            <Input
+              allowClear
+              prefix={<SearchOutlined />}
+              placeholder="订单号 / 运单号 / 店铺 / MSKU"
+              style={{ width: 280 }}
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+            />
+            <Select
+              value={carrierFilter}
+              style={{ width: 115 }}
+              onChange={setCarrierFilter}
+              options={[
+                { label: '全部物流商', value: 'all' },
+                { label: 'FedEx', value: 'FedEx' },
+                { label: 'UPS', value: 'UPS' },
+                { label: '其他', value: '其他' },
+              ]}
+            />
+            <Select
+              value={ownerFilter}
+              style={{ width: 135 }}
+              showSearch
+              optionFilterProp="label"
+              onChange={setOwnerFilter}
+              options={[
+                { label: '全部处理人', value: 'all' },
+                { label: '未指派', value: 'unassigned' },
+                ...users.map((user) => ({
+                  label: String(user.nickname || user.username || user.id),
+                  value: String(user.id),
+                })),
+              ]}
+            />
+            <Select
+              value={qualityFilter}
+              style={{ width: 125 }}
+              onChange={setQualityFilter}
+              options={[
+                { label: '全部质量', value: 'all' },
+                { label: '可用', value: '可用' },
+                { label: '查询异常', value: '查询异常' },
+                { label: '虚拟单号', value: '虚拟单号' },
+                { label: '其他承运商', value: '其他承运商' },
+                { label: '数据不完整', value: '数据不完整' },
+                { label: '天数异常', value: '天数异常' },
+                { label: '数据过旧', value: '数据过旧' },
+              ]}
+            />
+            <Popover
+              trigger="click"
+              placement="bottomLeft"
+              open={advancedOpen}
+              onOpenChange={setAdvancedOpen}
+              content={advancedFilterContent}
+            >
+              <Button>高级筛选{advancedConditions.length ? `（${advancedConditions.length}）` : ''}</Button>
+            </Popover>
+            <Button
+              onClick={() => {
+                setKeyword('');
+                setCarrierFilter('all');
+                setOwnerFilter('all');
+                setQualityFilter('all');
+                setAdvancedConditions([]);
+                setFilterKey('all');
+              }}
+            >
+              重置
+            </Button>
+            <Tooltip title="刷新数据">
+              <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()} />
             </Tooltip>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              队列：
-            </Typography.Text>
-            {priorityFilters.map(renderFilterChip)}
           </Space>
           <Space wrap size={[6, 6]}>
             {canAssign ? (
@@ -2125,18 +2101,46 @@ export default function TrackingExceptionPage() {
           </Space>
         </div>
 
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 12,
+            marginTop: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <Space wrap size={[6, 6]} align="center">
+            <Tooltip title="关闭后只看可用数据">
+              <Switch
+                size="small"
+                checked={showSuspect}
+                onChange={(checked) => {
+                  setShowSuspect(checked);
+                  if (!checked && filterKey === 'manual') setFilterKey('all');
+                }}
+              />
+            </Tooltip>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              队列：
+            </Typography.Text>
+            {priorityFilters.map(renderFilterChip)}
+          </Space>
+          <Space wrap size={[6, 6]} align="center">
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              异常阶段：
+            </Typography.Text>
+            {stageFilters.map(renderFilterChip)}
+          </Space>
+        </div>
+
         <Space wrap size={[6, 6]} align="center" style={{ marginTop: 8 }}>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            异常阶段：
-          </Typography.Text>
-          {stageFilters.map(renderFilterChip)}
-          <Divider type="vertical" />
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             数据质量：
           </Typography.Text>
           {qualityFilters.map(renderFilterChip)}
-        </Space>
-        <Space wrap size={[6, 6]} align="center" style={{ marginTop: 6 }}>
+          <Divider type="vertical" />
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             重点关注：
           </Typography.Text>
