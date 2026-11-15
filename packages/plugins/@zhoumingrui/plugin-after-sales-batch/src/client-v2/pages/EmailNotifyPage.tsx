@@ -165,8 +165,15 @@ export default function EmailNotifyPage() {
             }
           : null,
       );
+      if (!orderIds.length) {
+        // 批量搜索临时关闭的开关，在刷新/切日期后恢复默认“只看未沟通”。
+        if (batchBypass) setOnlyUncommunicated(true);
+        setBatchBypass(false);
+      }
+      return response;
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error));
+      return null;
     } finally {
       if (!silent) {
         setLoading(false);
@@ -187,11 +194,18 @@ export default function EmailNotifyPage() {
       message.warning('请先输入平台订单编号');
       return;
     }
-    setOnlyUncommunicated(false);
-    setBatchBypass(true);
     setBatchSearching(true);
     try {
-      await loadSendable(date, false, ids, true);
+      const response = await loadSendable(date, false, ids, true);
+      const communicatedCount = (response?.records || []).filter(
+        (record: Record<string, any>) => Number(record.has_communication) === 1,
+      ).length;
+      if (communicatedCount > 0) {
+        setOnlyUncommunicated(false);
+        setBatchBypass(true);
+      } else {
+        setBatchBypass(false);
+      }
     } finally {
       setBatchSearching(false);
     }
@@ -300,10 +314,17 @@ export default function EmailNotifyPage() {
       onlyUncommunicated ? blockedRecords.filter((record) => Number(record.has_communication) !== 1) : blockedRecords,
     [blockedRecords, onlyUncommunicated],
   );
-  const hiddenCommunicationCount = useMemo(
-    () => records.filter((record) => Number(record.has_communication) === 1).length,
-    [records],
-  );
+  const hiddenCommunicationCount = useMemo(() => {
+    const base =
+      activeTab === 'pending'
+        ? sendableRecords
+        : activeTab === 'sent'
+          ? sentRecords
+          : activeTab === 'blocked'
+            ? blockedRecords
+            : records;
+    return base.filter((record) => Number(record.has_communication) === 1).length;
+  }, [activeTab, records, sendableRecords, sentRecords, blockedRecords]);
   const displayRecords = useMemo(() => {
     if (activeTab === 'pending') return visibleSendable;
     if (activeTab === 'blocked') return visibleBlocked;
@@ -351,7 +372,7 @@ export default function EmailNotifyPage() {
       });
       return;
     }
-    const proceed = async () => {
+    const proceed = async (confirmedCount = 0) => {
       setSending(true);
       if (rowOrderId) setRowSending(rowOrderId);
       try {
@@ -360,6 +381,7 @@ export default function EmailNotifyPage() {
           date,
           dry_run: dryRun ? 1 : '',
           write_back: dryRun ? (dryRunWriteBack ? 1 : 0) : 1,
+          confirmed_communicated_count: confirmedCount,
         });
         setJobSerial(String(job.job_serial));
         if (Number(job.runnable_count || 0) === 0) {
@@ -388,6 +410,18 @@ export default function EmailNotifyPage() {
         await loadJob(String(job.job_serial), false);
         await loadSendable(date, true);
       } catch (error) {
+        const errorData = (error as any)?.response?.data || (error as any)?.data || {};
+        if (errorData.code === 'EMAIL_COMMUNICATED_CONFIRM_REQUIRED') {
+          const serverCount = Number(errorData.communicated_count || 0);
+          modal.confirm({
+            title: '发送提醒',
+            content: `已选择 ${orderIds.length} 个平台订单，其中 ${serverCount} 个平台订单先前双方有过联系，是否继续发送快递通知？`,
+            okText: '继续发送',
+            cancelText: '取消',
+            onOk: () => proceed(serverCount),
+          });
+          return;
+        }
         message.error(error instanceof Error ? error.message : String(error));
       } finally {
         setSending(false);
@@ -405,7 +439,7 @@ export default function EmailNotifyPage() {
         content: `已选择 ${orderIds.length} 个平台订单，其中 ${communicated.length} 个平台订单先前双方有过联系，是否继续发送快递通知？`,
         okText: '继续发送',
         cancelText: '取消',
-        onOk: proceed,
+        onOk: () => proceed(communicated.length),
       });
       return;
     }
@@ -415,7 +449,7 @@ export default function EmailNotifyPage() {
       content: t('Will send {{count}} notification emails. Continue?', { count: orderIds.length }),
       okText: t('Confirm'),
       cancelText: t('Cancel'),
-      onOk: proceed,
+      onOk: () => proceed(0),
     });
   }
 
