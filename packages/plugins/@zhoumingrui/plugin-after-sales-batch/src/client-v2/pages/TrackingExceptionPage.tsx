@@ -122,7 +122,7 @@ const FIELDS = [
 ];
 
 type Row = Record<string, any>;
-type Quality = '可用' | '查询异常' | '虚拟单号' | '非FedEx' | '数据不完整' | '天数异常' | '数据过旧';
+type Quality = '可用' | '查询异常' | '虚拟单号' | '其他承运商' | '数据不完整' | '天数异常' | '数据过旧';
 type Carrier = 'FedEx' | 'UPS' | '其他';
 type ExceptionType = 'initial' | 'transit' | 'other';
 type ExceptionState = '异常中' | '已恢复' | '待核实' | '已作废';
@@ -198,11 +198,12 @@ function enrich(row: Row): EnrichedRow {
   const reasons: string[] = [];
 
   const isFedex = /^\d{12}$/.test(tracking);
+  const isUps = /^1Z[0-9A-Z]{16}$/i.test(tracking);
   const isVirtual = /^8926\d{11}$/.test(tracking);
   const isTechnical =
     /邮件查询错误|查询错误|NOTFOUND|TRACKINGNUMBER/i.test(`${additional} ${status}`) ||
     /NOTFOUND/i.test(String(row.note ?? ''));
-  const isNonFedex = Boolean(tracking) && !isFedex && !isVirtual;
+  const isOtherCarrier = Boolean(tracking) && !isFedex && !isUps && !isVirtual;
   const delivered = Boolean(row.DeliveredDate) || /delivered|entregado/i.test(status);
   const noteRecovered = Boolean(note?.recoveredAt) || note?.active === false;
   const v2Recovered = row.exception_status === 'recovered';
@@ -213,9 +214,9 @@ function enrich(row: Row): EnrichedRow {
   if (isVirtual) {
     quality = '虚拟单号';
     reasons.push('15 位 8926 开头，判定为 Wayfair 虚拟单号，不应查 FedEx');
-  } else if (isNonFedex) {
-    quality = '非FedEx';
-    reasons.push('非 12 位纯数字，未调用 FedEx 查询');
+  } else if (isOtherCarrier) {
+    quality = '其他承运商';
+    reasons.push('非 FedEx/UPS 运单，暂未接入查询');
   } else if (isTechnical) {
     quality = '查询异常';
     reasons.push('AdditionalStatus/备注显示查询错误，需人工核实');
@@ -253,7 +254,7 @@ function enrich(row: Row): EnrichedRow {
   }
 
   const state: ExceptionState = isInvalid ? '已作废' : isRecovered ? '已恢复' : isTechnical ? '待核实' : '异常中';
-  const isClean = quality === '可用' && isFedex && !isTechnical && !isInvalid;
+  const isClean = quality === '可用' && (isFedex || isUps) && !isTechnical && !isInvalid;
   const needsManual = isTechnical || quality === '数据不完整' || quality === '天数异常' || quality === '数据过旧';
   const suggestion = isRecovered
     ? '已恢复，无需行动'
@@ -299,7 +300,7 @@ const QUALITY_COLOR: Record<Quality, string> = {
   可用: 'green',
   查询异常: 'orange',
   虚拟单号: 'purple',
-  非FedEx: 'blue',
+  其他承运商: 'blue',
   数据不完整: 'red',
   天数异常: 'red',
   数据过旧: 'volcano',
@@ -390,8 +391,8 @@ function matchesAdvancedConditions(row: EnrichedRow, conditions: AdvancedConditi
 
 const FILTERS: Array<{ key: FilterKey; label: string }> = [
   { key: 'all', label: '全部' },
-  { key: 'usable', label: '可用 FedEx' },
-  { key: 'suspect', label: '可疑/非FedEx' },
+  { key: 'usable', label: '可用 FedEx/UPS' },
+  { key: 'suspect', label: '可疑/其他承运商' },
   { key: 'initial-3', label: '初始≥3天' },
   { key: 'initial-3-7', label: '初始 3–7天' },
   { key: 'initial-7', label: '初始≥7天' },
@@ -1924,7 +1925,7 @@ export default function TrackingExceptionPage() {
               <Statistic title="可用 FedEx" value={stats.clean} valueStyle={{ color: '#3f8600' }} />
               <Statistic title="异常中" value={stats.active} valueStyle={{ color: '#cf1322' }} />
               <Statistic title="已恢复" value={stats.recovered} valueStyle={{ color: '#1677ff' }} />
-              <Statistic title="可疑/非FedEx" value={stats.suspect} valueStyle={{ color: '#d46b08' }} />
+              <Statistic title="可疑/其他承运商" value={stats.suspect} valueStyle={{ color: '#d46b08' }} />
               <Tooltip title="仍异常、未妥投、非技术异常，且最后事件时间已超过 7 天；7D4 历史不足 7 天时必然为 0。">
                 <Statistic title="实质异常" value={stats.substantive} valueStyle={{ color: '#cf1322' }} />
               </Tooltip>
@@ -2038,7 +2039,7 @@ export default function TrackingExceptionPage() {
               { label: '可用', value: '可用' },
               { label: '查询异常', value: '查询异常' },
               { label: '虚拟单号', value: '虚拟单号' },
-              { label: '非FedEx', value: '非FedEx' },
+              { label: '其他承运商', value: '其他承运商' },
               { label: '数据不完整', value: '数据不完整' },
               { label: '天数异常', value: '天数异常' },
               { label: '数据过旧', value: '数据过旧' },
