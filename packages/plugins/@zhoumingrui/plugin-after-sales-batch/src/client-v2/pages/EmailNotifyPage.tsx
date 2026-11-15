@@ -98,6 +98,10 @@ export default function EmailNotifyPage() {
   const [windowInfo, setWindowInfo] = useState<Record<string, any> | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [activeTab, setActiveTab] = useState('all');
+  // 默认只看“未沟通”的行；关闭后展示当前查询范围内的全部沟通状态。
+  const [onlyUncommunicated, setOnlyUncommunicated] = useState(true);
+  // 批量搜索是人工审核过的订单集合，自动绕过“仅看未沟通”，避免搜不到结果。
+  const [batchBypass, setBatchBypass] = useState(false);
   const [customDateOpen, setCustomDateOpen] = useState(false);
   const [customDateDraft, setCustomDateDraft] = useState('');
   const [rowSending, setRowSending] = useState<string | null>(null);
@@ -183,6 +187,8 @@ export default function EmailNotifyPage() {
       message.warning('请先输入平台订单编号');
       return;
     }
+    setOnlyUncommunicated(false);
+    setBatchBypass(true);
     setBatchSearching(true);
     try {
       await loadSendable(date, false, ids, true);
@@ -275,12 +281,35 @@ export default function EmailNotifyPage() {
       records.filter((record) => !Number(record.email_sent) && (!record.sendable || record.in_today_window === false)),
     [records],
   );
+  // “是否已有沟通”只做展示过滤，不改变原有日期/可发/已发口径。
+  const visibleAll = useMemo(
+    () => (onlyUncommunicated ? records.filter((record) => Number(record.has_communication) !== 1) : records),
+    [records, onlyUncommunicated],
+  );
+  const visibleSendable = useMemo(
+    () =>
+      onlyUncommunicated ? sendableRecords.filter((record) => Number(record.has_communication) !== 1) : sendableRecords,
+    [sendableRecords, onlyUncommunicated],
+  );
+  const visibleSent = useMemo(
+    () => (onlyUncommunicated ? sentRecords.filter((record) => Number(record.has_communication) !== 1) : sentRecords),
+    [sentRecords, onlyUncommunicated],
+  );
+  const visibleBlocked = useMemo(
+    () =>
+      onlyUncommunicated ? blockedRecords.filter((record) => Number(record.has_communication) !== 1) : blockedRecords,
+    [blockedRecords, onlyUncommunicated],
+  );
+  const hiddenCommunicationCount = useMemo(
+    () => records.filter((record) => Number(record.has_communication) === 1).length,
+    [records],
+  );
   const displayRecords = useMemo(() => {
-    if (activeTab === 'pending') return sendableRecords;
-    if (activeTab === 'blocked') return blockedRecords;
-    if (activeTab === 'sent') return sentRecords;
-    return records;
-  }, [activeTab, records, sendableRecords, blockedRecords, sentRecords]);
+    if (activeTab === 'pending') return visibleSendable;
+    if (activeTab === 'blocked') return visibleBlocked;
+    if (activeTab === 'sent') return visibleSent;
+    return visibleAll;
+  }, [activeTab, visibleAll, visibleSendable, visibleBlocked, visibleSent]);
   const senderSummary = useMemo(() => {
     const status = new Map<string, boolean>();
     for (const record of records) {
@@ -322,54 +351,71 @@ export default function EmailNotifyPage() {
       });
       return;
     }
+    const proceed = async () => {
+      setSending(true);
+      if (rowOrderId) setRowSending(rowOrderId);
+      try {
+        const job = await request('createEmailNotifyJob', {
+          order_ids: orderIds,
+          date,
+          dry_run: dryRun ? 1 : '',
+          write_back: dryRun ? (dryRunWriteBack ? 1 : 0) : 1,
+        });
+        setJobSerial(String(job.job_serial));
+        if (Number(job.runnable_count || 0) === 0) {
+          // 连接器建任务时已把不可发/不在窗口的订单标成 skipped；把真实原因显示出来，
+          // 不再继续调 Dify 得到笼统的“没有待发订单”。
+          const detail = await request('getEmailNotifyJob', { job_serial: job.job_serial });
+          const reasons = (detail.items || [])
+            .filter((item: Record<string, any>) => item.status === 'skipped')
+            .map((item: Record<string, any>) => `${item.order_id}：${item.error || '-'}`)
+            .join('\n');
+          modal.warning({
+            title: t('No sendable orders'),
+            content: reasons || t('No sendable orders'),
+            okText: t('Confirm'),
+          });
+          await loadJob(String(job.job_serial), false);
+          return;
+        }
+        const result = await request('runEmailNotifyJobViaDify', {
+          job_serial: job.job_serial,
+          dry_run: dryRun ? 1 : '',
+          write_back: dryRun ? (dryRunWriteBack ? 1 : 0) : 1,
+        });
+        setLastResult(result);
+        message.success(String(result.summary || t('Sent')));
+        await loadJob(String(job.job_serial), false);
+        await loadSendable(date, true);
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : String(error));
+      } finally {
+        setSending(false);
+        if (rowOrderId) setRowSending(null);
+      }
+    };
+
+    const communicated = orderIds
+      .map((orderId) => rowsById.get(String(orderId)))
+      .filter((record) => record && Number(record.has_communication) === 1);
+
+    if (communicated.length > 0) {
+      modal.confirm({
+        title: '发送提醒',
+        content: `已选择 ${orderIds.length} 个平台订单，其中 ${communicated.length} 个平台订单先前双方有过联系，是否继续发送快递通知？`,
+        okText: '继续发送',
+        cancelText: '取消',
+        onOk: proceed,
+      });
+      return;
+    }
+
     modal.confirm({
       title: t('Trigger sending'),
       content: t('Will send {{count}} notification emails. Continue?', { count: orderIds.length }),
       okText: t('Confirm'),
       cancelText: t('Cancel'),
-      onOk: async () => {
-        setSending(true);
-        if (rowOrderId) setRowSending(rowOrderId);
-        try {
-          const job = await request('createEmailNotifyJob', {
-            order_ids: orderIds,
-            date,
-            dry_run: dryRun ? 1 : '',
-            write_back: dryRun ? (dryRunWriteBack ? 1 : 0) : 1,
-          });
-          setJobSerial(String(job.job_serial));
-          if (Number(job.runnable_count || 0) === 0) {
-            // 连接器建任务时已把不可发/不在窗口的订单标成 skipped；把真实原因显示出来，
-            // 不再继续调 Dify 得到笼统的“没有待发订单”。
-            const detail = await request('getEmailNotifyJob', { job_serial: job.job_serial });
-            const reasons = (detail.items || [])
-              .filter((item: Record<string, any>) => item.status === 'skipped')
-              .map((item: Record<string, any>) => `${item.order_id}：${item.error || '-'}`)
-              .join('\n');
-            modal.warning({
-              title: t('No sendable orders'),
-              content: reasons || t('No sendable orders'),
-              okText: t('Confirm'),
-            });
-            await loadJob(String(job.job_serial), false);
-            return;
-          }
-          const result = await request('runEmailNotifyJobViaDify', {
-            job_serial: job.job_serial,
-            dry_run: dryRun ? 1 : '',
-            write_back: dryRun ? (dryRunWriteBack ? 1 : 0) : 1,
-          });
-          setLastResult(result);
-          message.success(String(result.summary || t('Sent')));
-          await loadJob(String(job.job_serial), false);
-          await loadSendable(date, true);
-        } catch (error) {
-          message.error(error instanceof Error ? error.message : String(error));
-        } finally {
-          setSending(false);
-          if (rowOrderId) setRowSending(null);
-        }
-      },
+      onOk: proceed,
     });
   }
 
@@ -512,7 +558,7 @@ export default function EmailNotifyPage() {
       </Card>
 
       <Card
-        title={`${t('Sendable today')}（${records.length}）`}
+        title={`${t('Sendable today')}（${visibleAll.length}）`}
         style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}
         styles={{ body: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: 12 } }}
       >
@@ -564,6 +610,20 @@ export default function EmailNotifyPage() {
               />
             </Space>
           </Tooltip>
+          <Tooltip title="开启时隐藏“是否已有沟通=是”的订单；批量搜索会自动关闭此开关">
+            <Space size={4}>
+              <Typography.Text>仅看未沟通</Typography.Text>
+              <Switch
+                size="small"
+                checked={onlyUncommunicated}
+                onChange={(value) => {
+                  setOnlyUncommunicated(value);
+                  setBatchBypass(false);
+                  setSelectedRowKeys([]);
+                }}
+              />
+            </Space>
+          </Tooltip>
           <Button icon={<SearchOutlined />} onClick={() => setBatchOpen(true)}>
             平台订单编号批量搜索
           </Button>
@@ -591,14 +651,18 @@ export default function EmailNotifyPage() {
             onChange={(value) => setActiveTab(String(value))}
             options={[
               {
-                label: `${batchMeta ? t('Batch search results') : t('Today sendable')} (${records.length})`,
+                label: `${batchMeta ? t('Batch search results') : t('Today sendable')} (${visibleAll.length})`,
                 value: 'all',
               },
-              { label: `${t('Today pending')} (${sendableRecords.length})`, value: 'pending' },
-              { label: `${t('Today sent')} (${sentRecords.length})`, value: 'sent' },
-              { label: `${t('Not sendable')} (${blockedRecords.length})`, value: 'blocked' },
+              { label: `${t('Today pending')} (${visibleSendable.length})`, value: 'pending' },
+              { label: `${t('Today sent')} (${visibleSent.length})`, value: 'sent' },
+              { label: `${t('Not sendable')} (${visibleBlocked.length})`, value: 'blocked' },
             ]}
           />
+          {onlyUncommunicated && hiddenCommunicationCount > 0 ? (
+            <Tag color="default">已隐藏 {hiddenCommunicationCount} 条已有沟通</Tag>
+          ) : null}
+          {batchBypass ? <Tag color="blue">批量搜索：显示全部沟通状态</Tag> : null}
           {windowInfo ? (
             <Tooltip title={windowInfo.note}>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -617,7 +681,7 @@ export default function EmailNotifyPage() {
               onChange: setSelectedRowKeys,
               getCheckboxProps: (record) => ({ disabled: !record.sendable || record.in_today_window === false }),
             }}
-            scroll={{ x: 1900, y: tableScrollY }}
+            scroll={{ x: 2020, y: tableScrollY }}
             pagination={{ pageSize: 20, showSizeChanger: true }}
             columns={[
               {
@@ -647,6 +711,18 @@ export default function EmailNotifyPage() {
                 dataIndex: 'delivery_details_at_send',
                 key: 'delivery_details_at_send',
                 width: 180,
+              },
+              {
+                title: '是否已有沟通',
+                dataIndex: 'has_communication',
+                key: 'has_communication',
+                width: 120,
+                render: (value: unknown) =>
+                  Number(value) === 1 ? (
+                    <Tag color="orange">是</Tag>
+                  ) : (
+                    <Typography.Text type="secondary">—</Typography.Text>
+                  ),
               },
               {
                 title: t('Created time (Beijing)'),
