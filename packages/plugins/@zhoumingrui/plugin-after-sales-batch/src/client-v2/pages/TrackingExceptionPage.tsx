@@ -2104,7 +2104,7 @@ export default function TrackingExceptionPage() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+            gridTemplateColumns: 'minmax(0, 600px) minmax(0, 1fr)',
             columnGap: 12,
             rowGap: 8,
             marginTop: 8,
