@@ -73,6 +73,7 @@ async function importXlsxAction(ctx: Context, next: Next) {
       explain: (ctx.request.body as any).explain,
       repository,
       rowDefaultValues: ctx.action.params?.rowDefaultValues || {},
+      mode: (ctx.action.params as any)?.mode || (ctx.request.body as any)?.mode || (ctx.request.query as any)?.mode,
     });
 
     const importedCount = await importer.run({

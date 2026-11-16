@@ -60,6 +60,8 @@ export type ImporterOptions = {
   repository?: any;
   logger?: Logger;
   rowDefaultValues?: Record<string, any>;
+  /** 'upsert' updates existing rows by primary/unique key instead of failing on duplicates. */
+  mode?: 'insert' | 'upsert';
 };
 
 export type RunOptions = {
@@ -516,8 +518,22 @@ export class XlsxImporter extends EventEmitter {
     return;
   }
 
+  private getUpsertFields(values: any[]): string[] {
+    const sample = values?.[0] || {};
+    const fields = this.options.collection.getFields?.() || [];
+    return fields
+      .filter((field: any) => {
+        const opts = field.options || {};
+        if (opts.primaryKey || opts.autoIncrement) return false;
+        if (field.isAssociationField?.()) return false;
+        return !!opts.name && Object.prototype.hasOwnProperty.call(sample, opts.name);
+      })
+      .map((field: any) => field.options.name);
+  }
+
   async performInsert(insertOptions: { values: any[]; transaction: Transaction; context: any; hooks?: boolean }) {
     const { values, transaction, context } = insertOptions;
+    const upsertFields = this.options.mode === 'upsert' ? this.getUpsertFields(values) : [];
     const instances = await this.loggerService.measureExecutedTime(
       async () =>
         this.getModel().bulkCreate(values, {
@@ -525,6 +541,7 @@ export class XlsxImporter extends EventEmitter {
           hooks: insertOptions.hooks == undefined ? true : insertOptions.hooks,
           returning: true,
           context,
+          ...(upsertFields.length ? { updateOnDuplicate: upsertFields } : {}),
         } as any),
       'Row {{rowIndex}}: bulkCreate completed in {time}ms',
     );
