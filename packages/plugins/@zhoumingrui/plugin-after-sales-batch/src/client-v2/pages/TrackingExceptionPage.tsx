@@ -190,6 +190,46 @@ function detectCarrier(tracking: unknown): Carrier {
   return '其他';
 }
 
+/** FedEx / UPS 官网查询链接；其他承运商或虚拟单号返回 null。 */
+function carrierTrackingUrl(tracking: unknown): string | null {
+  const value = String(tracking || '').trim();
+  if (!value) return null;
+  const carrier = detectCarrier(value);
+  if (carrier === 'UPS') {
+    return `https://www.ups.com/track?loc=en_CN&tracknum=${encodeURIComponent(value)}&requester=WT/trackdetails`;
+  }
+  if (carrier === 'FedEx') {
+    return `https://www.fedex.com/fedextrack/summary?trknbr=${encodeURIComponent(value)}`;
+  }
+  return null;
+}
+
+function TrackingNumberLink({ value, copyable = false }: { value?: unknown; copyable?: boolean }) {
+  const text = String(value || '').trim();
+  if (!text) return <>-</>;
+  const url = carrierTrackingUrl(text);
+  if (!url) {
+    return copyable ? (
+      <Typography.Text copyable style={{ whiteSpace: 'nowrap' }}>
+        {text}
+      </Typography.Text>
+    ) : (
+      <span style={{ whiteSpace: 'nowrap' }}>{text}</span>
+    );
+  }
+  return (
+    <Typography.Link
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      copyable={copyable}
+      style={{ whiteSpace: 'nowrap' }}
+    >
+      {text}
+    </Typography.Link>
+  );
+}
+
 function enrich(row: Row): EnrichedRow {
   const tracking = String(row['tracking-number'] ?? '').trim();
   const status = String(row.Status ?? '').trim();
@@ -1577,11 +1617,7 @@ export default function TrackingExceptionPage() {
       dataIndex: 'tracking-number',
       width: 200,
       ellipsis: true,
-      render: (value: string) => (
-        <Typography.Text copyable style={{ whiteSpace: 'nowrap' }}>
-          {value || '-'}
-        </Typography.Text>
-      ),
+      render: (value: string) => <TrackingNumberLink value={value} />,
     },
     {
       title: '物流商',
@@ -1711,6 +1747,34 @@ export default function TrackingExceptionPage() {
           <Button type="link" size="small" onClick={() => openWorkOrder(row)}>
             创建或关联工单
           </Button>
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: [
+                { key: 'warehouse-contacts', label: '联系仓库' },
+                { key: 'reship-requests', label: '补寄申请' },
+                { key: 'refund-requests', label: '退款申请' },
+                { key: 'claim-requests', label: '索赔申请' },
+              ],
+              onClick: ({ key }) => {
+                const params = new URLSearchParams({
+                  create: '1',
+                  source_type: 'tracking_exception',
+                  platform_order_id: String(row['order-id'] || ''),
+                  sub_order_id: String(row['order-id-in-warehouse'] || ''),
+                  tracking_number: String(row['tracking-number'] || ''),
+                  store_name: String(row['store-name'] || ''),
+                  exception_id: String(row.id),
+                  source_row_id: String(row.id),
+                });
+                window.open(`/v/admin/after-sales/${key}?${params.toString()}`, '_blank');
+              },
+            }}
+          >
+            <Button type="link" size="small">
+              处理事项 <DownOutlined />
+            </Button>
+          </Dropdown>
         </Space>
       ),
     },
@@ -2182,7 +2246,9 @@ export default function TrackingExceptionPage() {
               <Descriptions.Item label="仓库">{selected['warehouse-name'] || '-'}</Descriptions.Item>
               <Descriptions.Item label="平台订单编号">{selected['order-id'] || '-'}</Descriptions.Item>
               <Descriptions.Item label="子订单编号">{selected['order-id-in-warehouse'] || '-'}</Descriptions.Item>
-              <Descriptions.Item label="运单号">{selected['tracking-number'] || '-'}</Descriptions.Item>
+              <Descriptions.Item label="运单号">
+                <TrackingNumberLink value={selected['tracking-number']} />
+              </Descriptions.Item>
               <Descriptions.Item label="MSKU">{selected.msku || '-'}</Descriptions.Item>
               <Descriptions.Item label="快递状态">{selected.Status || '-'}</Descriptions.Item>
               <Descriptions.Item label="附加状态">{selected.AdditionalStatus || '-'}</Descriptions.Item>
@@ -2463,7 +2529,7 @@ export default function TrackingExceptionPage() {
                 title: '快递单号',
                 dataIndex: 'tracking-number',
                 width: 160,
-                render: (value: string) => (value ? <Typography.Text copyable>{value}</Typography.Text> : '-'),
+                render: (value: string) => <TrackingNumberLink value={value} copyable />,
               },
               { title: '快递状态', dataIndex: 'Status', width: 130, render: (value: string) => value || '-' },
               { title: '附加状态', dataIndex: 'AdditionalStatus', width: 150, render: (value: string) => value || '-' },
