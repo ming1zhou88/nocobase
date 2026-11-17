@@ -89,6 +89,7 @@ const FIELDS = [
   'DeliveredDate',
   'ScheduledDeliveryDate',
   'exception_reason',
+  'query_status',
   'note',
   'handle_status',
   'closed_at',
@@ -515,6 +516,21 @@ function matchFilter(row: EnrichedRow, key: FilterKey, currentUserId?: number | 
   return true;
 }
 
+const METRIC_HELP_ROWS = [
+  { metric: '总行数', scope: '全部', rule: '7D4 全部行，含可疑/其他承运商、已作废' },
+  { metric: '可用 FedEx/UPS', scope: '全部', rule: '数据质量=可用，且为 12 位 FedEx 或 UPS 运单' },
+  { metric: '异常中（可用）', scope: '可用数据', rule: '可用数据中仍异常的行；不含技术异常/已恢复/已作废' },
+  { metric: '已恢复（可用）', scope: '可用数据', rule: '可用数据中已恢复/已妥投的行' },
+  { metric: '可疑/其他承运商', scope: '全部', rule: '非 FedEx/UPS，或数据质量非可用的行（如 WP 单号）' },
+  { metric: '待实质处理', scope: '全部', rule: '仍异常、非技术异常、未关闭、异常持续≥7 天（与底部 chip 同口径）' },
+  { metric: '技术异常', scope: '全部', rule: 'query_status=ERROR（FedEx 查询失败），属数据/技术问题，不计入业务异常' },
+  { metric: '待指派', scope: '全部', rule: '仍异常、非技术异常、未关闭、且没有处理人' },
+  { metric: '异常中（底部）', scope: '当前筛选范围', rule: '全部数据中仍异常（含可疑行），是“异常中（可用）”的超集' },
+  { metric: '已恢复（底部）', scope: '当前筛选范围', rule: '全部数据中已恢复/已妥投（含可疑行）' },
+  { metric: '待人工核实（底部）', scope: '当前筛选范围', rule: '数据质量非可用或技术异常，需要人工核实的数据' },
+  { metric: '已作废（底部）', scope: '当前筛选范围', rule: 'data_status=invalid 的行' },
+];
+
 export default function TrackingExceptionPage() {
   const ctx = useFlowContext();
   const { message } = App.useApp();
@@ -554,7 +570,8 @@ export default function TrackingExceptionPage() {
   const [workloadPeriod, setWorkloadPeriod] = useState<'day' | 'month'>('day');
   const [assignmentLogs, setAssignmentLogs] = useState<Row[]>([]);
   const [keyword, setKeyword] = useState('');
-  const [qualityFilter, setQualityFilter] = useState<string>('all');
+  // 默认只看可用数据（12 位 FedEx/UPS）；可疑/其他承运商需在“数据质量”里切换。
+  const [qualityFilter, setQualityFilter] = useState<string>('可用');
   const [carrierFilter, setCarrierFilter] = useState<'all' | Carrier>('all');
   const [ownerFilter, setOwnerFilter] = useState<string>('all');
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -620,6 +637,7 @@ export default function TrackingExceptionPage() {
   // 页面固定高度：只有表体滚动，标题/统计/筛选/表头保持不动（与售后工单工作台一致）
   const tableWrapRef = useRef<HTMLDivElement>(null);
   const [tableScrollY, setTableScrollY] = useState(360);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const loadRequestSummaries = useCallback(async (list: Row[]) => {
     const orderIds = Array.from(new Set(list.map((row) => String(row['order-id'] || '').trim()).filter(Boolean)));
@@ -1328,11 +1346,9 @@ export default function TrackingExceptionPage() {
   const stats = useMemo(() => {
     const clean = rows.filter((row) => row._isClean);
     const activeRows = rows.filter((row) => row._isActive);
-    const substantive = rows.filter((row) => {
-      if (!row._isActive || row._isTechnical || row.is_delivered === 1) return false;
-      const lastEvent = row.source_updated_at || row.exception_started_at;
-      return lastEvent ? dayjs().diff(dayjs(lastEvent), 'day') >= 7 : (row._ageDays ?? 0) >= 7;
-    });
+    const substantive = rows.filter(
+      (row) => row._isActive && !row._isTechnical && !row._isClosed && (row._ageDays ?? 0) >= 7,
+    );
     const cutoff = dayjs().subtract(30, 'day');
     const resultRows = rows.filter(
       (row) =>
@@ -2109,6 +2125,11 @@ export default function TrackingExceptionPage() {
             }}
           />
         </Tooltip>
+        <Tooltip title="查看 KPI 与筛选条的口径说明">
+          <Button size="small" icon={<InfoCircleOutlined />} onClick={() => setHelpOpen(true)}>
+            口径说明
+          </Button>
+        </Tooltip>
         <Button type="primary" icon={<TeamOutlined />} onClick={() => setWorkloadOpen(true)}>
           今日分派
         </Button>
@@ -2158,16 +2179,30 @@ export default function TrackingExceptionPage() {
         <Row gutter={[16, 16]} align="stretch">
           <Col xs={24} xl={16}>
             <Space size="large" wrap>
-              <Statistic title="总行数" value={stats.total} />
-              <Statistic title="可用 FedEx" value={stats.clean} valueStyle={{ color: '#3f8600' }} />
-              <Statistic title="异常中" value={stats.active} valueStyle={{ color: '#cf1322' }} />
-              <Statistic title="已恢复" value={stats.recovered} valueStyle={{ color: '#1677ff' }} />
-              <Statistic title="可疑/其他承运商" value={stats.suspect} valueStyle={{ color: '#d46b08' }} />
-              <Tooltip title="仍异常、未妥投、非技术异常，且最后事件时间已超过 7 天；7D4 历史不足 7 天时必然为 0。">
-                <Statistic title="实质异常" value={stats.substantive} valueStyle={{ color: '#cf1322' }} />
+              <Tooltip title="7D4 全部行，含可疑/其他承运商、已作废">
+                <Statistic title="总行数" value={stats.total} />
               </Tooltip>
-              <Statistic title="技术异常" value={stats.technical} valueStyle={{ color: '#d46b08' }} />
-              <Statistic title="待指派" value={stats.unassigned} valueStyle={{ color: '#d46b08' }} />
+              <Tooltip title="数据质量=可用，且为 12 位 FedEx 或 UPS 运单">
+                <Statistic title="可用 FedEx/UPS" value={stats.clean} valueStyle={{ color: '#3f8600' }} />
+              </Tooltip>
+              <Tooltip title="可用数据中仍异常的行；不含技术异常/已恢复/已作废。底部“异常中”是全部数据口径（含可疑行）">
+                <Statistic title="异常中（可用）" value={stats.active} valueStyle={{ color: '#cf1322' }} />
+              </Tooltip>
+              <Tooltip title="可用数据中已恢复/已妥投的行。底部“已恢复”是全部数据口径（含可疑行）">
+                <Statistic title="已恢复（可用）" value={stats.recovered} valueStyle={{ color: '#1677ff' }} />
+              </Tooltip>
+              <Tooltip title="非 FedEx/UPS，或数据质量非可用的行（如 WP 单号、其他承运商）">
+                <Statistic title="可疑/其他承运商" value={stats.suspect} valueStyle={{ color: '#d46b08' }} />
+              </Tooltip>
+              <Tooltip title="仍异常、非技术异常、未关闭、异常持续≥7 天；与底部“待实质处理”同一口径">
+                <Statistic title="待实质处理" value={stats.substantive} valueStyle={{ color: '#cf1322' }} />
+              </Tooltip>
+              <Tooltip title="query_status=ERROR（FedEx 查询失败）的行；属数据/技术问题，不计入业务异常">
+                <Statistic title="技术异常" value={stats.technical} valueStyle={{ color: '#d46b08' }} />
+              </Tooltip>
+              <Tooltip title="仍异常、非技术异常、未关闭、且没有处理人">
+                <Statistic title="待指派" value={stats.unassigned} valueStyle={{ color: '#d46b08' }} />
+              </Tooltip>
               <Statistic
                 title="过早处理率（近30天）"
                 value={Number(stats.prematureRate.toFixed(2))}
@@ -2897,6 +2932,48 @@ export default function TrackingExceptionPage() {
             ) : null}
           </Form>
         )}
+      </Modal>
+
+      <Modal
+        open={helpOpen}
+        title="快递异常工作台 · 口径说明"
+        footer={null}
+        width={920}
+        onCancel={() => setHelpOpen(false)}
+      >
+        <Typography.Paragraph type="secondary">
+          上方 KPI 与下方筛选条的分母不同：KPI 里的“异常中/已恢复”只统计<b>可用数据</b>（12 位 FedEx/UPS），
+          筛选条里的“异常中/已恢复”统计<b>当前筛选范围</b>（默认含可疑/其他承运商）。数值不相等是正常的。
+        </Typography.Paragraph>
+        <Table
+          size="small"
+          pagination={false}
+          rowKey="metric"
+          dataSource={METRIC_HELP_ROWS}
+          columns={[
+            { title: '指标', dataIndex: 'metric', width: 190 },
+            { title: '统计范围', dataIndex: 'scope', width: 130 },
+            { title: '口径', dataIndex: 'rule' },
+          ]}
+        />
+        <Divider style={{ margin: '16px 0' }} />
+        <Typography.Paragraph style={{ marginBottom: 0 }}>
+          <b>包含关系</b>
+          <br />
+          总行数 = 可用 FedEx/UPS + 可疑/其他承运商；
+          <br />
+          异常中（可用）⊂ 可用 FedEx/UPS；底部“异常中”是全部数据口径，⊃ 异常中（可用）；
+          <br />
+          已恢复同理；
+          <br />
+          技术异常（query_status=ERROR）与业务“异常中”<b>互斥</b>，不计入业务异常；
+          <br />
+          待实质处理 ⊂ 异常中，且异常持续 ≥7 天、未关闭；
+          <br />
+          待指派 ⊂ 异常中，且没有处理人、未关闭；
+          <br />
+          待人工核实 = 数据质量非可用（技术异常、数据不完整、数据过旧等），需要人工核实的数据。
+        </Typography.Paragraph>
       </Modal>
     </div>
   );
