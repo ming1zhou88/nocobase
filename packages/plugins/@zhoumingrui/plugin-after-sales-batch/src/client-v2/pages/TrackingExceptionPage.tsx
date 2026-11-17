@@ -653,7 +653,6 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
   const [createTemplate, setCreateTemplate] = useState('');
   const [creating, setCreating] = useState(false);
   // 平台订单快递信息（按平台订单号聚合全部子订单）
-  const [expressOpen, setExpressOpen] = useState(false);
   const [expressOrderId, setExpressOrderId] = useState('');
   const [expressRows, setExpressRows] = useState<Row[]>([]);
   const [expressMail, setExpressMail] = useState<Row | null>(null);
@@ -1125,11 +1124,10 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
     [ctx, message],
   );
 
-  const openExpressInfo = useCallback(
-    async (row: Row) => {
-      const orderId = String(row['order-id'] ?? '').trim();
+  // 快递信息改为“查看和处理”弹窗内的一个区块，不再单独开弹窗。
+  const loadExpressForOrder = useCallback(
+    async (orderId: string) => {
       setExpressOrderId(orderId);
-      setExpressOpen(true);
       setExpressRows([]);
       setExpressMail(null);
       if (!orderId) {
@@ -1168,6 +1166,14 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
     },
     [ctx, message],
   );
+
+  useEffect(() => {
+    const orderId = String(selected?.['order-id'] ?? '').trim();
+    if (orderId) {
+      void loadExpressForOrder(orderId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.['order-id']]);
 
   const loadRequestTimeline = useCallback(async (orderId: string) => {
     if (!orderId) { setRequestTimeline([]); return; }
@@ -1941,18 +1947,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
       },
     },
     {
-      title: '平台订单快递信息',
-      key: 'express-info',
-      width: 150,
-      fixed: 'right' as const,
-      render: (_: unknown, row: EnrichedRow) => (
-        <Button type="link" size="small" onClick={() => void openExpressInfo(row)}>
-          查看快递信息
-        </Button>
-      ),
-    },
-    {
-      title: '操作',
+      title: '查看或操作',
       key: 'action',
       width: 360,
       fixed: 'right' as const,
@@ -1966,7 +1961,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
               setManualNote('');
             }}
           >
-            查看 / 处理
+            查看和处理
           </Button>
           <Button
             type="link"
@@ -2641,10 +2636,64 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
         </div>
       </Card>
 
-      <Drawer open={Boolean(selected)} width={720} title="快递异常详情 / 处理" onClose={() => setSelected(null)}>
+      <Drawer open={Boolean(selected)} width={1000} title="查看和处理" onClose={() => setSelected(null)}>
         {selected ? (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Descriptions bordered size="small" column={2}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 20, background: '#fff', paddingBottom: 4 }}>
+              <Card size="small" title="处理操作" styles={{ body: { padding: '10px 12px' } }}>
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <Space wrap align="center">
+                    {canAssign !== false ? (
+                      <>
+                        <Select
+                          showSearch
+                          optionFilterProp="label"
+                          placeholder="选择售后负责人"
+                          style={{ width: 240 }}
+                          value={assignUserId || undefined}
+                          onChange={(value) => setAssignUserId(value)}
+                          options={users.map((user) => ({
+                            value: String(user.id),
+                            label: String(user.nickname || user.username || user.name || user.id),
+                          }))}
+                        />
+                        <Button type="primary" loading={assigning} onClick={() => void assignOwner()}>
+                          确认指派
+                        </Button>
+                      </>
+                    ) : null}
+                    <Button loading={assigning} onClick={() => void acceptCase()}>
+                      我接手
+                    </Button>
+                    <Typography.Text type="secondary">当前：{selected.handler_name || '未指派'}</Typography.Text>
+                  </Space>
+                  <Input.TextArea
+                    rows={2}
+                    value={manualNote}
+                    onChange={(event) => setManualNote(event.target.value)}
+                    placeholder="人工核实备注，例如：某月某日查快递仍异常 / 已恢复正常"
+                  />
+                  <Space wrap align="center">
+                    <Button type="primary" loading={saving} onClick={() => void saveManualCheck('recovered')}>
+                      标记已核实恢复
+                    </Button>
+                    <Button danger loading={saving} onClick={() => void saveManualCheck('abnormal')}>
+                      标记仍异常
+                    </Button>
+                    <Button loading={saving} onClick={() => void saveManualCheck('note')}>
+                      仅保存备注
+                    </Button>
+                    <Typography.Text type="secondary">
+                      {selected._needsManual
+                        ? '该行需要人工核实；核实只写备注/状态，不改快递原字段'
+                        : '人工核实会追加到处理备注'}
+                    </Typography.Text>
+                  </Space>
+                </Space>
+              </Card>
+            </div>
+            <Card size="small" title="基础信息">
+              <Descriptions bordered size="small" column={2}>
               <Descriptions.Item label="店铺">{selected['store-name'] || '-'}</Descriptions.Item>
               <Descriptions.Item label="仓库">{selected['warehouse-name'] || '-'}</Descriptions.Item>
               <Descriptions.Item label="平台订单编号">{selected['order-id'] || '-'}</Descriptions.Item>
@@ -2677,99 +2726,10 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
                   {selected.handle_note || '-'}
                 </Typography.Paragraph>
               </Descriptions.Item>
-            </Descriptions>
-
-            <Card size="small" title="处理人 / 接手">
-              <Space wrap>
-                {canAssign !== false ? (
-                  <>
-                    <Select
-                      showSearch
-                      optionFilterProp="label"
-                      placeholder="选择售后负责人"
-                      style={{ width: 260 }}
-                      value={assignUserId || undefined}
-                      onChange={(value) => setAssignUserId(value)}
-                      options={users.map((user) => ({
-                        value: String(user.id),
-                        label: String(user.nickname || user.username || user.name || user.id),
-                      }))}
-                    />
-                    <Button type="primary" loading={assigning} onClick={() => void assignOwner()}>
-                      确认指派
-                    </Button>
-                  </>
-                ) : null}
-                <Button loading={assigning} onClick={() => void acceptCase()}>
-                  我接手
-                </Button>
-                <Typography.Text type="secondary">当前：{selected.handler_name || '未指派'}</Typography.Text>
-              </Space>
+              </Descriptions>
             </Card>
 
-            <Card size="small" title="行动时间线" loading={actionLogsLoading}>
-              {[...actionLogs, ...requestTimeline].length ? (
-                <Timeline
-                  items={[...actionLogs, ...requestTimeline]
-                    .sort((a, b) => String(b.action_at || '').localeCompare(String(a.action_at || '')))
-                    .map((log) => ({
-                      children: (
-                        <Space direction="vertical" size={2}>
-                          <Typography.Text strong>
-                            {String(log.action_type || '-')} · {String(log.operator_name || '系统')}
-                          </Typography.Text>
-                          <Typography.Text type="secondary">
-                            {log.action_at ? dayjs(log.action_at).format('YYYY-MM-DD HH:mm:ss') : '-'}
-                          </Typography.Text>
-                          {log.action_note ? <Typography.Text>{String(log.action_note)}</Typography.Text> : null}
-                        </Space>
-                      ),
-                    }))}
-                />
-              ) : (
-                <Typography.Text type="secondary">暂无行动记录</Typography.Text>
-              )}
-            </Card>
-
-            <Alert
-              type={selected._needsManual ? 'warning' : 'info'}
-              showIcon
-              message={selected._needsManual ? '这行需要人工核实' : '数据质量可用'}
-              description={
-                selected._needsManual
-                  ? '核实后只写处理备注/处理状态，不改 Status、AdditionalStatus 等快递原字段。'
-                  : '人工核实也会追加到处理备注，保留原有内容。'
-              }
-            />
-
-            <Input.TextArea
-              rows={4}
-              value={manualNote}
-              onChange={(event) => setManualNote(event.target.value)}
-              placeholder="人工核实备注，例如：某月某日查快递仍异常 / 已恢复正常"
-            />
-
-            <Space wrap>
-              <Button type="primary" loading={saving} onClick={() => void saveManualCheck('recovered')}>
-                标记已核实恢复
-              </Button>
-              <Button danger loading={saving} onClick={() => void saveManualCheck('abnormal')}>
-                标记仍异常
-              </Button>
-              <Button loading={saving} onClick={() => void saveManualCheck('note')}>
-                仅保存备注
-              </Button>
-            </Space>
-          </Space>
-        ) : null}
-      </Drawer>
-
-      <Drawer
-        open={expressOpen}
-        width={980}
-        title={`平台订单快递信息${expressOrderId ? ` · ${expressOrderId}` : ''}`}
-        onClose={() => setExpressOpen(false)}
-      >
+            <Card size="small" title={`快递信息${expressOrderId ? ` · ${expressOrderId}` : ''}`}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <Descriptions bordered size="small" column={3}>
             <Descriptions.Item label="平台订单编号">{expressOrderId || '-'}</Descriptions.Item>
@@ -2837,7 +2797,37 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
             ]}
           />
         </Space>
+            </Card>
+
+            <Card size="small" title="行动时间线" loading={actionLogsLoading}>
+              {[...actionLogs, ...requestTimeline].length ? (
+                <Timeline
+                  items={[...actionLogs, ...requestTimeline]
+                    .sort((a, b) => String(b.action_at || '').localeCompare(String(a.action_at || '')))
+                    .map((log) => ({
+                      children: (
+                        <Space direction="vertical" size={2}>
+                          <Typography.Text strong>
+                            {String(log.action_type || '-')} · {String(log.operator_name || '系统')}
+                          </Typography.Text>
+                          <Typography.Text type="secondary">
+                            {log.action_at ? dayjs(log.action_at).format('YYYY-MM-DD HH:mm:ss') : '-'}
+                          </Typography.Text>
+                          {log.action_note ? <Typography.Text>{String(log.action_note)}</Typography.Text> : null}
+                        </Space>
+                      ),
+                    }))}
+                />
+              ) : (
+                <Typography.Text type="secondary">暂无行动记录</Typography.Text>
+              )}
+            </Card>
+
+          </Space>
+        ) : null}
       </Drawer>
+
+
 
       <Drawer open={workloadOpen} width={820} title="分派与工作量" onClose={() => setWorkloadOpen(false)}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
