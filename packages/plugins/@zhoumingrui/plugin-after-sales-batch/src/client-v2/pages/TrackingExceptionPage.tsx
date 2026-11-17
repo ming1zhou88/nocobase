@@ -2817,7 +2817,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
         </Space>
             </Card>
 
-            <Card size="small" title="处理记录" loading={actionLogsLoading}>
+            <Card size="small" title="处理时间线" loading={actionLogsLoading}>
               {[...actionLogs, ...requestTimeline].length ? (
                 <Timeline
                   items={[...actionLogs, ...requestTimeline]
@@ -2837,7 +2837,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
                     }))}
                 />
               ) : (
-                <Typography.Text type="secondary">暂无行动记录</Typography.Text>
+                <Typography.Text type="secondary">暂无处理记录</Typography.Text>
               )}
               <Button
                 type="primary"
