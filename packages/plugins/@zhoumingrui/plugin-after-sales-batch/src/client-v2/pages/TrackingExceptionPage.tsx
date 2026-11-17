@@ -2644,7 +2644,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
         </div>
       </Card>
 
-      <Drawer open={Boolean(selected)} width={880} title="查看和处理" onClose={() => setSelected(null)}>
+      <Drawer open={Boolean(selected)} width={820} title="查看和处理" onClose={() => setSelected(null)}>
         {selected ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%' }}>
             <div
@@ -2682,18 +2682,6 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
                     ) : null}
                     <Button loading={assigning} onClick={() => void acceptCase()}>
                       我接手
-                    </Button>
-                    <Button
-                      onClick={() =>
-                        window.open(
-                          `/v/admin/tracking-exception/handling-detail?exception_id=${encodeURIComponent(
-                            String(selected.id),
-                          )}&tracking_number=${encodeURIComponent(String(selected['tracking-number'] || ''))}`,
-                          '_blank',
-                        )
-                      }
-                    >
-                      处理明细
                     </Button>
                     <Typography.Text type="secondary">当前：{selected.handler_name || '未指派'}</Typography.Text>
                   </Space>
@@ -2851,6 +2839,22 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
               ) : (
                 <Typography.Text type="secondary">暂无行动记录</Typography.Text>
               )}
+              <Button
+                type="primary"
+                block
+                icon={<FileSearchOutlined />}
+                style={{ marginTop: 12 }}
+                onClick={() =>
+                  window.open(
+                    `/v/admin/tracking-exception/handling-detail?exception_id=${encodeURIComponent(
+                      String(selected.id),
+                    )}&tracking_number=${encodeURIComponent(String(selected['tracking-number'] || ''))}`,
+                    '_blank',
+                  )
+                }
+              >
+                查看完整处理明细
+              </Button>
             </Card>
 
           </div>
