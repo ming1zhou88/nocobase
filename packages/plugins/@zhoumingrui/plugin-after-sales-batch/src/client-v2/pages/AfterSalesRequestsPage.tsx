@@ -126,7 +126,7 @@ const CONFIG: Record<RequestType, {
     ],
   },
   reship: {
-    title: '补寄申请',
+    title: '补寄申请汇总',
     collection: 'AfterSalesReshipRequest',
     idField: 'id',
     statusField: 'request_status',
@@ -159,7 +159,7 @@ const CONFIG: Record<RequestType, {
     ],
   },
   refund: {
-    title: '退款申请',
+    title: '退款申请汇总',
     collection: 'AfterSalesRefundRequest',
     idField: 'id',
     statusField: 'request_status',
@@ -189,7 +189,7 @@ const CONFIG: Record<RequestType, {
     ],
   },
   claim: {
-    title: '索赔申请',
+    title: '索赔申请汇总',
     collection: 'AfterSalesClaimRequest',
     idField: 'id',
     statusField: 'claim_status',
@@ -647,9 +647,9 @@ export default function AfterSalesRequestsPage({ requestType: requestTypeProp }:
           menu={{
             items: ([
               ['warehouse-contacts', '仓库联系汇总'],
-              ['reship-requests', '补寄申请'],
-              ['refund-requests', '退款申请'],
-              ['claim-requests', '索赔申请'],
+              ['reship-requests', '补寄申请汇总'],
+              ['refund-requests', '退款申请汇总'],
+              ['claim-requests', '索赔申请汇总'],
             ] as Array<[RequestType, string]>)
               .filter(([key]) => key !== requestType)
               .map(([key, label]) => ({ key, label })),

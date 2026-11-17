@@ -1200,9 +1200,9 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
     if (!orderId) { setRequestTimeline([]); return; }
     const sources = [
       { collection: 'AfterSalesWarehouseContact', label: '联系仓库', status: 'contact_status', note: (row: Row) => [row.contact_channel, row.message_content || row.issue_description].filter(Boolean).join(' · ') },
-      { collection: 'AfterSalesReshipRequest', label: '补寄申请', status: 'request_status', note: (row: Row) => [row.reship_type, row.reship_item_sku || row.reship_item_name, row.reason].filter(Boolean).join(' · ') },
-      { collection: 'AfterSalesRefundRequest', label: '退款申请', status: 'request_status', note: (row: Row) => [row.refund_amount ? `${row.refund_amount} ${row.refund_currency || ''}` : '', row.reason].filter(Boolean).join(' · ') },
-      { collection: 'AfterSalesClaimRequest', label: '索赔申请', status: 'claim_status', note: (row: Row) => [row.claim_amount ? `${row.claim_amount} ${row.claim_currency || ''}` : '', row.claim_reason].filter(Boolean).join(' · ') },
+      { collection: 'AfterSalesReshipRequest', label: '申请补寄', status: 'request_status', note: (row: Row) => [row.reship_type, row.reship_item_sku || row.reship_item_name, row.reason].filter(Boolean).join(' · ') },
+      { collection: 'AfterSalesRefundRequest', label: '申请退款', status: 'request_status', note: (row: Row) => [row.refund_amount ? `${row.refund_amount} ${row.refund_currency || ''}` : '', row.reason].filter(Boolean).join(' · ') },
+      { collection: 'AfterSalesClaimRequest', label: '申请索赔', status: 'claim_status', note: (row: Row) => [row.claim_amount ? `${row.claim_amount} ${row.claim_currency || ''}` : '', row.claim_reason].filter(Boolean).join(' · ') },
     ];
     const items: Row[] = [];
     await Promise.all(sources.map(async (source) => {
@@ -1811,9 +1811,9 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
       };
       const titles: Record<string, string> = {
         'warehouse-contacts': '仓库联系记录',
-        'reship-requests': '补寄申请',
-        'refund-requests': '退款申请',
-        'claim-requests': '索赔申请',
+        'reship-requests': '申请补寄',
+        'refund-requests': '申请退款',
+        'claim-requests': '申请索赔',
       };
       const data = {
         ...values,
@@ -1843,32 +1843,23 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
 
   const columns = [
     {
-      title: '店铺名称',
-      dataIndex: 'store-name',
-      width: 100,
-      render: (value: string) => value || '-',
-    },
-    {
-      title: '平台订单编号',
-      dataIndex: 'order-id',
-      width: 180,
-      ellipsis: true,
-      render: (value: string) => value || '-',
-    },
-    {
-      title: '子订单编号',
-      dataIndex: 'order-id-in-warehouse',
-      width: 185,
-      ellipsis: true,
-      render: (value: string) => value || '-',
-    },
-    {
       title: '运单号',
       dataIndex: 'tracking-number',
       width: 200,
+      fixed: 'left' as const,
       ellipsis: true,
       render: (value: string) => <TrackingNumberLink value={value} />,
     },
+
+    {
+      title: '仓库名称',
+      dataIndex: 'warehouse-name',
+      width: 150,
+      fixed: 'left' as const,
+      ellipsis: true,
+      render: (value: string) => value || '-',
+    },
+
     {
       title: '物流商',
       dataIndex: '_carrier',
@@ -1877,11 +1868,27 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
         <Tag color={value === 'FedEx' ? 'blue' : value === 'UPS' ? 'purple' : 'default'}>{value}</Tag>
       ),
     },
+
     {
-      title: '仓库名称',
-      dataIndex: 'warehouse-name',
-      width: 150,
+      title: '子订单编号',
+      dataIndex: 'order-id-in-warehouse',
+      width: 185,
       ellipsis: true,
+      render: (value: string) => value || '-',
+    },
+
+    {
+      title: '平台订单编号',
+      dataIndex: 'order-id',
+      width: 180,
+      ellipsis: true,
+      render: (value: string) => value || '-',
+    },
+
+    {
+      title: '店铺名称',
+      dataIndex: 'store-name',
+      width: 100,
       render: (value: string) => value || '-',
     },
     {
@@ -1955,7 +1962,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
     {
       title: '处理事项',
       key: 'request-summary',
-      width: 260,
+      width: 300,
       render: (_: unknown, row: EnrichedRow) => {
         const item = requestSummary[String(row['order-id'] || '')];
         if (!item) return <Typography.Text type="secondary">未发起</Typography.Text>;
@@ -1964,7 +1971,24 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
         if (Number(item.reship_count) > 0) parts.push(`补寄${item.reship_count}${item.reship_latest_status ? `（${item.reship_latest_status}）` : ''}`);
         if (Number(item.refund_count) > 0) parts.push(`退款${item.refund_count}${item.refund_latest_status ? `（${item.refund_latest_status}）` : ''}`);
         if (Number(item.claim_count) > 0) parts.push(`索赔${item.claim_count}${item.claim_latest_status ? `（${item.claim_latest_status}）` : ''}`);
-        return parts.length ? <Typography.Text style={{ fontSize: 13, lineHeight: '20px' }}>{parts.join('；')}</Typography.Text> : '-';
+        const text = parts.join('；');
+        if (!text) return '-';
+        return (
+          <Tooltip title={text}>
+            <Typography.Text
+              ellipsis
+              style={{
+                fontSize: 13,
+                lineHeight: '20px',
+                maxWidth: 264,
+                display: 'inline-block',
+                verticalAlign: 'bottom',
+              }}
+            >
+              {text}
+            </Typography.Text>
+          </Tooltip>
+        );
       },
     },
     {
@@ -1992,9 +2016,9 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
             menu={{
               items: [
                 { key: 'warehouse-contacts', label: '联系仓库' },
-                { key: 'reship-requests', label: '补寄申请' },
-                { key: 'refund-requests', label: '退款申请' },
-                { key: 'claim-requests', label: '索赔申请' },
+                { key: 'reship-requests', label: '申请补寄' },
+                { key: 'refund-requests', label: '申请退款' },
+                { key: 'claim-requests', label: '申请索赔' },
               ],
               onClick: ({ key }) => {
                 openQuickRequest(key as 'warehouse-contacts' | 'reship-requests' | 'refund-requests' | 'claim-requests', row);
@@ -2342,9 +2366,9 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
           menu={{
             items: [
               { key: 'warehouse-contacts', label: '仓库联系汇总' },
-              { key: 'reship-requests', label: '补寄申请' },
-              { key: 'refund-requests', label: '退款申请' },
-              { key: 'claim-requests', label: '索赔申请' },
+              { key: 'reship-requests', label: '补寄申请汇总' },
+              { key: 'refund-requests', label: '退款申请汇总' },
+              { key: 'claim-requests', label: '索赔申请汇总' },
             ],
             onClick: ({ key }) => window.open(`/v/admin/after-sales/${key}`, '_blank'),
           }}
@@ -2644,7 +2668,13 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
         </div>
       </Card>
 
-      <Drawer open={Boolean(selected)} width={820} title="查看和处理" onClose={() => setSelected(null)}>
+      <Drawer
+        open={Boolean(selected)}
+        width={820}
+        title="查看和处理"
+        styles={{ body: { paddingTop: 0 } }}
+        onClose={() => setSelected(null)}
+      >
         {selected ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%' }}>
             <div
@@ -2653,6 +2683,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
                 top: 0,
                 zIndex: 20,
                 background: '#fff',
+                paddingTop: 8,
                 paddingBottom: 4,
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
                 borderRadius: 8,
@@ -2712,22 +2743,25 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
             </div>
             <Card size="small" title="基础信息">
               <Descriptions className="tracking-exception-detail" bordered size="small" column={2}>
-              <Descriptions.Item label="店铺">{selected['store-name'] || '-'}</Descriptions.Item>
-              <Descriptions.Item label="仓库"><EllipsisText value={selected['warehouse-name']} maxWidth={260} /></Descriptions.Item>
+              <Descriptions.Item label="店铺名称">{selected['store-name'] || '-'}</Descriptions.Item>
+              <Descriptions.Item label="仓库名称"><EllipsisText value={selected['warehouse-name']} maxWidth={260} /></Descriptions.Item>
               <Descriptions.Item label="平台订单编号">{selected['order-id'] || '-'}</Descriptions.Item>
+              <Descriptions.Item label="平台 SKU"><EllipsisText value={selected.msku} maxWidth={260} /></Descriptions.Item>
               <Descriptions.Item label="子订单编号">{selected['order-id-in-warehouse'] || '-'}</Descriptions.Item>
+              <Descriptions.Item label="库存 SKU"><EllipsisText value={selected['sku-in-stock']} maxWidth={260} /></Descriptions.Item>
               <Descriptions.Item label="运单号">
                 <TrackingNumberLink value={selected['tracking-number']} />
               </Descriptions.Item>
-              <Descriptions.Item label="MSKU">{selected.msku || '-'}</Descriptions.Item>
               <Descriptions.Item label="快递状态">{selected.Status || '-'}</Descriptions.Item>
-              <Descriptions.Item label="附加状态"><EllipsisText value={selected.AdditionalStatus} maxWidth={300} /></Descriptions.Item>
+              <Descriptions.Item label="附加状态" span={2} contentStyle={{ whiteSpace: 'normal' }}>
+                <EllipsisText value={selected.AdditionalStatus} maxWidth={640} />
+              </Descriptions.Item>
               <Descriptions.Item label="异常原因" span={2} contentStyle={{ whiteSpace: 'normal' }}>
                 {selected.exception_reason || '-'}
               </Descriptions.Item>
               <Descriptions.Item label="异常类型">{TYPE_LABEL[selected._type]}</Descriptions.Item>
               <Descriptions.Item label="异常状态">{selected._state}</Descriptions.Item>
-              <Descriptions.Item label="异常开始">{selected._startedAt || '-'}</Descriptions.Item>
+              <Descriptions.Item label="异常开始日期">{selected._startedAt || '-'}</Descriptions.Item>
               <Descriptions.Item label="已持续">
                 {selected._ageDays === null ? '未知' : `${selected._ageDays} 天`}
               </Descriptions.Item>
@@ -3049,7 +3083,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
 
       <Modal
         open={Boolean(quickKind)}
-        title={quickKind === 'warehouse-contacts' ? '联系仓库' : quickKind === 'reship-requests' ? '补寄申请' : quickKind === 'refund-requests' ? '退款申请' : '索赔申请'}
+        title={quickKind === 'warehouse-contacts' ? '联系仓库' : quickKind === 'reship-requests' ? '申请补寄' : quickKind === 'refund-requests' ? '申请退款' : '申请索赔'}
         width={720}
         onCancel={() => { setQuickKind(null); setQuickRow(null); setQuickCreated(null); }}
         footer={quickCreated ? [
