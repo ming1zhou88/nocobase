@@ -128,7 +128,7 @@ const FIELDS = [
 type Row = Record<string, any>;
 type Quality = '可用' | '查询异常' | '虚拟单号' | '其他承运商' | '数据不完整' | '天数异常' | '数据过旧';
 type Carrier = 'FedEx' | 'UPS' | '其他';
-type ExceptionType = 'initial' | 'transit' | 'other';
+type ExceptionType = 'initial' | 'transit' | 'other' | 'query';
 type ExceptionState = '异常中' | '已恢复' | '待核实' | '已作废';
 
 type EnrichedRow = Row & {
@@ -245,8 +245,9 @@ function enrich(row: Row): EnrichedRow {
   const isUps = /^1Z[0-9A-Z]{16}$/i.test(tracking);
   const isVirtual = /^8926\d{11}$/.test(tracking);
   const isTechnical =
-    /邮件查询错误|查询错误|NOTFOUND|TRACKINGNUMBER/i.test(`${additional} ${status}`) ||
-    /NOTFOUND/i.test(String(row.note ?? ''));
+    String(row.query_status || '').toUpperCase() === 'ERROR' ||
+    /邮件查询错误|查询错误|查询失败|NOTFOUND|TRACKINGNUMBER/i.test(`${additional} ${status}`) ||
+    /查询失败|NOTFOUND/i.test(String(row.note ?? ''));
   const isOtherCarrier = Boolean(tracking) && !isFedex && !isUps && !isVirtual;
   const delivered = Boolean(row.DeliveredDate) || /delivered|entregado/i.test(status);
   const noteRecovered = Boolean(note?.recoveredAt) || note?.active === false;
@@ -263,7 +264,7 @@ function enrich(row: Row): EnrichedRow {
     reasons.push('非 FedEx/UPS 运单，暂未接入查询');
   } else if (isTechnical) {
     quality = '查询异常';
-    reasons.push('AdditionalStatus/备注显示查询错误，需人工核实');
+    reasons.push('查询状态为 ERROR 或备注显示查询失败，需人工核实');
   } else if (!tracking) {
     quality = '数据不完整';
     reasons.push('缺少运单号');
@@ -291,7 +292,9 @@ function enrich(row: Row): EnrichedRow {
 
   const statusText = `${status} ${additional}`;
   let type: ExceptionType = 'other';
-  if (/label created|etiqueta|初始|待上网/i.test(statusText) || (numberOrNull(row.DaysBeforeOnline) ?? 0) > 3) {
+  if (isTechnical) {
+    type = 'query';
+  } else if (/label created|etiqueta|初始|待上网/i.test(statusText) || (numberOrNull(row.DaysBeforeOnline) ?? 0) > 3) {
     type = 'initial';
   } else if ((numberOrNull(row.DaysOfStalled) ?? 0) > 3 || /on the way|en camino|in transit|运输中/i.test(statusText)) {
     type = 'transit';
@@ -327,7 +330,8 @@ function enrich(row: Row): EnrichedRow {
     _isInvalid: isInvalid,
     _isClosed: String(row.handle_status || '').toLowerCase() === 'closed',
     _needsManual: needsManual,
-    _isActive: row.exception_active === 1 || row.exception_active === true || (!isRecovered && !isInvalid),
+    _isActive: row.exception_active === 1 || row.exception_active === true
+      || (!isRecovered && !isInvalid && !isTechnical),
     _isTechnical: isTechnical,
     _suggestion: suggestion,
     _statusLabel: normalizeStatus(row.Status),
@@ -338,6 +342,7 @@ const TYPE_LABEL: Record<ExceptionType, string> = {
   initial: '初始状态',
   transit: '运输途中',
   other: '其他',
+  query: '查询失败',
 };
 
 const QUALITY_COLOR: Record<Quality, string> = {
@@ -2417,6 +2422,9 @@ export default function TrackingExceptionPage() {
               <Descriptions.Item label="MSKU">{selected.msku || '-'}</Descriptions.Item>
               <Descriptions.Item label="快递状态">{selected.Status || '-'}</Descriptions.Item>
               <Descriptions.Item label="附加状态">{selected.AdditionalStatus || '-'}</Descriptions.Item>
+              <Descriptions.Item label="异常原因" span={2}>
+                {selected.exception_reason || '-'}
+              </Descriptions.Item>
               <Descriptions.Item label="异常类型">{TYPE_LABEL[selected._type]}</Descriptions.Item>
               <Descriptions.Item label="异常状态">{selected._state}</Descriptions.Item>
               <Descriptions.Item label="异常开始">{selected._startedAt || '-'}</Descriptions.Item>
