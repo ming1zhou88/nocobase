@@ -6,6 +6,7 @@ import { installAssignmentFieldGuard } from './assignment-field-guard';
 import { normalizeWorkOrderRecord, normalizeWorkOrderRecords } from './work-order-field-alias';
 import { DAILY_AFTER_SALES_ACTIONS, DAILY_AFTER_SALES_RESOURCE } from './actions-daily-after-sales';
 import { RETURN_REQUEST_ACTIONS, RETURN_REQUEST_RESOURCE } from './actions-return-request';
+import { applyReturnBootstrap } from './return-bootstrap';
 import { AFTER_SALES_REQUEST_ACTIONS, AFTER_SALES_REQUEST_RESOURCE } from './actions-after-sales-request';
 import { SECOND_REPLY_ACTIONS, SECOND_REPLY_RESOURCE } from './actions-second-reply';
 import { Plugin } from '@nocobase/server';
@@ -627,6 +628,9 @@ export class PluginAfterSalesBatchServer extends Plugin {
       name: `pm.${this.name}.secondReply`,
       actions: [`${SECOND_REPLY_RESOURCE}:*`],
     });
+
+    // 一次性部署引导：菜单/角色/页面模型/外部集合（幂等，检测到菜单后跳过）
+    await applyReturnBootstrap(this.app);
   }
 }
 
