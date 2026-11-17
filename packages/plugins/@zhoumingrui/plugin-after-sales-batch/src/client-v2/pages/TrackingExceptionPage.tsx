@@ -568,7 +568,7 @@ G ⊆ D
 H = E ∪ { x | 数据质量 ∉ {可用} }
 I = { x | data_status = invalid }`;
 
-export default function TrackingExceptionPage() {
+export default function TrackingExceptionPage({ helpMode = false }: { helpMode?: boolean } = {}) {
   const ctx = useFlowContext();
   const { message } = App.useApp();
   // v2 flow context 的当前用户可能挂在 ctx.user，而不是 currentUser。
@@ -674,7 +674,6 @@ export default function TrackingExceptionPage() {
   // 页面固定高度：只有表体滚动，标题/统计/筛选/表头保持不动（与售后工单工作台一致）
   const tableWrapRef = useRef<HTMLDivElement>(null);
   const [tableScrollY, setTableScrollY] = useState(360);
-  const [helpOpen, setHelpOpen] = useState(false);
 
   const loadRequestSummaries = useCallback(async (list: Row[]) => {
     const orderIds = Array.from(new Set(list.map((row) => String(row['order-id'] || '').trim()).filter(Boolean)));
@@ -2154,6 +2153,128 @@ export default function TrackingExceptionPage() {
     </div>
   );
 
+  // 帮助页正文：工作台不再内置 Drawer，独立帮助路由与后续帮助中心共用这块内容。
+  const helpBody = (
+    <>
+        <Typography.Title level={5} style={{ marginTop: 0 }}>
+          一、当前实时数据
+        </Typography.Title>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+          数据随页面加载实时计算（来源 7D4），刷新页面即更新；与页面 KPI / 筛选条同源。
+        </Typography.Paragraph>
+        <div style={{ overflowX: 'auto', border: '1px solid #f0f0f0', borderRadius: 6 }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1040, fontSize: 12 }}>
+            <thead>
+              <tr>
+                {helpMetrics.map((item) => (
+                  <th
+                    key={item.key}
+                    style={{
+                      padding: '8px 10px',
+                      background: '#fafafa',
+                      borderBottom: '1px solid #f0f0f0',
+                      whiteSpace: 'nowrap',
+                      textAlign: 'left',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {item.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                {helpMetrics.map((item) => (
+                  <td
+                    key={item.key}
+                    style={{
+                      padding: '10px',
+                      borderBottom: '1px solid #f0f0f0',
+                      fontSize: 16,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {item.value}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <Divider />
+        <Typography.Title level={5}>二、上方 KPI 与下方筛选条的对应关系</Typography.Title>
+        <Typography.Paragraph type="secondary">
+          上方 KPI 的“异常中/已恢复”只统计<b>可用数据</b>；下方筛选条统计<b>当前筛选范围</b>（默认含可疑/其他承运商）。
+          同名不同分母，数值不相等是正常的。
+        </Typography.Paragraph>
+        <Table
+          size="small"
+          pagination={false}
+          rowKey="metric"
+          dataSource={KPI_CHIP_ROWS}
+          columns={[
+            { title: '上方 KPI', dataIndex: 'metric', width: 190 },
+            { title: '统计范围', dataIndex: 'scope', width: 120 },
+            { title: '对应下方 chip', dataIndex: 'chip', width: 170 },
+            { title: '关系', dataIndex: 'relation' },
+          ]}
+        />
+
+        <Divider />
+        <Typography.Title level={5}>三、字段含义与包含关系</Typography.Title>
+        <Typography.Paragraph style={{ marginBottom: 8 }}>
+          <b>记号：</b>
+          {HELP_LEGEND.map(([key, label]) => `${key} = ${label}`).join('；')}。
+        </Typography.Paragraph>
+        <div
+          style={{
+            background: '#fafafa',
+            border: '1px solid #f0f0f0',
+            borderRadius: 6,
+            padding: '12px 14px',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: 13,
+            lineHeight: 2,
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {HELP_MATH}
+        </div>
+        <Typography.Paragraph style={{ marginTop: 8 }} type="secondary">
+          说明：C ⊆ D 且通常为真子集；E 与 D 互斥，所以“技术异常”不会出现在“异常中”；F、G 都是 D 的子集，
+          但 F 与 G 之间没有必然包含关系（待实质处理的行可能已有处理人）。
+        </Typography.Paragraph>
+
+        <Divider />
+        <Typography.Title level={5}>四、补充说明</Typography.Title>
+        <Typography.Paragraph>
+          <ul style={{ paddingLeft: 20, marginBottom: 0 }}>
+            <li>数据来源：7D4，上游 FedEx/UPS 查询任务每 30 分钟更新一次；查询失败记为“技术异常”，不进入业务异常。</li>
+            <li>
+              “可疑/其他承运商”：目前只有 FedEx 和 UPS 接入了 API 查询，其余承运商（如 WP 单号）先进入可疑；
+              后续通过人工导表或新 API 接入后转为可用。
+            </li>
+            <li>
+              右侧“近 7 日实质异常”是每日 00:05 的快照（TrackingExceptionStatsDaily），与页面实时 KPI 不是同一时点；
+              2026-11-18 起技术异常按 query_status 修正，历史快照口径不同。
+            </li>
+            <li>常见问题：上下数字不一致→分母不同；技术异常很多→先修查询链路（代理/网络）；可疑行很多→先做承运商/单号清洗。</li>
+          </ul>
+        </Typography.Paragraph>
+    </>
+  );
+
+  if (helpMode) {
+    return (
+      <div style={{ padding: 24, maxWidth: 1200 }}>
+        <Typography.Title level={3}>快递异常工作台 · 使用帮助</Typography.Title>
+        {helpBody}
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -2227,7 +2348,7 @@ export default function TrackingExceptionPage() {
         </Dropdown>
       </Space>
         <Tooltip title="打开使用帮助（实时数据 + 口径说明）">
-          <Button size="small" icon={<QuestionCircleOutlined />} onClick={() => setHelpOpen(true)}>
+          <Button size="small" icon={<QuestionCircleOutlined />} onClick={() => window.open('/v/admin/tracking-exception/help', '_blank')}>
             帮助
           </Button>
         </Tooltip>
@@ -2999,120 +3120,7 @@ export default function TrackingExceptionPage() {
         )}
       </Modal>
 
-      <Drawer
-        open={helpOpen}
-        title="快递异常工作台 · 使用帮助"
-        width={1040}
-        onClose={() => setHelpOpen(false)}
-      >
-        <Typography.Title level={5} style={{ marginTop: 0 }}>
-          一、当前实时数据
-        </Typography.Title>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-          数据随页面加载实时计算（来源 7D4），刷新页面即更新；与页面 KPI / 筛选条同源。
-        </Typography.Paragraph>
-        <div style={{ overflowX: 'auto', border: '1px solid #f0f0f0', borderRadius: 6 }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1040, fontSize: 12 }}>
-            <thead>
-              <tr>
-                {helpMetrics.map((item) => (
-                  <th
-                    key={item.key}
-                    style={{
-                      padding: '8px 10px',
-                      background: '#fafafa',
-                      borderBottom: '1px solid #f0f0f0',
-                      whiteSpace: 'nowrap',
-                      textAlign: 'left',
-                      fontWeight: 600,
-                    }}
-                  >
-                    {item.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                {helpMetrics.map((item) => (
-                  <td
-                    key={item.key}
-                    style={{
-                      padding: '10px',
-                      borderBottom: '1px solid #f0f0f0',
-                      fontSize: 16,
-                      fontWeight: 600,
-                    }}
-                  >
-                    {item.value}
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </div>
 
-        <Divider />
-        <Typography.Title level={5}>二、上方 KPI 与下方筛选条的对应关系</Typography.Title>
-        <Typography.Paragraph type="secondary">
-          上方 KPI 的“异常中/已恢复”只统计<b>可用数据</b>；下方筛选条统计<b>当前筛选范围</b>（默认含可疑/其他承运商）。
-          同名不同分母，数值不相等是正常的。
-        </Typography.Paragraph>
-        <Table
-          size="small"
-          pagination={false}
-          rowKey="metric"
-          dataSource={KPI_CHIP_ROWS}
-          columns={[
-            { title: '上方 KPI', dataIndex: 'metric', width: 190 },
-            { title: '统计范围', dataIndex: 'scope', width: 120 },
-            { title: '对应下方 chip', dataIndex: 'chip', width: 170 },
-            { title: '关系', dataIndex: 'relation' },
-          ]}
-        />
-
-        <Divider />
-        <Typography.Title level={5}>三、字段含义与包含关系</Typography.Title>
-        <Typography.Paragraph style={{ marginBottom: 8 }}>
-          <b>记号：</b>
-          {HELP_LEGEND.map(([key, label]) => `${key} = ${label}`).join('；')}。
-        </Typography.Paragraph>
-        <div
-          style={{
-            background: '#fafafa',
-            border: '1px solid #f0f0f0',
-            borderRadius: 6,
-            padding: '12px 14px',
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            fontSize: 13,
-            lineHeight: 2,
-            whiteSpace: 'pre-wrap',
-          }}
-        >
-          {HELP_MATH}
-        </div>
-        <Typography.Paragraph style={{ marginTop: 8 }} type="secondary">
-          说明：C ⊆ D 且通常为真子集；E 与 D 互斥，所以“技术异常”不会出现在“异常中”；F、G 都是 D 的子集，
-          但 F 与 G 之间没有必然包含关系（待实质处理的行可能已有处理人）。
-        </Typography.Paragraph>
-
-        <Divider />
-        <Typography.Title level={5}>四、补充说明</Typography.Title>
-        <Typography.Paragraph>
-          <ul style={{ paddingLeft: 20, marginBottom: 0 }}>
-            <li>数据来源：7D4，上游 FedEx/UPS 查询任务每 30 分钟更新一次；查询失败记为“技术异常”，不进入业务异常。</li>
-            <li>
-              “可疑/其他承运商”：目前只有 FedEx 和 UPS 接入了 API 查询，其余承运商（如 WP 单号）先进入可疑；
-              后续通过人工导表或新 API 接入后转为可用。
-            </li>
-            <li>
-              右侧“近 7 日实质异常”是每日 00:05 的快照（TrackingExceptionStatsDaily），与页面实时 KPI 不是同一时点；
-              2026-11-18 起技术异常按 query_status 修正，历史快照口径不同。
-            </li>
-            <li>常见问题：上下数字不一致→分母不同；技术异常很多→先修查询链路（代理/网络）；可疑行很多→先做承运商/单号清洗。</li>
-          </ul>
-        </Typography.Paragraph>
-      </Drawer>
     </div>
   );
 }

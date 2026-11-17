@@ -86,6 +86,11 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
       componentLoader: () => import('./pages/TrackingExceptionPage'),
     });
 
+    this.router.add('admin.tracking-exception-help', {
+      path: '/admin/tracking-exception/help',
+      componentLoader: () => import('./pages/TrackingExceptionHelpPage'),
+    });
+
     this.router.add('admin.tracking-exception-handling-detail', {
       path: '/admin/tracking-exception/handling-detail',
       componentLoader: () => import('./pages/HandlingDetailPage'),
