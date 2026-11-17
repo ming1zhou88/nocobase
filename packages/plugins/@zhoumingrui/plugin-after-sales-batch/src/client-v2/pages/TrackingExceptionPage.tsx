@@ -33,6 +33,7 @@ import {
   DownOutlined,
   FileSearchOutlined,
   InfoCircleOutlined,
+  QuestionCircleOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
   SearchOutlined,
@@ -358,6 +359,21 @@ const QUALITY_COLOR: Record<Quality, string> = {
   天数异常: 'red',
   数据过旧: 'volcano',
 };
+
+/** KPI 标题：主标题 + 第二行小字（括号口径），避免整行 KPI 被挤到两行。 */
+function StatTitle({ main, sub }: { main: string; sub?: string }) {
+  return (
+    <span>
+      {main}
+      {sub ? (
+        <>
+          <br />
+          <span style={{ fontSize: 12, color: '#8c8c8c', fontWeight: 400 }}>{sub}</span>
+        </>
+      ) : null}
+    </span>
+  );
+}
 
 type FilterKey =
   | 'all'
@@ -1914,7 +1930,6 @@ export default function TrackingExceptionPage() {
       title: '处理事项',
       key: 'request-summary',
       width: 300,
-      fixed: 'right' as const,
       render: (_: unknown, row: EnrichedRow) => {
         const item = requestSummary[String(row['order-id'] || '')];
         if (!item) return <Typography.Text type="secondary">未发起</Typography.Text>;
@@ -2151,7 +2166,16 @@ export default function TrackingExceptionPage() {
         overflow: 'hidden',
       }}
     >
-      <Space align="center" wrap>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap',
+        }}
+      >
+        <Space align="center" wrap>
         <Typography.Title level={3} style={{ marginBottom: 0 }}>
           快递异常工作台
         </Typography.Title>
@@ -2164,11 +2188,6 @@ export default function TrackingExceptionPage() {
               message.success(`已复制：${ROUTE}`);
             }}
           />
-        </Tooltip>
-        <Tooltip title="打开使用帮助（实时数据 + 口径说明）">
-          <Button size="small" icon={<InfoCircleOutlined />} onClick={() => setHelpOpen(true)}>
-            使用帮助
-          </Button>
         </Tooltip>
         <Button type="primary" icon={<TeamOutlined />} onClick={() => setWorkloadOpen(true)}>
           今日分派
@@ -2207,6 +2226,12 @@ export default function TrackingExceptionPage() {
           </Button>
         </Dropdown>
       </Space>
+        <Tooltip title="打开使用帮助（实时数据 + 口径说明）">
+          <Button size="small" icon={<QuestionCircleOutlined />} onClick={() => setHelpOpen(true)}>
+            帮助
+          </Button>
+        </Tooltip>
+      </div>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
         异常状态取 7D4 的 exception_status / data_status；人工处理写回 7D4 并追加 7D4_ActionLog。 路由：{ROUTE} ｜
         数据源：
@@ -2226,25 +2251,25 @@ export default function TrackingExceptionPage() {
                 <Statistic title="可用 FedEx/UPS" value={stats.clean} valueStyle={{ color: '#3f8600' }} />
               </Tooltip>
               <Tooltip title="可用数据中仍异常的行；不含技术异常/已恢复/已作废。底部“异常中”是全部数据口径（含可疑行）">
-                <Statistic title="异常中（可用）" value={stats.active} valueStyle={{ color: '#cf1322' }} />
+                <Statistic title={<StatTitle main="异常中" sub="（可用）" />} value={stats.active} valueStyle={{ color: '#cf1322' }} />
               </Tooltip>
               <Tooltip title="可用数据中已恢复/已妥投的行。底部“已恢复”是全部数据口径（含可疑行）">
-                <Statistic title="已恢复（可用）" value={stats.recovered} valueStyle={{ color: '#1677ff' }} />
+                <Statistic title={<StatTitle main="已恢复" sub="（可用）" />} value={stats.recovered} valueStyle={{ color: '#1677ff' }} />
               </Tooltip>
               <Tooltip title="非 FedEx/UPS，或数据质量非可用的行（如 WP 单号、其他承运商）">
                 <Statistic title="可疑/其他承运商" value={stats.suspect} valueStyle={{ color: '#d46b08' }} />
               </Tooltip>
               <Tooltip title="全部数据中：仍异常、非技术异常、未关闭、异常持续≥7 天。含可疑/其他承运商；与底部“待实质处理”同一口径">
-                <Statistic title="待实质处理（全部）" value={stats.substantive} valueStyle={{ color: '#cf1322' }} />
+                <Statistic title={<StatTitle main="待实质处理" sub="（全部）" />} value={stats.substantive} valueStyle={{ color: '#cf1322' }} />
               </Tooltip>
               <Tooltip title="query_status=ERROR（FedEx 查询失败）的行；属数据/技术问题，不计入业务异常">
                 <Statistic title="技术异常" value={stats.technical} valueStyle={{ color: '#d46b08' }} />
               </Tooltip>
               <Tooltip title="全部数据中：仍异常、非技术异常、未关闭、且没有处理人。含可疑/其他承运商">
-                <Statistic title="待指派（全部）" value={stats.unassigned} valueStyle={{ color: '#d46b08' }} />
+                <Statistic title={<StatTitle main="待指派" sub="（全部）" />} value={stats.unassigned} valueStyle={{ color: '#d46b08' }} />
               </Tooltip>
               <Statistic
-                title="过早处理率（近30天）"
+                title={<StatTitle main="过早处理率" sub="（近30天）" />}
                 value={Number(stats.prematureRate.toFixed(2))}
                 suffix="%"
                 valueStyle={{ color: stats.prematureRate ? '#cf1322' : '#3f8600' }}
@@ -2255,7 +2280,7 @@ export default function TrackingExceptionPage() {
                 <Statistic
                   title={
                     <span>
-                      平均恢复周期（近30天）
+                      <StatTitle main="平均恢复周期" sub="（近30天）" />
                       <InfoCircleOutlined style={{ marginLeft: 4, fontSize: 12, color: '#8c8c8c' }} />
                     </span>
                   }
