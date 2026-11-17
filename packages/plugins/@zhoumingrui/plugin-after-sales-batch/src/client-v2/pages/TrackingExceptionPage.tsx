@@ -1282,25 +1282,6 @@ export default function TrackingExceptionPage() {
     return result;
   }, [currentUser?.id, scopedRows, rows]);
 
-  // 帮助页“当前实时数据”：与页面 KPI / 筛选条同源，随行数据实时计算。
-  const helpMetrics = useMemo(
-    () => [
-      { key: 'total', label: '总行数', value: stats.total },
-      { key: 'clean', label: '可用 FedEx/UPS', value: stats.clean },
-      { key: 'activeClean', label: '异常中（可用）', value: stats.active },
-      { key: 'recoveredClean', label: '已恢复（可用）', value: stats.recovered },
-      { key: 'suspect', label: '可疑/其他承运商', value: stats.suspect },
-      { key: 'substantive', label: '待实质处理（全部）', value: stats.substantive },
-      { key: 'technical', label: '技术异常', value: stats.technical },
-      { key: 'unassigned', label: '待指派（全部）', value: stats.unassigned },
-      { key: 'chipActive', label: '底部：异常中', value: counts.active },
-      { key: 'chipRecovered', label: '底部：已恢复', value: counts.recovered },
-      { key: 'chipManual', label: '底部：待人工核实', value: counts.manual },
-      { key: 'chipInvalid', label: '底部：已作废', value: counts.invalid },
-    ],
-    [stats, counts],
-  );
-
   const filteredRows = useMemo(() => {
     const lower = keyword.trim().toLowerCase();
     const filtered = scopedRows.filter((row) => {
@@ -1432,6 +1413,25 @@ export default function TrackingExceptionPage() {
       recoveryTotal,
     };
   }, [rows]);
+
+  // 帮助页“当前实时数据”：与页面 KPI / 筛选条同源，随行数据实时计算。
+  const helpMetrics = useMemo(
+    () => [
+      { key: 'total', label: '总行数', value: stats.total },
+      { key: 'clean', label: '可用 FedEx/UPS', value: stats.clean },
+      { key: 'activeClean', label: '异常中（可用）', value: stats.active },
+      { key: 'recoveredClean', label: '已恢复（可用）', value: stats.recovered },
+      { key: 'suspect', label: '可疑/其他承运商', value: stats.suspect },
+      { key: 'substantive', label: '待实质处理（全部）', value: stats.substantive },
+      { key: 'technical', label: '技术异常', value: stats.technical },
+      { key: 'unassigned', label: '待指派（全部）', value: stats.unassigned },
+      { key: 'chipActive', label: '底部：异常中', value: counts.active },
+      { key: 'chipRecovered', label: '底部：已恢复', value: counts.recovered },
+      { key: 'chipManual', label: '底部：待人工核实', value: counts.manual },
+      { key: 'chipInvalid', label: '底部：已作废', value: counts.invalid },
+    ],
+    [stats, counts],
+  );
 
   useEffect(() => {
     if (!workloadOpen) return;
