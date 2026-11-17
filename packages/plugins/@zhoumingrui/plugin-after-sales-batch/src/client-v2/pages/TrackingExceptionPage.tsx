@@ -681,6 +681,8 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
   const [trendRows, setTrendRows] = useState<Row[]>([]);
   const [canAssign, setCanAssign] = useState<boolean | null>(null);
   const [isAgent, setIsAgent] = useState(false);
+  // 批量核实恢复是“处理动作”，售后专员也应可用；批量指派仍只给指派权限。
+  const canBatchClose = Boolean(canAssign) || isAgent;
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [batchAssignOpen, setBatchAssignOpen] = useState(false);
   const [quickKind, setQuickKind] = useState<'warehouse-contacts' | 'reship-requests' | 'refund-requests' | 'claim-requests' | null>(null);
@@ -1047,7 +1049,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
   }, [batchAssignUserId, ctx, load, message, rows, selectedRowKeys, users, writeAssignmentLog]);
 
   const batchClose = useCallback(() => {
-    if (!canAssign || !selectedRowKeys.length) return;
+    if (!canBatchClose || !selectedRowKeys.length) return;
     Modal.confirm({
       title: '批量核实恢复快递异常',
       content: `确认将选中的 ${selectedRowKeys.length} 行标记为已核实恢复并关闭？关闭后仍保留记录。`,
@@ -1100,7 +1102,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
         }
       },
     });
-  }, [canAssign, ctx, load, message, rows, selectedRowKeys]);
+  }, [canBatchClose, ctx, load, message, rows, selectedRowKeys]);
 
   const loadTrend = useCallback(async () => {
     try {
@@ -2037,10 +2039,11 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
   // 固定列错位修复：scroll.x 必须等于“所有列宽 + 多选列宽”，否则 antd 会按比例拉伸，
   // 固定列（sticky）用声明宽度定位、表体用拉伸后宽度，表头/表体就会错位。
   const tableScrollX =
-    columns.reduce((sum: number, col: any) => sum + (Number(col.width) || 0), 0) + (canAssign ? 32 : 0);
+    columns.reduce((sum: number, col: any) => sum + (Number(col.width) || 0), 0) + (canBatchClose ? 32 : 0);
 
   // 高频筛选紧跟「导出当前筛选」，其余筛选项顺延，整体只占一两行
-  const visibleFilters = FILTERS.filter((filter) => !isAgent || filter.key !== 'unassigned');
+  // 待指派是筛选（不是操作）：专员不能指派他人，但可以查看未指派并“我接手”。
+  const visibleFilters = FILTERS;
   const priorityFilters = PRIMARY_FILTER_KEYS.map((key) => visibleFilters.find((filter) => filter.key === key)).filter(
     Boolean,
   ) as Array<{ key: FilterKey; label: string }>;
@@ -2579,7 +2582,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
                 批量指派{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
               </Button>
             ) : null}
-            {canAssign ? (
+            {canBatchClose ? (
               <Button
                 size="small"
                 icon={<SafetyCertificateOutlined />}
@@ -2651,7 +2654,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
           <Table<EnrichedRow>
             className="tracking-exception-table"
             rowKey="id"
-            rowSelection={canAssign ? { selectedRowKeys, onChange: setSelectedRowKeys, columnWidth: 32 } : undefined}
+            rowSelection={canBatchClose ? { selectedRowKeys, onChange: setSelectedRowKeys, columnWidth: 32 } : undefined}
             size="middle"
             loading={loading}
             dataSource={filteredRows}
