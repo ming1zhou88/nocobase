@@ -360,6 +360,27 @@ const QUALITY_COLOR: Record<Quality, string> = {
   数据过旧: 'volcano',
 };
 
+/** 详情字段：单行展示，超宽省略，悬浮看全文。 */
+function EllipsisText({ value, maxWidth = 280 }: { value?: unknown; maxWidth?: number }) {
+  const content = String(value ?? '').trim() || '-';
+  return (
+    <Tooltip title={content}>
+      <span
+        style={{
+          display: 'inline-block',
+          maxWidth,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          verticalAlign: 'bottom',
+        }}
+      >
+        {content}
+      </span>
+    </Tooltip>
+  );
+}
+
 /** KPI 标题：主标题 + 第二行小字（括号口径），避免整行 KPI 被挤到两行。 */
 function StatTitle({ main, sub }: { main: string; sub?: string }) {
   return (
@@ -1949,7 +1970,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
     {
       title: '查看或操作',
       key: 'action',
-      width: 360,
+      width: 320,
       fixed: 'right' as const,
       render: (_: unknown, row: EnrichedRow) => (
         <Space size={0}>
@@ -1962,20 +1983,6 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
             }}
           >
             查看和处理
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            onClick={() =>
-              window.open(
-                `/v/admin/tracking-exception/handling-detail?exception_id=${encodeURIComponent(
-                  String(row.id),
-                )}&tracking_number=${encodeURIComponent(String(row['tracking-number'] || ''))}`,
-                '_blank',
-              )
-            }
-          >
-            处理明细
           </Button>
           <Button type="link" size="small" onClick={() => openWorkOrder(row)}>
             创建或关联工单
@@ -2359,6 +2366,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
         {DATA_SOURCE_KEY} ｜ 集合：{COLLECTION}
       </Typography.Paragraph>
       <style>{`.tracking-exception-table td { white-space: nowrap; vertical-align: middle; height: 40px; padding-top: 6px !important; padding-bottom: 6px !important; } .tracking-exception-table .ant-table-thead > tr > th { height: 38px; white-space: nowrap; } .tracking-exception-table .ant-table-measure-row td, .tracking-exception-table .ant-table-measure-row { height: 0 !important; padding: 0 !important; border: 0 !important; line-height: 0 !important; } .tracking-exception-stats .ant-statistic-title { font-size: 13px; color: rgba(0, 0, 0, 0.85); font-weight: 600; min-height: 40px; }
+        .tracking-exception-detail .ant-descriptions-item-content, .tracking-exception-detail .ant-descriptions-item-label { white-space: nowrap; }
         .tracking-exception-stats .ant-space { align-items: stretch; }
         .tracking-exception-stats .ant-space-item { display: flex; }
         .tracking-exception-stats .ant-statistic { display: flex; flex-direction: column; width: 100%; }
@@ -2636,11 +2644,21 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
         </div>
       </Card>
 
-      <Drawer open={Boolean(selected)} width={1000} title="查看和处理" onClose={() => setSelected(null)}>
+      <Drawer open={Boolean(selected)} width={880} title="查看和处理" onClose={() => setSelected(null)}>
         {selected ? (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <div style={{ position: 'sticky', top: 0, zIndex: 20, background: '#fff', paddingBottom: 4 }}>
-              <Card size="small" title="处理操作" styles={{ body: { padding: '10px 12px' } }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%' }}>
+            <div
+              style={{
+                position: 'sticky',
+                top: 0,
+                zIndex: 20,
+                background: '#fff',
+                paddingBottom: 4,
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                borderRadius: 8,
+              }}
+            >
+              <Card size="small" title="快捷处理" styles={{ body: { padding: '10px 12px' } }}>
                 <Space direction="vertical" size={8} style={{ width: '100%' }}>
                   <Space wrap align="center">
                     {canAssign !== false ? (
@@ -2664,6 +2682,18 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
                     ) : null}
                     <Button loading={assigning} onClick={() => void acceptCase()}>
                       我接手
+                    </Button>
+                    <Button
+                      onClick={() =>
+                        window.open(
+                          `/v/admin/tracking-exception/handling-detail?exception_id=${encodeURIComponent(
+                            String(selected.id),
+                          )}&tracking_number=${encodeURIComponent(String(selected['tracking-number'] || ''))}`,
+                          '_blank',
+                        )
+                      }
+                    >
+                      处理明细
                     </Button>
                     <Typography.Text type="secondary">当前：{selected.handler_name || '未指派'}</Typography.Text>
                   </Space>
@@ -2693,9 +2723,9 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
               </Card>
             </div>
             <Card size="small" title="基础信息">
-              <Descriptions bordered size="small" column={2}>
+              <Descriptions className="tracking-exception-detail" bordered size="small" column={2}>
               <Descriptions.Item label="店铺">{selected['store-name'] || '-'}</Descriptions.Item>
-              <Descriptions.Item label="仓库">{selected['warehouse-name'] || '-'}</Descriptions.Item>
+              <Descriptions.Item label="仓库"><EllipsisText value={selected['warehouse-name']} maxWidth={260} /></Descriptions.Item>
               <Descriptions.Item label="平台订单编号">{selected['order-id'] || '-'}</Descriptions.Item>
               <Descriptions.Item label="子订单编号">{selected['order-id-in-warehouse'] || '-'}</Descriptions.Item>
               <Descriptions.Item label="运单号">
@@ -2703,8 +2733,8 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
               </Descriptions.Item>
               <Descriptions.Item label="MSKU">{selected.msku || '-'}</Descriptions.Item>
               <Descriptions.Item label="快递状态">{selected.Status || '-'}</Descriptions.Item>
-              <Descriptions.Item label="附加状态">{selected.AdditionalStatus || '-'}</Descriptions.Item>
-              <Descriptions.Item label="异常原因" span={2}>
+              <Descriptions.Item label="附加状态"><EllipsisText value={selected.AdditionalStatus} maxWidth={300} /></Descriptions.Item>
+              <Descriptions.Item label="异常原因" span={2} contentStyle={{ whiteSpace: 'normal' }}>
                 {selected.exception_reason || '-'}
               </Descriptions.Item>
               <Descriptions.Item label="异常类型">{TYPE_LABEL[selected._type]}</Descriptions.Item>
@@ -2721,7 +2751,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
                   <Typography.Text type="secondary">{selected._qualityReasons.join('；')}</Typography.Text>
                 ) : null}
               </Descriptions.Item>
-              <Descriptions.Item label="最近处理备注" span={2}>
+              <Descriptions.Item label="最近处理备注" span={2} contentStyle={{ whiteSpace: 'normal' }}>
                 <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
                   {selected.handle_note || '-'}
                 </Typography.Paragraph>
@@ -2774,8 +2804,8 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
                 width: 160,
                 render: (value: string) => <TrackingNumberLink value={value} copyable />,
               },
-              { title: '快递状态', dataIndex: 'Status', width: 130, render: (value: string) => value || '-' },
-              { title: '附加状态', dataIndex: 'AdditionalStatus', width: 150, render: (value: string) => value || '-' },
+              { title: '快递状态', dataIndex: 'Status', width: 130, ellipsis: true, render: (value: string) => value || '-' },
+              { title: '附加状态', dataIndex: 'AdditionalStatus', width: 180, ellipsis: { showTitle: true } as any, render: (value: string) => value || '-' },
               {
                 title: '是否快递异常',
                 dataIndex: 'is_tracking_exception',
@@ -2799,7 +2829,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
         </Space>
             </Card>
 
-            <Card size="small" title="行动时间线" loading={actionLogsLoading}>
+            <Card size="small" title="处理记录" loading={actionLogsLoading}>
               {[...actionLogs, ...requestTimeline].length ? (
                 <Timeline
                   items={[...actionLogs, ...requestTimeline]
@@ -2823,7 +2853,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
               )}
             </Card>
 
-          </Space>
+          </div>
         ) : null}
       </Drawer>
 
