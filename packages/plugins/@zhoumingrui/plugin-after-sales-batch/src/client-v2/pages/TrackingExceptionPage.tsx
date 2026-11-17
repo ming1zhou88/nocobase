@@ -516,20 +516,41 @@ function matchFilter(row: EnrichedRow, key: FilterKey, currentUserId?: number | 
   return true;
 }
 
-const METRIC_HELP_ROWS = [
-  { metric: '总行数', scope: '全部', rule: '7D4 全部行，含可疑/其他承运商、已作废' },
-  { metric: '可用 FedEx/UPS', scope: '全部', rule: '数据质量=可用，且为 12 位 FedEx 或 UPS 运单' },
-  { metric: '异常中（可用）', scope: '可用数据', rule: '可用数据中仍异常的行；不含技术异常/已恢复/已作废' },
-  { metric: '已恢复（可用）', scope: '可用数据', rule: '可用数据中已恢复/已妥投的行' },
-  { metric: '可疑/其他承运商', scope: '全部', rule: '非 FedEx/UPS，或数据质量非可用的行（如 WP 单号）' },
-  { metric: '待实质处理', scope: '全部', rule: '仍异常、非技术异常、未关闭、异常持续≥7 天（与底部 chip 同口径）' },
-  { metric: '技术异常', scope: '全部', rule: 'query_status=ERROR（FedEx 查询失败），属数据/技术问题，不计入业务异常' },
-  { metric: '待指派', scope: '全部', rule: '仍异常、非技术异常、未关闭、且没有处理人' },
-  { metric: '异常中（底部）', scope: '当前筛选范围', rule: '全部数据中仍异常（含可疑行），是“异常中（可用）”的超集' },
-  { metric: '已恢复（底部）', scope: '当前筛选范围', rule: '全部数据中已恢复/已妥投（含可疑行）' },
-  { metric: '待人工核实（底部）', scope: '当前筛选范围', rule: '数据质量非可用或技术异常，需要人工核实的数据' },
-  { metric: '已作废（底部）', scope: '当前筛选范围', rule: 'data_status=invalid 的行' },
+// 上方 KPI 与下方筛选条的对应关系（帮助页第二节）。
+const KPI_CHIP_ROWS = [
+  { metric: '总行数', scope: '全部', chip: '全部', relation: '相等' },
+  { metric: '可用 FedEx/UPS', scope: '全部', chip: '可用 FedEx/UPS', relation: '相等' },
+  { metric: '异常中（可用）', scope: '仅可用数据', chip: '异常中（全部）', relation: 'C ⊆ D（前者是后者的子集）' },
+  { metric: '已恢复（可用）', scope: '仅可用数据', chip: '已恢复（全部）', relation: '前者是后者的子集' },
+  { metric: '可疑/其他承运商', scope: '全部', chip: '可疑/其他承运商', relation: '相等（= 总行数 − 可用）' },
+  { metric: '待实质处理（全部）', scope: '全部', chip: '待实质处理', relation: '相等（同一口径）' },
+  { metric: '技术异常', scope: '全部', chip: '技术异常', relation: '相等；与“异常中”互斥' },
+  { metric: '待指派（全部）', scope: '全部', chip: '待指派', relation: '相等（同一口径）' },
 ];
+
+// 帮助页第三节：集合记号与包含关系。
+const HELP_LEGEND = [
+  ['U', '7D4 全部行'],
+  ['A', '可用 FedEx/UPS'],
+  ['B', '可疑/其他承运商'],
+  ['C', '异常中（可用）'],
+  ['D', '底部“异常中”（全部）'],
+  ['E', '技术异常'],
+  ['F', '待实质处理（全部）'],
+  ['G', '待指派（全部）'],
+  ['H', '待人工核实'],
+  ['I', '已作废'],
+];
+
+const HELP_MATH = `U = A ∪ B，A ∩ B = ∅，B = U − A
+C ⊆ A
+D = C ∪ (B ∩ X)，X = { x | x 仍异常且未关闭 }
+C ⊆ D；当 B ∩ X ≠ ∅ 时 C ⊊ D
+E ∩ D = ∅
+F ⊆ D
+G ⊆ D
+H = E ∪ { x | 数据质量 ∉ {可用} }
+I = { x | data_status = invalid }`;
 
 export default function TrackingExceptionPage() {
   const ctx = useFlowContext();
@@ -1260,6 +1281,25 @@ export default function TrackingExceptionPage() {
     result.manual = filterScopedRows.filter((row) => row._needsManual && !row._isClosed).length;
     return result;
   }, [currentUser?.id, scopedRows, rows]);
+
+  // 帮助页“当前实时数据”：与页面 KPI / 筛选条同源，随行数据实时计算。
+  const helpMetrics = useMemo(
+    () => [
+      { key: 'total', label: '总行数', value: stats.total },
+      { key: 'clean', label: '可用 FedEx/UPS', value: stats.clean },
+      { key: 'activeClean', label: '异常中（可用）', value: stats.active },
+      { key: 'recoveredClean', label: '已恢复（可用）', value: stats.recovered },
+      { key: 'suspect', label: '可疑/其他承运商', value: stats.suspect },
+      { key: 'substantive', label: '待实质处理（全部）', value: stats.substantive },
+      { key: 'technical', label: '技术异常', value: stats.technical },
+      { key: 'unassigned', label: '待指派（全部）', value: stats.unassigned },
+      { key: 'chipActive', label: '底部：异常中', value: counts.active },
+      { key: 'chipRecovered', label: '底部：已恢复', value: counts.recovered },
+      { key: 'chipManual', label: '底部：待人工核实', value: counts.manual },
+      { key: 'chipInvalid', label: '底部：已作废', value: counts.invalid },
+    ],
+    [stats, counts],
+  );
 
   const filteredRows = useMemo(() => {
     const lower = keyword.trim().toLowerCase();
@@ -2125,9 +2165,9 @@ export default function TrackingExceptionPage() {
             }}
           />
         </Tooltip>
-        <Tooltip title="查看 KPI 与筛选条的口径说明">
+        <Tooltip title="打开使用帮助（实时数据 + 口径说明）">
           <Button size="small" icon={<InfoCircleOutlined />} onClick={() => setHelpOpen(true)}>
-            口径说明
+            使用帮助
           </Button>
         </Tooltip>
         <Button type="primary" icon={<TeamOutlined />} onClick={() => setWorkloadOpen(true)}>
@@ -2194,14 +2234,14 @@ export default function TrackingExceptionPage() {
               <Tooltip title="非 FedEx/UPS，或数据质量非可用的行（如 WP 单号、其他承运商）">
                 <Statistic title="可疑/其他承运商" value={stats.suspect} valueStyle={{ color: '#d46b08' }} />
               </Tooltip>
-              <Tooltip title="仍异常、非技术异常、未关闭、异常持续≥7 天；与底部“待实质处理”同一口径">
-                <Statistic title="待实质处理" value={stats.substantive} valueStyle={{ color: '#cf1322' }} />
+              <Tooltip title="全部数据中：仍异常、非技术异常、未关闭、异常持续≥7 天。含可疑/其他承运商；与底部“待实质处理”同一口径">
+                <Statistic title="待实质处理（全部）" value={stats.substantive} valueStyle={{ color: '#cf1322' }} />
               </Tooltip>
               <Tooltip title="query_status=ERROR（FedEx 查询失败）的行；属数据/技术问题，不计入业务异常">
                 <Statistic title="技术异常" value={stats.technical} valueStyle={{ color: '#d46b08' }} />
               </Tooltip>
-              <Tooltip title="仍异常、非技术异常、未关闭、且没有处理人">
-                <Statistic title="待指派" value={stats.unassigned} valueStyle={{ color: '#d46b08' }} />
+              <Tooltip title="全部数据中：仍异常、非技术异常、未关闭、且没有处理人。含可疑/其他承运商">
+                <Statistic title="待指派（全部）" value={stats.unassigned} valueStyle={{ color: '#d46b08' }} />
               </Tooltip>
               <Statistic
                 title="过早处理率（近30天）"
@@ -2934,47 +2974,120 @@ export default function TrackingExceptionPage() {
         )}
       </Modal>
 
-      <Modal
+      <Drawer
         open={helpOpen}
-        title="快递异常工作台 · 口径说明"
-        footer={null}
-        width={920}
-        onCancel={() => setHelpOpen(false)}
+        title="快递异常工作台 · 使用帮助"
+        width={1040}
+        onClose={() => setHelpOpen(false)}
       >
+        <Typography.Title level={5} style={{ marginTop: 0 }}>
+          一、当前实时数据
+        </Typography.Title>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+          数据随页面加载实时计算（来源 7D4），刷新页面即更新；与页面 KPI / 筛选条同源。
+        </Typography.Paragraph>
+        <div style={{ overflowX: 'auto', border: '1px solid #f0f0f0', borderRadius: 6 }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1040, fontSize: 12 }}>
+            <thead>
+              <tr>
+                {helpMetrics.map((item) => (
+                  <th
+                    key={item.key}
+                    style={{
+                      padding: '8px 10px',
+                      background: '#fafafa',
+                      borderBottom: '1px solid #f0f0f0',
+                      whiteSpace: 'nowrap',
+                      textAlign: 'left',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {item.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                {helpMetrics.map((item) => (
+                  <td
+                    key={item.key}
+                    style={{
+                      padding: '10px',
+                      borderBottom: '1px solid #f0f0f0',
+                      fontSize: 16,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {item.value}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <Divider />
+        <Typography.Title level={5}>二、上方 KPI 与下方筛选条的对应关系</Typography.Title>
         <Typography.Paragraph type="secondary">
-          上方 KPI 与下方筛选条的分母不同：KPI 里的“异常中/已恢复”只统计<b>可用数据</b>（12 位 FedEx/UPS），
-          筛选条里的“异常中/已恢复”统计<b>当前筛选范围</b>（默认含可疑/其他承运商）。数值不相等是正常的。
+          上方 KPI 的“异常中/已恢复”只统计<b>可用数据</b>；下方筛选条统计<b>当前筛选范围</b>（默认含可疑/其他承运商）。
+          同名不同分母，数值不相等是正常的。
         </Typography.Paragraph>
         <Table
           size="small"
           pagination={false}
           rowKey="metric"
-          dataSource={METRIC_HELP_ROWS}
+          dataSource={KPI_CHIP_ROWS}
           columns={[
-            { title: '指标', dataIndex: 'metric', width: 190 },
-            { title: '统计范围', dataIndex: 'scope', width: 130 },
-            { title: '口径', dataIndex: 'rule' },
+            { title: '上方 KPI', dataIndex: 'metric', width: 190 },
+            { title: '统计范围', dataIndex: 'scope', width: 120 },
+            { title: '对应下方 chip', dataIndex: 'chip', width: 170 },
+            { title: '关系', dataIndex: 'relation' },
           ]}
         />
-        <Divider style={{ margin: '16px 0' }} />
-        <Typography.Paragraph style={{ marginBottom: 0 }}>
-          <b>包含关系</b>
-          <br />
-          总行数 = 可用 FedEx/UPS + 可疑/其他承运商；
-          <br />
-          异常中（可用）⊂ 可用 FedEx/UPS；底部“异常中”是全部数据口径，⊃ 异常中（可用）；
-          <br />
-          已恢复同理；
-          <br />
-          技术异常（query_status=ERROR）与业务“异常中”<b>互斥</b>，不计入业务异常；
-          <br />
-          待实质处理 ⊂ 异常中，且异常持续 ≥7 天、未关闭；
-          <br />
-          待指派 ⊂ 异常中，且没有处理人、未关闭；
-          <br />
-          待人工核实 = 数据质量非可用（技术异常、数据不完整、数据过旧等），需要人工核实的数据。
+
+        <Divider />
+        <Typography.Title level={5}>三、字段含义与包含关系</Typography.Title>
+        <Typography.Paragraph style={{ marginBottom: 8 }}>
+          <b>记号：</b>
+          {HELP_LEGEND.map(([key, label]) => `${key} = ${label}`).join('；')}。
         </Typography.Paragraph>
-      </Modal>
+        <div
+          style={{
+            background: '#fafafa',
+            border: '1px solid #f0f0f0',
+            borderRadius: 6,
+            padding: '12px 14px',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: 13,
+            lineHeight: 2,
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {HELP_MATH}
+        </div>
+        <Typography.Paragraph style={{ marginTop: 8 }} type="secondary">
+          说明：C ⊆ D 且通常为真子集；E 与 D 互斥，所以“技术异常”不会出现在“异常中”；F、G 都是 D 的子集，
+          但 F 与 G 之间没有必然包含关系（待实质处理的行可能已有处理人）。
+        </Typography.Paragraph>
+
+        <Divider />
+        <Typography.Title level={5}>四、补充说明</Typography.Title>
+        <Typography.Paragraph>
+          <ul style={{ paddingLeft: 20, marginBottom: 0 }}>
+            <li>数据来源：7D4，上游 FedEx/UPS 查询任务每 30 分钟更新一次；查询失败记为“技术异常”，不进入业务异常。</li>
+            <li>
+              “可疑/其他承运商”：目前只有 FedEx 和 UPS 接入了 API 查询，其余承运商（如 WP 单号）先进入可疑；
+              后续通过人工导表或新 API 接入后转为可用。
+            </li>
+            <li>
+              右侧“近 7 日实质异常”是每日 00:05 的快照（TrackingExceptionStatsDaily），与页面实时 KPI 不是同一时点；
+              2026-11-18 起技术异常按 query_status 修正，历史快照口径不同。
+            </li>
+            <li>常见问题：上下数字不一致→分母不同；技术异常很多→先修查询链路（代理/网络）；可疑行很多→先做承运商/单号清洗。</li>
+          </ul>
+        </Typography.Paragraph>
+      </Drawer>
     </div>
   );
 }
