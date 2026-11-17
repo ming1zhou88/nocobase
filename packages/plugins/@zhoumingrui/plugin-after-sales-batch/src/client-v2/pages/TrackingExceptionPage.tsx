@@ -244,10 +244,13 @@ function enrich(row: Row): EnrichedRow {
   const isFedex = /^\d{12}$/.test(tracking);
   const isUps = /^1Z[0-9A-Z]{16}$/i.test(tracking);
   const isVirtual = /^8926\d{11}$/.test(tracking);
+  const queryStatus = String(row.query_status || '').toUpperCase();
   const isTechnical =
-    String(row.query_status || '').toUpperCase() === 'ERROR' ||
-    /邮件查询错误|查询错误|查询失败|NOTFOUND|TRACKINGNUMBER/i.test(`${additional} ${status}`) ||
-    /查询失败|NOTFOUND/i.test(String(row.note ?? ''));
+    queryStatus === 'ERROR' ||
+    (!queryStatus && (
+      /邮件查询错误|查询错误|查询失败|NOTFOUND|TRACKINGNUMBER/i.test(`${additional} ${status}`) ||
+      /查询失败|NOTFOUND/i.test(String(row.note ?? ''))
+    ));
   const isOtherCarrier = Boolean(tracking) && !isFedex && !isUps && !isVirtual;
   const delivered = Boolean(row.DeliveredDate) || /delivered|entregado/i.test(status);
   const noteRecovered = Boolean(note?.recoveredAt) || note?.active === false;
