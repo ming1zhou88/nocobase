@@ -2583,14 +2583,18 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
               </Button>
             ) : null}
             {canBatchClose ? (
-              <Button
-                size="small"
-                icon={<SafetyCertificateOutlined />}
-                disabled={!selectedRowKeys.length}
-                onClick={() => batchClose()}
-              >
-                批量核实恢复{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
-              </Button>
+              <Tooltip title={selectedRowKeys.length ? '将选中行标记为已核实恢复并关闭' : '请先勾选数据行'}>
+                <span style={{ display: 'inline-block' }}>
+                  <Button
+                    size="small"
+                    icon={<SafetyCertificateOutlined />}
+                    disabled={!selectedRowKeys.length}
+                    onClick={() => batchClose()}
+                  >
+                    批量核实恢复{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : ''}
+                  </Button>
+                </span>
+              </Tooltip>
             ) : null}
             <Button onClick={exportRows}>
               导出{selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '当前筛选'}
