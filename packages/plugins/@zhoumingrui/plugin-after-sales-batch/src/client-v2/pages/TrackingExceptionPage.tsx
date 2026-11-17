@@ -1928,7 +1928,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
     {
       title: '处理事项',
       key: 'request-summary',
-      width: 300,
+      width: 260,
       render: (_: unknown, row: EnrichedRow) => {
         const item = requestSummary[String(row['order-id'] || '')];
         if (!item) return <Typography.Text type="secondary">未发起</Typography.Text>;
@@ -1943,7 +1943,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
     {
       title: '平台订单快递信息',
       key: 'express-info',
-      width: 130,
+      width: 150,
       fixed: 'right' as const,
       render: (_: unknown, row: EnrichedRow) => (
         <Button type="link" size="small" onClick={() => void openExpressInfo(row)}>
@@ -1954,7 +1954,7 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
     {
       title: '操作',
       key: 'action',
-      width: 260,
+      width: 360,
       fixed: 'right' as const,
       render: (_: unknown, row: EnrichedRow) => (
         <Space size={0}>
@@ -2007,6 +2007,11 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
       ),
     },
   ];
+
+  // 固定列错位修复：scroll.x 必须等于“所有列宽 + 多选列宽”，否则 antd 会按比例拉伸，
+  // 固定列（sticky）用声明宽度定位、表体用拉伸后宽度，表头/表体就会错位。
+  const tableScrollX =
+    columns.reduce((sum: number, col: any) => sum + (Number(col.width) || 0), 0) + (canAssign ? 32 : 0);
 
   // 高频筛选紧跟「导出当前筛选」，其余筛选项顺延，整体只占一两行
   const visibleFilters = FILTERS.filter((filter) => !isAgent || filter.key !== 'unassigned');
@@ -2358,7 +2363,11 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
         数据源：
         {DATA_SOURCE_KEY} ｜ 集合：{COLLECTION}
       </Typography.Paragraph>
-      <style>{`.tracking-exception-table td { white-space: nowrap; vertical-align: middle; height: 40px; padding-top: 6px !important; padding-bottom: 6px !important; } .tracking-exception-table .ant-table-thead > tr > th { height: 38px; white-space: nowrap; } .tracking-exception-table .ant-table-measure-row td, .tracking-exception-table .ant-table-measure-row { height: 0 !important; padding: 0 !important; border: 0 !important; line-height: 0 !important; } .tracking-exception-stats .ant-statistic-title { font-size: 13px; color: rgba(0, 0, 0, 0.85); font-weight: 600; } .tracking-filter-bar .ant-btn { height: 32px; padding-inline: 12px; }
+      <style>{`.tracking-exception-table td { white-space: nowrap; vertical-align: middle; height: 40px; padding-top: 6px !important; padding-bottom: 6px !important; } .tracking-exception-table .ant-table-thead > tr > th { height: 38px; white-space: nowrap; } .tracking-exception-table .ant-table-measure-row td, .tracking-exception-table .ant-table-measure-row { height: 0 !important; padding: 0 !important; border: 0 !important; line-height: 0 !important; } .tracking-exception-stats .ant-statistic-title { font-size: 13px; color: rgba(0, 0, 0, 0.85); font-weight: 600; min-height: 40px; }
+        .tracking-exception-stats .ant-space { align-items: stretch; }
+        .tracking-exception-stats .ant-space-item { display: flex; }
+        .tracking-exception-stats .ant-statistic { display: flex; flex-direction: column; width: 100%; }
+        .tracking-exception-stats .ant-statistic-content { margin-top: auto; } .tracking-filter-bar .ant-btn { height: 32px; padding-inline: 12px; }
         .tracking-filter-bar .ant-btn > .anticon { font-size: 15px; }
         .tracking-filter-bar .ant-btn-sm { height: 32px; }`}</style>
       <div className="tracking-exception-stats" style={{ flexShrink: 0 }}>
@@ -2615,12 +2624,12 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
           <Table<EnrichedRow>
             className="tracking-exception-table"
             rowKey="id"
-            rowSelection={canAssign ? { selectedRowKeys, onChange: setSelectedRowKeys } : undefined}
+            rowSelection={canAssign ? { selectedRowKeys, onChange: setSelectedRowKeys, columnWidth: 32 } : undefined}
             size="middle"
             loading={loading}
             dataSource={filteredRows}
             columns={columns as any}
-            scroll={{ x: 2900, y: tableScrollY }}
+            scroll={{ x: tableScrollX, y: tableScrollY }}
             tableLayout="fixed"
             pagination={{
               pageSize: 50,
