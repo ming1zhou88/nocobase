@@ -1843,9 +1843,9 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
 
   const columns = [
     {
-      title: '店铺',
+      title: '店铺名称',
       dataIndex: 'store-name',
-      width: 110,
+      width: 100,
       render: (value: string) => value || '-',
     },
     {
@@ -1878,9 +1878,9 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
       ),
     },
     {
-      title: '仓库',
+      title: '仓库名称',
       dataIndex: 'warehouse-name',
-      width: 160,
+      width: 150,
       ellipsis: true,
       render: (value: string) => value || '-',
     },
@@ -1891,22 +1891,22 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
       render: (value: ExceptionType) => <Tag>{TYPE_LABEL[value]}</Tag>,
     },
     {
-      title: '异常开始',
+      title: '异常开始日期',
       dataIndex: '_startedAt',
-      width: 140,
+      width: 120,
       render: (value: string) => (value ? dayjs(value).format('YYYY-MM-DD') : '-'),
     },
     {
       title: '已持续',
       dataIndex: '_ageDays',
-      width: 90,
+      width: 70,
       render: (value: number | null, row: EnrichedRow) =>
         value === null ? <Typography.Text type="secondary">未知</Typography.Text> : `${value} 天`,
     },
     {
       title: '状态',
       dataIndex: '_state',
-      width: 100,
+      width: 90,
       render: (value: ExceptionState) => (
         <Tag
           color={value === '已恢复' ? 'green' : value === '已作废' ? 'default' : value === '待核实' ? 'orange' : 'red'}
@@ -1918,38 +1918,38 @@ export default function TrackingExceptionPage({ helpMode = false }: { helpMode?:
     {
       title: '数据质量',
       dataIndex: '_quality',
-      width: 110,
+      width: 95,
       render: (value: Quality) => <Tag color={QUALITY_COLOR[value]}>{value}</Tag>,
     },
     {
       title: '建议',
       dataIndex: '_suggestion',
-      width: 120,
+      width: 95,
       render: (value: string) => value,
     },
     {
       title: '处理结果',
       dataIndex: 'handle_result',
-      width: 110,
+      width: 95,
       render: (value: string) => value || '-',
     },
     {
       title: '关联工单',
       dataIndex: 'work_order_serial',
-      width: 140,
+      width: 130,
       ellipsis: true,
       render: (value: string) => value || '-',
     },
     {
       title: '处理人',
       dataIndex: 'handler_name',
-      width: 95,
+      width: 85,
       render: (value: string) => value || '-',
     },
     {
       title: '处理状态',
       dataIndex: 'handle_status',
-      width: 100,
+      width: 90,
       render: (value: string) => value || '-',
     },
     {
