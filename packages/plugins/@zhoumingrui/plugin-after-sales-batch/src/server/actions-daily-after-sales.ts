@@ -99,12 +99,41 @@ export async function batchAssignDailyAfterSales(ctx: Context, next: Next) {
     source: 'manual',
   });
 
+  // 联动：同一平台订单下的「未完结退货申请」同步指派给同一人（2026-11-17 需求）
+  let returnLinked = 0;
+  try {
+    const dataSource = (ctx.app.dataSourceManager as any).get('d_99cwsyi7q4k');
+    const repository = dataSource?.collectionManager?.getRepository('DailyAfterSalesOrder');
+    let orderIds: string[] = [];
+    if (repository) {
+      const filter: Record<string, unknown> = {};
+      if (rowIds.length) filter.id = { $in: rowIds };
+      if (identityKeys.length) filter.identity_key = { $in: identityKeys };
+      const rows = Object.keys(filter).length ? await repository.find({ filter }) : [];
+      orderIds = (rows || [])
+        .map((row: any) => String(row?.get ? row.get('order_id') : row?.order_id || '').trim())
+        .filter(Boolean);
+    }
+    orderIds = [...new Set(orderIds)];
+    if (orderIds.length) {
+      const linked = await connectorClient.returnOrderAssignByOrder(
+        orderIds,
+        { id: Number(user.get('id')), name: String(user.get('nickname') || ownerName), account: user.get('username') },
+        operator,
+      );
+      returnLinked = Number(linked?.updated) || 0;
+    }
+  } catch (error: any) {
+    ctx.app.logger?.warn?.(`[daily-assign] 联动退货申请失败: ${error?.message || error}`);
+  }
+
   ctx.body = {
     success: true,
     ...result,
     owner_id: Number(user.get('id')),
     owner_name: String(user.get('nickname') || ownerName),
     assign_status: '已指派',
+    return_linked: returnLinked,
   };
   await next();
 }

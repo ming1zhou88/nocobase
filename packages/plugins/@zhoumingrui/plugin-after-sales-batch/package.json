@@ -1,6 +1,6 @@
 {
   "name": "@zhoumingrui/plugin-after-sales-batch",
-  "version": "2.1.23",
+  "version": "2.1.26",
   "main": "dist/server/index.js",
   "displayName": "After-sales batch",
   "displayName.zh-CN": "售后批处理",

@@ -12,6 +12,8 @@ import {
   Drawer,
   Form,
   Input,
+  InputNumber,
+  AutoComplete,
   Modal,
   Row,
   Select,
@@ -38,6 +40,7 @@ import {
 } from '@ant-design/icons';
 import { useFlowContext } from '@nocobase/flow-engine';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AttachmentField } from './AfterSalesRequestsPage';
 import dayjs from 'dayjs';
 
 /**
@@ -76,6 +79,7 @@ const FIELDS = [
   'warehouse-name',
   'msku',
   'msku-quantity',
+  'sku-in-stock',
   'sku-in-stock-quantity',
   'email-address',
   'Status',
@@ -552,6 +556,7 @@ export default function TrackingExceptionPage() {
   const [manualNote, setManualNote] = useState('');
   const [actionLogs, setActionLogs] = useState<Row[]>([]);
   const [actionLogsLoading, setActionLogsLoading] = useState(false);
+  const [requestTimeline, setRequestTimeline] = useState<Row[]>([]);
   const [actionType, setActionType] = useState('contacted_warehouse');
   const [actionNote, setActionNote] = useState('');
   const [contactTarget, setContactTarget] = useState('');
@@ -596,11 +601,39 @@ export default function TrackingExceptionPage() {
   const [isAgent, setIsAgent] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [batchAssignOpen, setBatchAssignOpen] = useState(false);
+  const [quickKind, setQuickKind] = useState<'warehouse-contacts' | 'reship-requests' | 'refund-requests' | 'claim-requests' | null>(null);
+  const [quickRow, setQuickRow] = useState<EnrichedRow | null>(null);
+  const [quickCreated, setQuickCreated] = useState<{ id: number; url: string; title: string } | null>(null);
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickForm] = Form.useForm();
+  const [requestSummary, setRequestSummary] = useState<Record<string, Row>>({});
   const [batchAssignUserId, setBatchAssignUserId] = useState('');
   const [batchAssigning, setBatchAssigning] = useState(false);
   // 页面固定高度：只有表体滚动，标题/统计/筛选/表头保持不动（与售后工单工作台一致）
   const tableWrapRef = useRef<HTMLDivElement>(null);
   const [tableScrollY, setTableScrollY] = useState(360);
+
+  const loadRequestSummaries = useCallback(async (list: Row[]) => {
+    const orderIds = Array.from(new Set(list.map((row) => String(row['order-id'] || '').trim()).filter(Boolean)));
+    if (!orderIds.length) { setRequestSummary({}); return; }
+    try {
+      const response = await ctx.api.request({
+        url: 'v_AfterSalesRequestSummary:list',
+        method: 'get',
+        headers: { 'x-data-source': DATA_SOURCE_KEY },
+        params: {
+          pageSize: 5000,
+        },
+      });
+      const body = response?.data?.data ?? response?.data ?? [];
+      const rows = Array.isArray(body) ? body : body?.data ?? [];
+      const next: Record<string, Row> = {};
+      for (const item of Array.isArray(rows) ? rows : []) next[String(item.platform_order_id)] = item;
+      setRequestSummary(next);
+    } catch {
+      setRequestSummary({});
+    }
+  }, [ctx]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -629,12 +662,13 @@ export default function TrackingExceptionPage() {
         page += 1;
       } while (all.length < total && page <= 30);
       setRows(all.map(enrich));
+      void loadRequestSummaries(all);
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error));
     } finally {
       setLoading(false);
     }
-  }, [ctx, message]);
+  }, [ctx, message, loadRequestSummaries]);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -1073,12 +1107,48 @@ export default function TrackingExceptionPage() {
     [ctx, message],
   );
 
+  const loadRequestTimeline = useCallback(async (orderId: string) => {
+    if (!orderId) { setRequestTimeline([]); return; }
+    const sources = [
+      { collection: 'AfterSalesWarehouseContact', label: '联系仓库', status: 'contact_status', note: (row: Row) => [row.contact_channel, row.message_content || row.issue_description].filter(Boolean).join(' · ') },
+      { collection: 'AfterSalesReshipRequest', label: '补寄申请', status: 'request_status', note: (row: Row) => [row.reship_type, row.reship_item_sku || row.reship_item_name, row.reason].filter(Boolean).join(' · ') },
+      { collection: 'AfterSalesRefundRequest', label: '退款申请', status: 'request_status', note: (row: Row) => [row.refund_amount ? `${row.refund_amount} ${row.refund_currency || ''}` : '', row.reason].filter(Boolean).join(' · ') },
+      { collection: 'AfterSalesClaimRequest', label: '索赔申请', status: 'claim_status', note: (row: Row) => [row.claim_amount ? `${row.claim_amount} ${row.claim_currency || ''}` : '', row.claim_reason].filter(Boolean).join(' · ') },
+    ];
+    const items: Row[] = [];
+    await Promise.all(sources.map(async (source) => {
+      try {
+        const response = await ctx.api.request({
+          url: `${source.collection}:list`,
+          method: 'get',
+          headers: { 'x-data-source': DATA_SOURCE_KEY },
+          params: { pageSize: 100, sort: ['-created_at'], filter: JSON.stringify({ platform_order_id: orderId }) },
+        });
+        const body = response?.data?.data ?? response?.data ?? [];
+        for (const row of Array.isArray(body) ? body : body?.data ?? []) {
+          items.push({
+            timeline_id: `${source.collection}-${row.id}`,
+            action_type: source.label,
+            action_at: row.created_at,
+            operator_name: row.created_by,
+            action_note: [row[source.status], source.note(row)].filter(Boolean).join(' · '),
+          });
+        }
+      } catch {
+        // 单个请求表异常不影响其他时间线
+      }
+    }));
+    setRequestTimeline(items.sort((a, b) => String(b.action_at || '').localeCompare(String(a.action_at || ''))));
+  }, [ctx]);
+
   useEffect(() => {
     if (!selected) {
       setActionLogs([]);
+      setRequestTimeline([]);
       return;
     }
     void loadActionLogs(selected.id);
+    void loadRequestTimeline(String(selected['order-id'] || ''));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
@@ -1591,6 +1661,80 @@ export default function TrackingExceptionPage() {
     }
   }
 
+  function openQuickRequest(kind: 'warehouse-contacts' | 'reship-requests' | 'refund-requests' | 'claim-requests', row: EnrichedRow) {
+    setQuickKind(kind);
+    setQuickRow(row);
+    setQuickCreated(null);
+    quickForm.resetFields();
+    const common = {
+      platform_order_id: String(row['order-id'] || ''),
+      platform_sku: String(row.msku || ''),
+      stock_sku: String(row['sku-in-stock'] || ''),
+      sub_order_id: String(row['order-id-in-warehouse'] || ''),
+      tracking_number: String(row['tracking-number'] || ''),
+      store_name: String(row['store-name'] || ''),
+      handler_id: row.handler_id ?? null,
+      handler_name: String(row.handler_name || ''),
+      warehouse_name: String(row['warehouse-name'] || ''),
+      source_type: 'tracking_exception',
+      exception_id: Number(row.id),
+      source_row_id: Number(row.id),
+    };
+    const issue = String(row.exception_reason || row.handle_note || '');
+    if (kind === 'warehouse-contacts') {
+      quickForm.setFieldsValue({ ...common, contact_status: '待发送', issue_description: issue, message_content: '' });
+    } else if (kind === 'reship-requests') {
+      quickForm.setFieldsValue({ ...common, request_status: '待审核', reason: issue, quantity: 1, reship_item_sku: common.stock_sku || '' });
+    } else if (kind === 'refund-requests') {
+      quickForm.setFieldsValue({ ...common, request_status: '待审核', refund_currency: 'USD', reason: issue });
+    } else {
+      quickForm.setFieldsValue({ ...common, claim_status: '待提交', claim_currency: 'USD', claim_trigger: '快递异常', claim_reason: issue });
+    }
+  }
+
+  async function saveQuickRequest() {
+    if (!quickKind || !quickRow) return;
+    setQuickSaving(true);
+    try {
+      const values = await quickForm.validateFields();
+      const collections: Record<string, string> = {
+        'warehouse-contacts': 'AfterSalesWarehouseContact',
+        'reship-requests': 'AfterSalesReshipRequest',
+        'refund-requests': 'AfterSalesRefundRequest',
+        'claim-requests': 'AfterSalesClaimRequest',
+      };
+      const titles: Record<string, string> = {
+        'warehouse-contacts': '仓库联系记录',
+        'reship-requests': '补寄申请',
+        'refund-requests': '退款申请',
+        'claim-requests': '索赔申请',
+      };
+      const data = {
+        ...values,
+        source_type: 'tracking_exception',
+        exception_id: Number(quickRow.id),
+        source_row_id: Number(quickRow.id),
+        created_by: currentUser?.nickname || currentUser?.username || '人工',
+      };
+      const response = await ctx.api.request({
+        url: 'afterSalesRequest:create',
+        method: 'post',
+        data: { request_type: quickKind, values: data },
+      });
+      const body = response?.data?.data ?? response?.data;
+      const id = Number(body?.id);
+      if (!id) throw new Error('创建后未返回记录 ID');
+      setQuickCreated({ id, url: `/v/admin/after-sales/${quickKind}?record_id=${id}`, title: titles[quickKind] });
+      message.success(`${titles[quickKind]}已创建`);
+      await load();
+    } catch (error: any) {
+      if (error?.errorFields) return;
+      message.error(error?.message || '创建失败');
+    } finally {
+      setQuickSaving(false);
+    }
+  }
+
   const columns = [
     {
       title: '店铺',
@@ -1703,6 +1847,22 @@ export default function TrackingExceptionPage() {
       render: (value: string) => value || '-',
     },
     {
+      title: '处理事项',
+      key: 'request-summary',
+      width: 300,
+      fixed: 'right' as const,
+      render: (_: unknown, row: EnrichedRow) => {
+        const item = requestSummary[String(row['order-id'] || '')];
+        if (!item) return <Typography.Text type="secondary">未发起</Typography.Text>;
+        const parts: string[] = [];
+        if (Number(item.contact_count) > 0) parts.push(`联系${item.contact_count}${item.contact_latest_status ? `（${item.contact_latest_status}）` : ''}`);
+        if (Number(item.reship_count) > 0) parts.push(`补寄${item.reship_count}${item.reship_latest_status ? `（${item.reship_latest_status}）` : ''}`);
+        if (Number(item.refund_count) > 0) parts.push(`退款${item.refund_count}${item.refund_latest_status ? `（${item.refund_latest_status}）` : ''}`);
+        if (Number(item.claim_count) > 0) parts.push(`索赔${item.claim_count}${item.claim_latest_status ? `（${item.claim_latest_status}）` : ''}`);
+        return parts.length ? <Typography.Text style={{ fontSize: 13, lineHeight: '20px' }}>{parts.join('；')}</Typography.Text> : '-';
+      },
+    },
+    {
       title: '平台订单快递信息',
       key: 'express-info',
       width: 130,
@@ -1757,17 +1917,7 @@ export default function TrackingExceptionPage() {
                 { key: 'claim-requests', label: '索赔申请' },
               ],
               onClick: ({ key }) => {
-                const params = new URLSearchParams({
-                  create: '1',
-                  source_type: 'tracking_exception',
-                  platform_order_id: String(row['order-id'] || ''),
-                  sub_order_id: String(row['order-id-in-warehouse'] || ''),
-                  tracking_number: String(row['tracking-number'] || ''),
-                  store_name: String(row['store-name'] || ''),
-                  exception_id: String(row.id),
-                  source_row_id: String(row.id),
-                });
-                window.open(`/v/admin/after-sales/${key}?${params.toString()}`, '_blank');
+                openQuickRequest(key as 'warehouse-contacts' | 'reship-requests' | 'refund-requests' | 'claim-requests', row);
               },
             }}
           >
@@ -1969,7 +2119,22 @@ export default function TrackingExceptionPage() {
           }}
         >
           <Button>
-            更多页面 <DownOutlined />
+            快递异常子页面 <DownOutlined />
+          </Button>
+        </Dropdown>
+        <Dropdown
+          menu={{
+            items: [
+              { key: 'warehouse-contacts', label: '仓库联系汇总' },
+              { key: 'reship-requests', label: '补寄申请' },
+              { key: 'refund-requests', label: '退款申请' },
+              { key: 'claim-requests', label: '索赔申请' },
+            ],
+            onClick: ({ key }) => window.open(`/v/admin/after-sales/${key}`, '_blank'),
+          }}
+        >
+          <Button>
+            处理事项子页面 <DownOutlined />
           </Button>
         </Dropdown>
       </Space>
@@ -2226,7 +2391,7 @@ export default function TrackingExceptionPage() {
             loading={loading}
             dataSource={filteredRows}
             columns={columns as any}
-            scroll={{ x: 2260, y: tableScrollY }}
+            scroll={{ x: 2900, y: tableScrollY }}
             tableLayout="fixed"
             pagination={{
               pageSize: 50,
@@ -2302,150 +2467,27 @@ export default function TrackingExceptionPage() {
             </Card>
 
             <Card size="small" title="行动时间线" loading={actionLogsLoading}>
-              {actionLogs.length ? (
+              {[...actionLogs, ...requestTimeline].length ? (
                 <Timeline
-                  items={actionLogs.map((log) => ({
-                    children: (
-                      <Space direction="vertical" size={2}>
-                        <Typography.Text strong>
-                          {String(log.action_type || '-')} · {String(log.operator_name || '系统')}
-                        </Typography.Text>
-                        <Typography.Text type="secondary">
-                          {log.action_at ? dayjs(log.action_at).format('YYYY-MM-DD HH:mm:ss') : '-'}
-                        </Typography.Text>
-                        {log.action_note ? <Typography.Text>{String(log.action_note)}</Typography.Text> : null}
-                      </Space>
-                    ),
-                  }))}
+                  items={[...actionLogs, ...requestTimeline]
+                    .sort((a, b) => String(b.action_at || '').localeCompare(String(a.action_at || '')))
+                    .map((log) => ({
+                      children: (
+                        <Space direction="vertical" size={2}>
+                          <Typography.Text strong>
+                            {String(log.action_type || '-')} · {String(log.operator_name || '系统')}
+                          </Typography.Text>
+                          <Typography.Text type="secondary">
+                            {log.action_at ? dayjs(log.action_at).format('YYYY-MM-DD HH:mm:ss') : '-'}
+                          </Typography.Text>
+                          {log.action_note ? <Typography.Text>{String(log.action_note)}</Typography.Text> : null}
+                        </Space>
+                      ),
+                    }))}
                 />
               ) : (
                 <Typography.Text type="secondary">暂无行动记录</Typography.Text>
               )}
-            </Card>
-
-            <Card size="small" title="新增行动记录">
-              <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                <Select
-                  value={actionType}
-                  onChange={setActionType}
-                  style={{ width: 220 }}
-                  options={[
-                    { label: '需跟踪', value: 'tracking' },
-                    { label: '已联系仓库', value: 'contacted_warehouse' },
-                    { label: '已补寄', value: 'reship' },
-                    { label: '已退款', value: 'refund' },
-                    { label: '完结', value: 'close' },
-                    { label: '其他', value: 'other' },
-                  ]}
-                />
-                <Input.TextArea
-                  rows={2}
-                  value={actionNote}
-                  onChange={(event) => setActionNote(event.target.value)}
-                  placeholder="行动说明"
-                />
-                {actionType === 'contacted_warehouse' ? (
-                  <Input
-                    value={contactTarget}
-                    onChange={(event) => setContactTarget(event.target.value)}
-                    placeholder="联系对象 / 仓库"
-                  />
-                ) : null}
-                {actionType === 'reship' ? (
-                  <Input
-                    value={resendTrackingNumber}
-                    onChange={(event) => setResendTrackingNumber(event.target.value)}
-                    placeholder="补寄运单号"
-                  />
-                ) : null}
-                {actionType === 'refund' ? (
-                  <Space>
-                    <Input
-                      value={refundAmount}
-                      onChange={(event) => setRefundAmount(event.target.value)}
-                      placeholder="退款金额"
-                      style={{ width: 140 }}
-                    />
-                    <Select
-                      value={refundCurrency}
-                      onChange={setRefundCurrency}
-                      style={{ width: 100 }}
-                      options={[{ value: 'USD' }, { value: 'CNY' }, { value: 'EUR' }]}
-                    />
-                  </Space>
-                ) : null}
-                {actionType === 'close' ? (
-                  <Input
-                    value={closeReason}
-                    onChange={(event) => setCloseReason(event.target.value)}
-                    placeholder="关闭原因（必填）"
-                  />
-                ) : null}
-                <Space wrap>
-                  <Input
-                    value={claimRecordNo}
-                    onChange={(event) => setClaimRecordNo(event.target.value)}
-                    placeholder="索赔记录号（可选）"
-                  />
-                  <Input
-                    value={claimAmount}
-                    onChange={(event) => setClaimAmount(event.target.value)}
-                    placeholder="索赔金额"
-                    style={{ width: 120 }}
-                  />
-                  <Select
-                    value={claimCurrency}
-                    onChange={setClaimCurrency}
-                    style={{ width: 90 }}
-                    options={[{ value: 'USD' }, { value: 'CNY' }, { value: 'EUR' }]}
-                  />
-                  <Input
-                    value={claimReceived}
-                    onChange={(event) => setClaimReceived(event.target.value)}
-                    placeholder="实际赔付金额"
-                    style={{ width: 140 }}
-                  />
-                  <Select
-                    value={claimStatus || undefined}
-                    onChange={setClaimStatus}
-                    allowClear
-                    placeholder="索赔状态"
-                    style={{ width: 130 }}
-                    options={[
-                      { label: '申请中', value: 'pending' },
-                      { label: '已批准', value: 'approved' },
-                      { label: '已赔付', value: 'paid' },
-                      { label: '已拒绝', value: 'rejected' },
-                    ]}
-                  />
-                  <Button loading={claimSaving} onClick={() => void saveClaim()}>
-                    保存索赔
-                  </Button>
-                  <Input
-                    value={workOrderSerial}
-                    onChange={(event) => setWorkOrderSerial(event.target.value)}
-                    placeholder="关联工单号（可选）"
-                  />
-                  <Select
-                    value={customerContacted}
-                    onChange={setCustomerContacted}
-                    style={{ width: 150 }}
-                    options={[
-                      { label: '客户未沟通', value: '0' },
-                      { label: '客户已沟通', value: '1' },
-                    ]}
-                  />
-                  <DatePicker
-                    showTime
-                    value={followUpAt ? dayjs(followUpAt) : null}
-                    onChange={(value) => setFollowUpAt(value ? value.format('YYYY-MM-DD HH:mm:ss') : '')}
-                    placeholder="下次跟进时间"
-                  />
-                </Space>
-                <Button type="primary" loading={saving} onClick={() => void saveActionLog()}>
-                  记录行动
-                </Button>
-              </Space>
             </Card>
 
             <Alert
@@ -2738,6 +2780,112 @@ export default function TrackingExceptionPage() {
             </Space>
           )}
         </Space>
+      </Modal>
+
+      <Modal
+        open={Boolean(quickKind)}
+        title={quickKind === 'warehouse-contacts' ? '联系仓库' : quickKind === 'reship-requests' ? '补寄申请' : quickKind === 'refund-requests' ? '退款申请' : '索赔申请'}
+        width={720}
+        onCancel={() => { setQuickKind(null); setQuickRow(null); setQuickCreated(null); }}
+        footer={quickCreated ? [
+          <Button key="close" onClick={() => { setQuickKind(null); setQuickRow(null); setQuickCreated(null); }}>关闭</Button>,
+          <Button key="continue" type="primary" onClick={() => window.open(quickCreated.url, '_blank')}>继续编辑</Button>,
+        ] : [
+          <Button key="cancel" onClick={() => { setQuickKind(null); setQuickRow(null); }}>取消</Button>,
+          <Button key="create" type="primary" loading={quickSaving} onClick={() => void saveQuickRequest()}>创建</Button>,
+        ]}
+      >
+        {quickCreated ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Alert type="success" showIcon message={`${quickCreated.title}已创建`} />
+            <Typography.Text type="secondary">
+              当前母页面不会自动跳转。可以继续编辑其他字段，或点击“继续编辑”进入子页面查看和处理。
+            </Typography.Text>
+            <Button type="primary" onClick={() => window.open(quickCreated.url, '_blank')}>继续编辑</Button>
+          </Space>
+        ) : (
+          <Form form={quickForm} layout="vertical">
+            <Row gutter={12}>
+              <Col span={12}><Form.Item name="platform_order_id" label="平台订单编号" rules={[{ required: true }]}><Input /></Form.Item></Col>
+              <Col span={12}><Form.Item name="sub_order_id" label="子订单编号"><Input /></Form.Item></Col>
+              <Col span={12}><Form.Item name="platform_sku" label="平台 SKU"><Input /></Form.Item></Col>
+              <Col span={12}><Form.Item name="stock_sku" label="库存 SKU"><Input /></Form.Item></Col>
+              <Col span={12}><Form.Item name="tracking_number" label="运单号"><Input /></Form.Item></Col>
+              <Col span={12}><Form.Item name="store_name" label="店铺"><Input /></Form.Item></Col>
+              <Col span={12}><Form.Item name="warehouse_name" label="仓库"><Input /></Form.Item></Col>
+              <Col span={12}><Form.Item name="handler_name" label="处理人"><Input /></Form.Item></Col>
+              <Col span={12}><Form.Item name="handler_id" hidden><Input /></Form.Item></Col>
+            </Row>
+            {quickKind === 'warehouse-contacts' ? (
+              <>
+                <Form.Item name="issue_description" label="问题描述"><Input.TextArea rows={2} /></Form.Item>
+                <Form.Item name="message_content" label="联系诉求">
+                  <AutoComplete
+                    options={[
+                      { value: '处于初始状态多天未更新，请确认发货状态并及时发货' },
+                      { value: '停滞多天未更新，请联系物流承运商调查运输情况并加速运输' },
+                      { value: '派送异常，请加速派送' },
+                    ]}
+                    placeholder="选择常用话术，或直接输入自定义诉求"
+                    filterOption={(inputValue, option) => String(option?.value || '').includes(inputValue)}
+                  />
+                </Form.Item>
+                <Row gutter={12}>
+                  <Col span={12}><Form.Item name="contact_channel" label="联系渠道"><Select options={['微信', '飞书', '仓库系统'].map((value) => ({ label: value, value }))} /></Form.Item></Col>
+                </Row>
+              </>
+            ) : null}
+            {quickKind === 'reship-requests' ? (
+              <>
+                <Row gutter={12}>
+                  <Col span={12}><Form.Item name="reship_type" label="补寄类型"><Select options={['新箱', '部件'].map((value) => ({ label: value, value }))} /></Form.Item></Col>
+                  <Col span={12}><Form.Item name="quantity" label="数量"><InputNumber min={1} style={{ width: '100%' }} /></Form.Item></Col>
+                  <Col span={12}><Form.Item name="reship_item_sku" label="补寄物品 SKU"><Input /></Form.Item></Col>
+                  <Col span={12}><Form.Item name="reship_item_name" label="补寄物品名称"><Input /></Form.Item></Col>
+                </Row>
+                <Form.Item name="reason" label="补寄原因"><Input.TextArea rows={3} /></Form.Item>
+                <Form.Item name="buyer_photos" label="问题图片（最多 5 张）">
+                  <AttachmentField ctx={ctx} label="问题图片" maxCount={5} />
+                </Form.Item>
+              </>
+            ) : null}
+            {quickKind === 'refund-requests' ? (
+              <>
+                <Row gutter={12}>
+                  <Col span={12}><Form.Item name="refund_amount" label="退款金额"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                  <Col span={12}><Form.Item name="refund_currency" label="币种"><Select options={['USD', 'CNY', 'EUR', 'GBP'].map((value) => ({ label: value, value }))} /></Form.Item></Col>
+                </Row>
+                <Form.Item name="reason" label="退款原因"><Input.TextArea rows={3} /></Form.Item>
+                <Form.Item name="refund_photos" label="问题图片（最多 3 张）">
+                  <AttachmentField ctx={ctx} label="问题图片" maxCount={3} />
+                </Form.Item>
+              </>
+            ) : null}
+            {quickKind === 'claim-requests' ? (
+              <>
+                <Row gutter={12}>
+                  <Col span={12}><Form.Item name="claim_amount" label="索赔金额"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item></Col>
+                  <Col span={12}><Form.Item name="claim_currency" label="币种"><Select options={['USD', 'CNY', 'EUR', 'GBP'].map((value) => ({ label: value, value }))} /></Form.Item></Col>
+                  <Col span={12}><Form.Item name="claim_trigger" label="触发类型"><Select options={['处于初始状态长期未更新', '处于运输状态长期停滞未更新', '交付异常：显示已交付，反馈未收到', '受损返仓', '异常返仓'].map((value) => ({ label: value, value }))} /></Form.Item></Col>
+                  <Col span={12}><Form.Item name="related_request_no" label="关联补寄/退款单号"><Input /></Form.Item></Col>
+                </Row>
+                <Form.Item name="claim_reason" label="索赔原因"><Input.TextArea rows={3} /></Form.Item>
+                <Form.Item name="claim_packing_list" label="装箱清单 PDF">
+                  <AttachmentField ctx={ctx} label="装箱清单" maxCount={1} accept="application/pdf" />
+                </Form.Item>
+                <Form.Item name="claim_email_evidence" label="邮件沟通截图">
+                  <AttachmentField ctx={ctx} label="邮件截图" maxCount={5} />
+                </Form.Item>
+                <Form.Item name="claim_tracking_evidence" label="快递异常/交付截图">
+                  <AttachmentField ctx={ctx} label="快递截图" maxCount={5} />
+                </Form.Item>
+                <Form.Item name="claim_other_evidence" label="其他材料">
+                  <AttachmentField ctx={ctx} label="其他材料" maxCount={5} />
+                </Form.Item>
+              </>
+            ) : null}
+          </Form>
+        )}
       </Modal>
     </div>
   );

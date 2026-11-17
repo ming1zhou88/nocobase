@@ -471,6 +471,134 @@ export class ConnectorClient {
     );
   }
 
+  // ---- 领星退货申请工作台（退货申请插件页 → Connector 薄接口） ----
+  returnOrderList(query: Record<string, unknown>) {
+    return this.request<{ success: true; total: number; rows: any[]; page: number; pageSize: number }>(
+      '/return-orders/list',
+      { query },
+    );
+  }
+
+  returnOrderStats(query: Record<string, unknown>) {
+    return this.request<{ success: true; myTodo: number; todayAssign: any[]; workload: any[]; statusCounts: any[] }>(
+      '/return-orders/stats',
+      { query },
+    );
+  }
+
+  returnOrderAssign(body: Record<string, unknown>) {
+    return this.request<{ success: true; updated: number }>('/return-orders/assign', {
+      method: 'POST',
+      body,
+    });
+  }
+
+  returnOrderStatus(body: Record<string, unknown>) {
+    return this.request<{ success: true; updated: number }>('/return-orders/status', {
+      method: 'POST',
+      body,
+    });
+  }
+
+  returnOrderRefresh() {
+    return this.request<{ success: true; communication: any; assign: any }>('/return-orders/refresh', {
+      method: 'POST',
+      body: {},
+    });
+  }
+
+  // ---- 折扣保留 / 补寄保留 ----
+  returnOrderRefundGet(id: number) {
+    return this.request<{ success: true; current: any; request: any }>(
+      `/return-orders/${encodeURIComponent(String(id))}/refund-request`,
+    );
+  }
+
+  returnOrderRefundSave(id: number, body: Record<string, unknown>) {
+    return this.request<{ success: true; request: any; created: boolean }>(
+      `/return-orders/${encodeURIComponent(String(id))}/refund-request`,
+      { method: 'POST', body },
+    );
+  }
+
+  returnOrderReshipGet(id: number) {
+    return this.request<{ success: true; current: any; request: any }>(
+      `/return-orders/${encodeURIComponent(String(id))}/reship-request`,
+    );
+  }
+
+  returnOrderReshipSave(id: number, body: Record<string, unknown>) {
+    return this.request<{ success: true; request: any; created: boolean }>(
+      `/return-orders/${encodeURIComponent(String(id))}/reship-request`,
+      { method: 'POST', body },
+    );
+  }
+
+  // ---- 退货快递跟踪 ----
+  returnOrderTrackingGet(id: number) {
+    return this.request<{ success: true; tracking: any[] }>(
+      `/return-orders/${encodeURIComponent(String(id))}/tracking`,
+    );
+  }
+
+  returnOrderTrackingAdd(id: number, items: Array<Record<string, unknown>>, remark?: string) {
+    return this.request<{ success: true; created: number; tracking: any[] }>(
+      `/return-orders/${encodeURIComponent(String(id))}/tracking`,
+      { method: 'POST', body: { items, remark } },
+    );
+  }
+
+  returnOrderTrackingRefresh(limit = 20) {
+    return this.request<{ success: true; scanned: number; updated: number }>(
+      '/return-orders/tracking/refresh',
+      { method: 'POST', body: { limit } },
+    );
+  }
+
+  // ---- 退货申请 ↔ 工单 ----
+  returnOrderWorkOrderGet(id: number) {
+    return this.request<{ success: true; current: any; linked: any; candidates: any[] }>(
+      `/return-orders/${encodeURIComponent(String(id))}/work-order`,
+    );
+  }
+
+  returnOrderWorkOrderCreate(id: number, body: Record<string, unknown>) {
+    return this.request<{ success: true; created: boolean; workOrder: any; linked: any }>(
+      `/return-orders/${encodeURIComponent(String(id))}/work-order`,
+      { method: 'POST', body },
+    );
+  }
+
+  returnOrderWorkOrderLink(id: number, body: Record<string, unknown>) {
+    return this.request<{ success: true; linked: boolean; workOrder: any }>(
+      `/return-orders/${encodeURIComponent(String(id))}/work-order/link`,
+      { method: 'POST', body },
+    );
+  }
+
+  // ---- 每日售后订单联动 ----
+  returnOrderFlag(orderId: string) {
+    return this.request<{ success: true; flags: Record<string, any> }>('/return-orders/order-flag', {
+      query: { order_id: orderId },
+    });
+  }
+
+  returnOrderAssignByOrder(
+    orderIds: string[],
+    owner: { id: number; name: string; account?: string },
+    operator?: { id?: number; name?: string },
+  ) {
+    return this.request<{ success: true; updated: number }>('/return-orders/assign-by-order', {
+      method: 'POST',
+      body: {
+        order_ids: orderIds,
+        owner: { ownerId: owner.id, ownerName: owner.name, ownerAccount: owner.account },
+        operator: operator?.name || '',
+        source: 'linked',
+      },
+    });
+  }
+
   describe() {
     return { baseUrl: this.baseUrl, hasToken: Boolean(this.token) };
   }

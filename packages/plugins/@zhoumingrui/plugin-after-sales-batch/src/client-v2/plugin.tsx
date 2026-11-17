@@ -18,6 +18,7 @@ import { DailyScopeFilterActionModel } from './models/DailyScopeFilterActionMode
 import { DailySetHandleStatusActionModel } from './models/DailySetHandleStatusActionModel';
 import { DailyBatchSetHandleStatusActionModel } from './models/DailyBatchSetHandleStatusActionModel';
 import { DailyRefreshActionModel } from './models/DailyRefreshActionModel';
+import { DailyReturnRequestActionModel } from './models/DailyReturnRequestActionModel';
 
 type AsyncTaskManagerClientV2Plugin = {
   taskOrigins: {
@@ -54,12 +55,19 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
       DailySetHandleStatusActionModel,
       DailyBatchSetHandleStatusActionModel,
       DailyRefreshActionModel,
+      DailyReturnRequestActionModel,
     });
 
     // B 页：Dify 生成，复用 A 页组件（组件内部根据路由参数区分行为）
     this.router.add('admin.after-sales-batch-dify', {
       path: '/admin/after-sales/batch-workbench-b',
       componentLoader: () => import('./pages/AfterSalesBatchPage'),
+    });
+
+    // 领星退货申请工作台（列表/指派/状态/沟通等待时长）
+    this.router.add('admin.return-request-workbench', {
+      path: '/admin/return-request/workbench',
+      componentLoader: () => import('./pages/ReturnRequestPage'),
     });
 
     this.router.add('admin.express-mail-notify', {
@@ -91,6 +99,25 @@ export class PluginAfterSalesBatchClientV2 extends Plugin<unknown, Application> 
     this.router.add('admin.tracking-exception-recovery-detail', {
       path: '/admin/tracking-exception/recovery-detail',
       componentLoader: () => import('./pages/RecoveryDetailPage'),
+    });
+    this.router.add('admin.after-sales-warehouse-contacts', {
+      path: '/admin/after-sales/warehouse-contacts',
+      componentLoader: () => import('./pages/AfterSalesRequestsPage'),
+    });
+
+    this.router.add('admin.after-sales-reship-requests', {
+      path: '/admin/after-sales/reship-requests',
+      componentLoader: () => import('./pages/AfterSalesRequestsPage'),
+    });
+
+    this.router.add('admin.after-sales-refund-requests', {
+      path: '/admin/after-sales/refund-requests',
+      componentLoader: () => import('./pages/AfterSalesRequestsPage'),
+    });
+
+    this.router.add('admin.after-sales-claim-requests', {
+      path: '/admin/after-sales/claim-requests',
+      componentLoader: () => import('./pages/AfterSalesRequestsPage'),
     });
 
     (this.app.pm.get('async-task-manager') as AsyncTaskManagerClientV2Plugin | undefined)?.taskOrigins.register(

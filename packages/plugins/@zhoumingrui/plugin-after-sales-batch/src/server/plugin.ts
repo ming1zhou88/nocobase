@@ -5,6 +5,8 @@ import { installStaffStatusSync } from './staff-status-sync';
 import { installAssignmentFieldGuard } from './assignment-field-guard';
 import { normalizeWorkOrderRecord, normalizeWorkOrderRecords } from './work-order-field-alias';
 import { DAILY_AFTER_SALES_ACTIONS, DAILY_AFTER_SALES_RESOURCE } from './actions-daily-after-sales';
+import { RETURN_REQUEST_ACTIONS, RETURN_REQUEST_RESOURCE } from './actions-return-request';
+import { AFTER_SALES_REQUEST_ACTIONS, AFTER_SALES_REQUEST_RESOURCE } from './actions-after-sales-request';
 import { SECOND_REPLY_ACTIONS, SECOND_REPLY_RESOURCE } from './actions-second-reply';
 import { Plugin } from '@nocobase/server';
 import type { AsyncTasksManager } from '@nocobase/plugin-async-task-manager';
@@ -591,6 +593,28 @@ export class PluginAfterSalesBatchServer extends Plugin {
     this.app.acl.registerSnippet({
       name: `pm.${this.name}.dailyAfterSales`,
       actions: [`${DAILY_AFTER_SALES_RESOURCE}:*`],
+    });
+
+    // ---- 领星退货申请工作台：列表/统计/指派/状态薄转发到连接器 ----
+    this.app.resourceManager.define({
+      name: RETURN_REQUEST_RESOURCE,
+      actions: RETURN_REQUEST_ACTIONS,
+    });
+    this.app.acl.allow(RETURN_REQUEST_RESOURCE, Object.keys(RETURN_REQUEST_ACTIONS), 'loggedIn');
+    this.app.acl.registerSnippet({
+      name: `pm.${this.name}.returnRequest`,
+      actions: [`${RETURN_REQUEST_RESOURCE}:*`],
+    });
+
+    // ---- 售后处理事项：审核/重新提交/字段权限在服务端校验 ----
+    this.app.resourceManager.define({
+      name: AFTER_SALES_REQUEST_RESOURCE,
+      actions: AFTER_SALES_REQUEST_ACTIONS,
+    });
+    this.app.acl.allow(AFTER_SALES_REQUEST_RESOURCE, Object.keys(AFTER_SALES_REQUEST_ACTIONS), 'loggedIn');
+    this.app.acl.registerSnippet({
+      name: `pm.${this.name}.afterSalesRequest`,
+      actions: [`${AFTER_SALES_REQUEST_RESOURCE}:*`],
     });
 
     // ---- 二次回复 7E3：薄转发到连接器 ----
