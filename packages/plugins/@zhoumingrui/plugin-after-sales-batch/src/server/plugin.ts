@@ -7,6 +7,7 @@ import { normalizeWorkOrderRecord, normalizeWorkOrderRecords } from './work-orde
 import { DAILY_AFTER_SALES_ACTIONS, DAILY_AFTER_SALES_RESOURCE } from './actions-daily-after-sales';
 import { RETURN_REQUEST_ACTIONS, RETURN_REQUEST_RESOURCE } from './actions-return-request';
 import { applyReturnBootstrap } from './return-bootstrap';
+import { ORDER_CONFIRM_ACTIONS, ORDER_CONFIRM_RESOURCE } from './actions-order-confirm';
 import { AFTER_SALES_REQUEST_ACTIONS, AFTER_SALES_REQUEST_RESOURCE } from './actions-after-sales-request';
 import { SECOND_REPLY_ACTIONS, SECOND_REPLY_RESOURCE } from './actions-second-reply';
 import { Plugin } from '@nocobase/server';
@@ -627,6 +628,18 @@ export class PluginAfterSalesBatchServer extends Plugin {
     this.app.acl.registerSnippet({
       name: `pm.${this.name}.secondReply`,
       actions: [`${SECOND_REPLY_RESOURCE}:*`],
+    });
+
+    // ---- 确认订单工作台：附表 OrderInfoToConfirm 的列表/指派/更新/导表 ----
+    // 数据在外部 MySQL 数据源；权限（值班人员才能分配）在动作内部判断。
+    this.app.resourceManager.define({
+      name: ORDER_CONFIRM_RESOURCE,
+      actions: ORDER_CONFIRM_ACTIONS,
+    });
+    this.app.acl.allow(ORDER_CONFIRM_RESOURCE, Object.keys(ORDER_CONFIRM_ACTIONS), 'loggedIn');
+    this.app.acl.registerSnippet({
+      name: `pm.${this.name}.orderConfirm`,
+      actions: [`${ORDER_CONFIRM_RESOURCE}:*`],
     });
 
     // 一次性部署引导：菜单/角色/页面模型/外部集合（幂等，检测到菜单后跳过）
